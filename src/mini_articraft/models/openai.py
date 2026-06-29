@@ -6,6 +6,7 @@ from typing import Any
 from openai import OpenAI
 from pydantic import BaseModel, Field
 
+from mini_articraft.env import load_env
 from mini_articraft.errors import ModelError
 
 
@@ -15,6 +16,10 @@ class OpenAIModelConfig(BaseModel):
         default_factory=lambda: os.getenv("MINI_ARTICRAFT_REASONING_EFFORT", "high")
     )
     api_key: str = Field(default_factory=lambda: os.environ["OPENAI_API_KEY"])
+
+    def __init__(self, **data: Any):
+        load_env()
+        super().__init__(**data)
 
 
 class OpenAIModel:
