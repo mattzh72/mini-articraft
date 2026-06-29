@@ -34,6 +34,7 @@ class OpenAIModel:
             "model": self.config.model_name,
             "input": _input_messages(messages),
             "reasoning": self._reasoning(),
+            "include": ["reasoning.encrypted_content"],
         }
         if self.config.max_output_tokens is not None:
             request["max_output_tokens"] = self.config.max_output_tokens

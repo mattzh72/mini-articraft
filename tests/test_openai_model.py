@@ -60,6 +60,7 @@ def test_openai_model_uses_responses_api(monkeypatch: pytest.MonkeyPatch) -> Non
             "model": "gpt-5.5",
             "input": [{"role": "user", "content": "build a hinge"}],
             "reasoning": {"effort": "high"},
+            "include": ["reasoning.encrypted_content"],
             "instructions": "write clean code",
             "max_output_tokens": 1000,
         }
@@ -100,6 +101,7 @@ def test_openai_model_round_trips_phase_and_response_items(
         {"role": "user", "content": "continue"},
     ]
     assert responses.requests[0]["max_output_tokens"] == 25_000
+    assert responses.requests[0]["include"] == ["reasoning.encrypted_content"]
 
 
 def test_openai_model_rejects_phase_on_user_message(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -145,6 +147,7 @@ def test_openai_model_loads_dotenv(tmp_path, monkeypatch: pytest.MonkeyPatch) ->
     assert responses.requests[0]["model"] == "gpt-test"
     assert responses.requests[0]["reasoning"] == {"effort": "low", "summary": "auto"}
     assert responses.requests[0]["max_output_tokens"] == 12345
+    assert responses.requests[0]["include"] == ["reasoning.encrypted_content"]
 
 
 def test_openai_model_raises_on_incomplete_response(monkeypatch: pytest.MonkeyPatch) -> None:
