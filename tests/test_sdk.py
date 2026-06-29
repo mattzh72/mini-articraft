@@ -20,12 +20,12 @@ def shape() -> cq.Workplane:
 
 def test_valid_prismatic_object() -> None:
     obj = ArticulatedObject("drawer_slide")
-    base = obj.part("base", shape())
+    obj.part("base", shape())
     drawer = obj.part("drawer", shape())
 
-    joint = obj.prismatic(
+    obj.prismatic(
         "base_to_drawer",
-        base,
+        "base",
         drawer,
         axis=(1.0, 0.0, 0.0),
         limits=(-0.02, 0.20),
@@ -33,8 +33,6 @@ def test_valid_prismatic_object() -> None:
     )
 
     obj.validate()
-    assert obj.root_parts() == [base]
-    assert joint.normalized_axis == (1.0, 0.0, 0.0)
     assert obj.to_dict()["joints"][0]["type"] == JointType.PRISMATIC.value
 
 

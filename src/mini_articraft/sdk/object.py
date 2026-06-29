@@ -26,7 +26,6 @@ CadQueryShape = cq.Workplane | cq.Shape | cq.Assembly
 class Part:
     name: str
     shape: CadQueryShape
-    meta: dict[str, object] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         self.name = str(self.name).strip()
@@ -43,25 +42,18 @@ class ArticulatedObject:
     name: str
     parts: list[Part] = field(default_factory=list)
     joints: list[Joint] = field(default_factory=list)
-    meta: dict[str, object] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         self.name = str(self.name).strip()
         if not self.name:
             raise ValidationError("object name must be non-empty")
 
-    @property
-    def articulations(self) -> list[Joint]:
-        return self.joints
-
     def part(
         self,
         name: str,
         shape: CadQueryShape,
-        *,
-        meta: dict[str, object] | None = None,
     ) -> Part:
-        part = Part(name=name, shape=shape, meta=dict(meta or {}))
+        part = Part(name=name, shape=shape)
         if any(existing.name == part.name for existing in self.parts):
             raise ValidationError(f"duplicate part name: {part.name!r}")
         self.parts.append(part)
@@ -99,27 +91,6 @@ class ArticulatedObject:
             raise ValidationError(f"duplicate joint name: {joint.name!r}")
         self.joints.append(joint)
         return joint
-
-    def articulation(
-        self,
-        name: str,
-        articulation_type: JointType | str,
-        parent: str | Part,
-        child: str | Part,
-        *,
-        origin: Origin | None = None,
-        axis: Vec3 = (0.0, 0.0, 1.0),
-        limits: LimitsLike | None = None,
-    ) -> Joint:
-        return self.joint(
-            name,
-            articulation_type,
-            parent,
-            child,
-            origin=origin,
-            axis=axis,
-            limits=limits,
-        )
 
     def fixed(
         self,
@@ -198,10 +169,6 @@ class ArticulatedObject:
                 return existing
         raise ValidationError(f"unknown part: {name!r}")
 
-    def root_parts(self) -> list[Part]:
-        child_names = {joint.child for joint in self.joints}
-        return [part for part in self.parts if part.name not in child_names]
-
     def validate(self) -> None:
         if not self.parts:
             raise ValidationError("object must contain at least one part")
@@ -267,12 +234,10 @@ class ArticulatedObject:
                 {
                     "name": part.name,
                     "shape_type": type(part.shape).__name__,
-                    "meta": part.meta,
                 }
                 for part in self.parts
             ],
             "joints": [joint.to_dict() for joint in self.joints],
-            "meta": self.meta,
         }
 
 
@@ -301,9 +266,7 @@ def _validate_joint(joint: Joint) -> None:
         if axis_norm(joint.axis) == 0.0:
             raise ValidationError(f"joint {joint.name!r} axis must be non-zero")
         if not isinstance(joint.limits, ContinuousLimits):
-            raise ValidationError(
-                f"continuous joint {joint.name!r} must use ContinuousLimits"
-            )
+            raise ValidationError(f"continuous joint {joint.name!r} must use ContinuousLimits")
         return
 
     raise ValidationError(f"unsupported joint type: {joint.type}")

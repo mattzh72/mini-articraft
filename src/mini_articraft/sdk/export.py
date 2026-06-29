@@ -16,13 +16,6 @@ class ExportResult:
     manifest: Path
     parts: dict[str, Path]
 
-    def to_dict(self) -> dict[str, object]:
-        return {
-            "root": self.root.as_posix(),
-            "manifest": self.manifest.as_posix(),
-            "parts": {name: path.as_posix() for name, path in self.parts.items()},
-        }
-
 
 def export_object(
     obj: ArticulatedObject,

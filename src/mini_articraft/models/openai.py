@@ -11,26 +11,10 @@ from mini_articraft.settings import Settings, get_settings
 _WEBSOCKET_URL = "wss://api.openai.com/v1/responses"
 _MAX_OUTPUT_TOKENS = 128_000
 
-_CONFIG_KEYS = {
-    "api_key": "openai_api_key",
-    "model_name": "openai_model",
-    "reasoning_effort": "openai_reasoning_effort",
-}
-
-
-def _config(kwargs: dict[str, Any]) -> Settings:
-    if not kwargs:
-        return get_settings()
-    unknown_keys = sorted(set(kwargs) - set(_CONFIG_KEYS))
-    if unknown_keys:
-        names = ", ".join(unknown_keys)
-        raise TypeError(f"unsupported OpenAIModel option: {names}")
-    return Settings(**{_CONFIG_KEYS[key]: value for key, value in kwargs.items()})
-
 
 class OpenAIModel:
-    def __init__(self, **kwargs: Any):
-        self.config = _config(kwargs)
+    def __init__(self, settings: Settings | None = None):
+        self.config = settings or get_settings()
         self._websocket: Any = None
         self._input_items: list[dict[str, Any]] = []
         self._last_message_count = 0

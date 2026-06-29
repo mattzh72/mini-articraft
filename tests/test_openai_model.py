@@ -7,6 +7,7 @@ import pytest
 
 from mini_articraft.errors import ModelError
 from mini_articraft.models.openai import OpenAIModel
+from mini_articraft.settings import Settings, get_settings
 
 
 def run(awaitable):
@@ -65,12 +66,16 @@ def patch_websocket(monkeypatch: pytest.MonkeyPatch, socket: FakeWebSocket) -> N
     monkeypatch.setattr("mini_articraft.models.openai.websockets.connect", connect)
 
 
+def openai_model(**kwargs: object) -> OpenAIModel:
+    return OpenAIModel(Settings(openai_api_key="sk-test", **kwargs))
+
+
 def test_openai_model_uses_websocket(monkeypatch: pytest.MonkeyPatch) -> None:
     socket = FakeWebSocket([response_event("result")])
     patch_websocket(monkeypatch, socket)
 
     result = run(
-        OpenAIModel(api_key="sk-test").query(
+        openai_model().query(
             [
                 {"role": "system", "content": "write clean code"},
                 {"role": "user", "content": "build a hinge"},
@@ -113,7 +118,7 @@ def test_openai_model_uses_incremental_websocket_inputs(
         ]
     )
     patch_websocket(monkeypatch, socket)
-    model = OpenAIModel(api_key="sk-test")
+    model = openai_model()
 
     run(model.query([{"role": "system", "content": "system"}, {"role": "user", "content": "one"}]))
     run(
@@ -132,13 +137,6 @@ def test_openai_model_uses_incremental_websocket_inputs(
     assert model._input_items[1] == {"type": "reasoning", "encrypted_content": "encrypted"}
 
 
-def test_openai_model_rejects_unknown_options() -> None:
-    with pytest.raises(TypeError, match="transport"):
-        OpenAIModel(api_key="sk-test", transport="http")
-    with pytest.raises(TypeError, match="max_output_tokens"):
-        OpenAIModel(api_key="sk-test", max_output_tokens=1000)
-
-
 def test_openai_model_round_trips_phase_and_response_items(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -146,7 +144,7 @@ def test_openai_model_round_trips_phase_and_response_items(
     patch_websocket(monkeypatch, socket)
 
     run(
-        OpenAIModel(api_key="sk-test").query(
+        openai_model().query(
             [
                 {"role": "system", "content": "system contract"},
                 {
@@ -173,15 +171,12 @@ def test_openai_model_round_trips_phase_and_response_items(
 
 def test_openai_model_rejects_phase_on_user_message() -> None:
     with pytest.raises(ValueError, match="phase is only valid"):
-        run(
-            OpenAIModel(api_key="sk-test").query(
-                [{"role": "user", "phase": "final_answer", "content": "hello"}]
-            )
-        )
+        run(openai_model().query([{"role": "user", "phase": "final_answer", "content": "hello"}]))
 
 
 def test_openai_model_loads_dotenv(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(tmp_path)
+    get_settings.cache_clear()
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("MINI_ARTICRAFT_MODEL", raising=False)
     monkeypatch.delenv("MINI_ARTICRAFT_REASONING_EFFORT", raising=False)
@@ -220,7 +215,7 @@ def test_openai_model_raises_on_incomplete_response(monkeypatch: pytest.MonkeyPa
     patch_websocket(monkeypatch, socket)
 
     with pytest.raises(ModelError, match="max_output_tokens.*no visible output"):
-        run(OpenAIModel(api_key="sk-test").query([{"role": "user", "content": "hello"}]))
+        run(openai_model().query([{"role": "user", "content": "hello"}]))
 
 
 def test_openai_model_raises_on_partial_incomplete_response(
@@ -238,7 +233,7 @@ def test_openai_model_raises_on_partial_incomplete_response(
     patch_websocket(monkeypatch, socket)
 
     with pytest.raises(ModelError, match="partial output returned"):
-        run(OpenAIModel(api_key="sk-test").query([{"role": "user", "content": "hello"}]))
+        run(openai_model().query([{"role": "user", "content": "hello"}]))
 
 
 def test_openai_model_raises_on_websocket_error(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -257,7 +252,7 @@ def test_openai_model_raises_on_websocket_error(monkeypatch: pytest.MonkeyPatch)
     patch_websocket(monkeypatch, socket)
 
     with pytest.raises(ModelError, match="previous_response_not_found"):
-        run(OpenAIModel(api_key="sk-test").query([{"role": "user", "content": "hello"}]))
+        run(openai_model().query([{"role": "user", "content": "hello"}]))
 
 
 def test_openai_model_raises_without_text(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -265,4 +260,4 @@ def test_openai_model_raises_without_text(monkeypatch: pytest.MonkeyPatch) -> No
     patch_websocket(monkeypatch, socket)
 
     with pytest.raises(ModelError, match="output_text"):
-        run(OpenAIModel(api_key="sk-test").query([{"role": "user", "content": "hello"}]))
+        run(openai_model().query([{"role": "user", "content": "hello"}]))

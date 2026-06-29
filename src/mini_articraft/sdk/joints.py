@@ -138,13 +138,6 @@ class Joint:
         object.__setattr__(self, "axis", as_vec3(self.axis, field="joint.axis"))
         object.__setattr__(self, "limits", coerce_limits(self.limits))
 
-    @property
-    def normalized_axis(self) -> Vec3:
-        norm = axis_norm(self.axis)
-        if norm == 0.0:
-            return self.axis
-        return (self.axis[0] / norm, self.axis[1] / norm, self.axis[2] / norm)
-
     def to_dict(self) -> dict[str, object]:
         return {
             "name": self.name,
