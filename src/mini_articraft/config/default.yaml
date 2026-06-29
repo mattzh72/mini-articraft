@@ -4,4 +4,5 @@ environment:
   workdir: runs
   timeout_seconds: 30
 model:
-  model_name: gpt-4.1
+  model_name: gpt-5.5
+  reasoning_effort: high

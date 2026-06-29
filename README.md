@@ -21,3 +21,5 @@ uv sync --group dev
 uv run pytest -q
 uv run ruff check .
 ```
+
+Set `OPENAI_API_KEY` to use the default OpenAI Responses model adapter.
