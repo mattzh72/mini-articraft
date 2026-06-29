@@ -70,7 +70,7 @@ def test_openai_model_uses_websocket(monkeypatch: pytest.MonkeyPatch) -> None:
     patch_websocket(monkeypatch, socket)
 
     result = run(
-        OpenAIModel(api_key="sk-test", max_output_tokens=1000).query(
+        OpenAIModel(api_key="sk-test").query(
             [
                 {"role": "system", "content": "write clean code"},
                 {"role": "user", "content": "build a hinge"},
@@ -87,7 +87,7 @@ def test_openai_model_uses_websocket(monkeypatch: pytest.MonkeyPatch) -> None:
             "reasoning": {"effort": "high"},
             "include": ["reasoning.encrypted_content"],
             "store": False,
-            "max_output_tokens": 1000,
+            "max_output_tokens": 128_000,
             "instructions": "write clean code",
         }
     ]
@@ -135,6 +135,8 @@ def test_openai_model_uses_incremental_websocket_inputs(
 def test_openai_model_rejects_unknown_options() -> None:
     with pytest.raises(TypeError, match="transport"):
         OpenAIModel(api_key="sk-test", transport="http")
+    with pytest.raises(TypeError, match="max_output_tokens"):
+        OpenAIModel(api_key="sk-test", max_output_tokens=1000)
 
 
 def test_openai_model_round_trips_phase_and_response_items(
@@ -189,7 +191,6 @@ def test_openai_model_loads_dotenv(tmp_path, monkeypatch: pytest.MonkeyPatch) ->
                 "OPENAI_API_KEY=sk-test",
                 "MINI_ARTICRAFT_MODEL=gpt-test",
                 "MINI_ARTICRAFT_REASONING_EFFORT=low",
-                "MINI_ARTICRAFT_MAX_OUTPUT_TOKENS=12345",
             ]
         )
     )
@@ -200,7 +201,7 @@ def test_openai_model_loads_dotenv(tmp_path, monkeypatch: pytest.MonkeyPatch) ->
 
     assert socket.sent[0]["model"] == "gpt-test"
     assert socket.sent[0]["reasoning"] == {"effort": "low"}
-    assert socket.sent[0]["max_output_tokens"] == 12345
+    assert socket.sent[0]["max_output_tokens"] == 128_000
     assert socket.sent[0]["include"] == ["reasoning.encrypted_content"]
     assert socket.sent[0]["store"] is False
 

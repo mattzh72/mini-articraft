@@ -23,5 +23,4 @@ uv run ruff check .
 ```
 
 Put `OPENAI_API_KEY` in `.env` to use the default OpenAI Responses model adapter.
-Reasoning output is capped with `MINI_ARTICRAFT_MAX_OUTPUT_TOKENS`, which includes hidden reasoning tokens.
-OpenAI is async Responses WebSocket-only.
+OpenAI is async Responses WebSocket-only, never stores responses, and requests GPT-5.5's full output budget.

@@ -19,10 +19,6 @@ class Settings(BaseSettings):
         "high",
         validation_alias="MINI_ARTICRAFT_REASONING_EFFORT",
     )
-    openai_max_output_tokens: int | None = Field(
-        25_000,
-        validation_alias="MINI_ARTICRAFT_MAX_OUTPUT_TOKENS",
-    )
     openai_api_key: str = Field(validation_alias="OPENAI_API_KEY")
 
 

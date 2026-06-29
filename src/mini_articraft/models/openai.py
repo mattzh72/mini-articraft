@@ -9,10 +9,10 @@ from mini_articraft.errors import ModelError
 from mini_articraft.settings import Settings, get_settings
 
 _WEBSOCKET_URL = "wss://api.openai.com/v1/responses"
+_MAX_OUTPUT_TOKENS = 128_000
 
 _CONFIG_KEYS = {
     "api_key": "openai_api_key",
-    "max_output_tokens": "openai_max_output_tokens",
     "model_name": "openai_model",
     "reasoning_effort": "openai_reasoning_effort",
 }
@@ -73,10 +73,9 @@ class OpenAIModel:
             "input": input_items,
             "reasoning": self._reasoning(),
             "include": ["reasoning.encrypted_content"],
+            "max_output_tokens": _MAX_OUTPUT_TOKENS,
             "store": False,
         }
-        if self.config.openai_max_output_tokens is not None:
-            request["max_output_tokens"] = self.config.openai_max_output_tokens
         if previous_response_id is not None:
             request["previous_response_id"] = previous_response_id
         instructions = _instructions(messages)
