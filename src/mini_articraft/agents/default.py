@@ -21,7 +21,7 @@ class DefaultAgent:
         self.env = env
         self.messages: list[dict[str, Any]] = []
 
-    def run(self, prompt: str, **kwargs: Any) -> dict[str, Any]:
+    async def run(self, prompt: str, **kwargs: Any) -> dict[str, Any]:
         """Run the generate and compile loop."""
         raise NotImplementedError
 

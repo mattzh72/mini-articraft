@@ -24,3 +24,22 @@ def env_int(name: str, default: int) -> int:
     if value is None:
         return default
     return int(value)
+
+
+def env_float(name: str, default: float) -> float:
+    value = getenv(name)
+    if value is None:
+        return default
+    return float(value)
+
+
+def env_bool(name: str, default: bool) -> bool:
+    value = getenv(name)
+    if value is None:
+        return default
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    raise ValueError(f"{name} must be a boolean")

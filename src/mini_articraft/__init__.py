@@ -9,7 +9,8 @@ package_dir = Path(__file__).resolve().parent
 
 
 class Model(Protocol):
-    def query(self, messages: list[dict[str, Any]], **kwargs: Any) -> dict[str, Any]: ...
+    async def query(self, messages: list[dict[str, Any]], **kwargs: Any) -> dict[str, Any]: ...
+    async def close(self) -> None: ...
 
 
 class Environment(Protocol):
@@ -17,7 +18,7 @@ class Environment(Protocol):
 
 
 class Agent(Protocol):
-    def run(self, prompt: str, **kwargs: Any) -> dict[str, Any]: ...
+    async def run(self, prompt: str, **kwargs: Any) -> dict[str, Any]: ...
 
 
 __all__ = ["Agent", "Environment", "Model", "__version__", "package_dir"]

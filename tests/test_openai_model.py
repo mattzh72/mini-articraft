@@ -1,119 +1,222 @@
 from __future__ import annotations
 
+import asyncio
+import json
+
 import pytest
 
 from mini_articraft.errors import ModelError
 from mini_articraft.models.openai import OpenAIModel
 
 
+def run(awaitable):
+    return asyncio.run(awaitable)
+
+
+def response_event(
+    text: str,
+    *,
+    response_id: str = "resp_1",
+    status: str = "completed",
+    incomplete_details: dict[str, object] | None = None,
+    output: list[dict[str, object]] | None = None,
+) -> dict[str, object]:
+    return {
+        "type": f"response.{status}",
+        "response": {
+            "id": response_id,
+            "status": status,
+            "incomplete_details": incomplete_details,
+            "output": output
+            if output is not None
+            else [
+                {
+                    "type": "message",
+                    "content": [{"type": "output_text", "text": text}],
+                }
+            ],
+        },
+    }
+
+
+class FakeWebSocket:
+    def __init__(self, events: list[dict[str, object]]):
+        self.closed = False
+        self.sent: list[dict[str, object]] = []
+        self.events = [json.dumps(event) for event in events]
+
+    async def send(self, payload: str) -> None:
+        self.sent.append(json.loads(payload))
+
+    async def recv(self) -> str:
+        return self.events.pop(0)
+
+    async def close(self) -> None:
+        self.closed = True
+
+
+def patch_websocket(monkeypatch: pytest.MonkeyPatch, socket: FakeWebSocket) -> None:
+    async def connect(url: str, *, additional_headers: dict[str, str], max_size: object):
+        assert url == "wss://api.openai.com/v1/responses"
+        assert additional_headers == {"Authorization": "Bearer sk-test"}
+        assert max_size is None
+        return socket
+
+    monkeypatch.setattr("mini_articraft.models.openai.websockets.connect", connect)
+
+
 class FakeResponse:
-    def __init__(
-        self,
-        text: str,
-        *,
-        status: str = "completed",
-        incomplete_details: dict[str, object] | None = None,
-    ):
-        self.output_text = text
-        self.status = status
-        self.incomplete_details = incomplete_details
+    output_text = "result"
 
     def model_dump(self, *, mode: str) -> dict[str, object]:
         assert mode == "json"
         return {
-            "status": self.status,
-            "incomplete_details": self.incomplete_details,
+            "id": "resp_http",
+            "status": "completed",
+            "output_text": "result",
+            "output": [],
         }
 
 
 class FakeResponses:
-    def __init__(self, response: FakeResponse):
+    def __init__(self):
         self.requests: list[dict[str, object]] = []
-        self.response = response
 
-    def create(self, **kwargs: object) -> FakeResponse:
+    async def create(self, **kwargs: object) -> FakeResponse:
         self.requests.append(kwargs)
-        return self.response
+        return FakeResponse()
 
 
-def test_openai_model_uses_responses_api(monkeypatch: pytest.MonkeyPatch) -> None:
-    responses = FakeResponses(FakeResponse("result"))
+def test_openai_model_uses_websocket_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    socket = FakeWebSocket([response_event("result")])
+    patch_websocket(monkeypatch, socket)
 
-    class FakeOpenAI:
-        def __init__(self, *, api_key: str):
-            assert api_key == "sk-test"
-            self.responses = responses
-
-    monkeypatch.setattr("mini_articraft.models.openai.OpenAI", FakeOpenAI)
-
-    result = OpenAIModel(api_key="sk-test").query(
-        [
-            {"role": "system", "content": "write clean code"},
-            {"role": "user", "content": "build a hinge"},
-        ],
-        max_output_tokens=1000,
+    result = run(
+        OpenAIModel(api_key="sk-test").query(
+            [
+                {"role": "system", "content": "write clean code"},
+                {"role": "user", "content": "build a hinge"},
+            ],
+            max_output_tokens=1000,
+        )
     )
 
-    assert result == {"text": "result", "response": {"status": "completed", "incomplete_details": None}}
-    assert responses.requests == [
+    assert result["text"] == "result"
+    assert socket.sent == [
         {
+            "type": "response.create",
             "model": "gpt-5.5",
             "input": [{"role": "user", "content": "build a hinge"}],
             "reasoning": {"effort": "high"},
             "include": ["reasoning.encrypted_content"],
-            "instructions": "write clean code",
+            "store": False,
             "max_output_tokens": 1000,
+            "instructions": "write clean code",
         }
     ]
+
+
+def test_openai_model_uses_incremental_websocket_inputs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    socket = FakeWebSocket(
+        [
+            response_event(
+                "first",
+                response_id="resp_1",
+                output=[
+                    {"type": "reasoning", "encrypted_content": "encrypted"},
+                    {
+                        "type": "message",
+                        "content": [{"type": "output_text", "text": "first"}],
+                    },
+                ],
+            ),
+            response_event("second", response_id="resp_2"),
+        ]
+    )
+    patch_websocket(monkeypatch, socket)
+    model = OpenAIModel(api_key="sk-test")
+
+    run(model.query([{"role": "system", "content": "system"}, {"role": "user", "content": "one"}]))
+    run(
+        model.query(
+            [
+                {"role": "system", "content": "system"},
+                {"role": "user", "content": "one"},
+                {"role": "assistant", "content": "first"},
+                {"role": "user", "content": "two"},
+            ]
+        )
+    )
+
+    assert socket.sent[1]["previous_response_id"] == "resp_1"
+    assert socket.sent[1]["input"] == [{"role": "user", "content": "two"}]
+    assert model._input_items[1] == {"type": "reasoning", "encrypted_content": "encrypted"}
+
+
+def test_openai_model_supports_explicit_http(monkeypatch: pytest.MonkeyPatch) -> None:
+    responses = FakeResponses()
+
+    class FakeAsyncOpenAI:
+        def __init__(self, *, api_key: str):
+            assert api_key == "sk-test"
+            self.responses = responses
+
+        async def close(self) -> None:
+            return None
+
+    monkeypatch.setattr("mini_articraft.models.openai.AsyncOpenAI", FakeAsyncOpenAI)
+
+    result = run(
+        OpenAIModel(api_key="sk-test", transport="http").query(
+            [{"role": "user", "content": "hello"}]
+        )
+    )
+
+    assert result["text"] == "result"
+    assert responses.requests[0]["input"] == [{"role": "user", "content": "hello"}]
+    assert "previous_response_id" not in responses.requests[0]
 
 
 def test_openai_model_round_trips_phase_and_response_items(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    responses = FakeResponses(FakeResponse("result"))
+    socket = FakeWebSocket([response_event("result")])
+    patch_websocket(monkeypatch, socket)
 
-    class FakeOpenAI:
-        def __init__(self, *, api_key: str):
-            self.responses = responses
-
-    monkeypatch.setattr("mini_articraft.models.openai.OpenAI", FakeOpenAI)
-
-    OpenAIModel(api_key="sk-test").query(
-        [
-            {"role": "system", "content": "system contract"},
-            {
-                "role": "assistant",
-                "phase": "commentary",
-                "content": "I will inspect the compile error.",
-            },
-            {"id": "rs_123", "type": "reasoning", "summary": []},
-            {"role": "user", "content": "continue"},
-        ],
+    run(
+        OpenAIModel(api_key="sk-test").query(
+            [
+                {"role": "system", "content": "system contract"},
+                {
+                    "role": "assistant",
+                    "phase": "commentary",
+                    "content": "I will inspect the compile error.",
+                },
+                {"id": "rs_123", "type": "reasoning", "summary": []},
+                {"role": "user", "content": "continue"},
+            ],
+        )
     )
 
-    assert responses.requests[0]["input"] == [
+    assert socket.sent[0]["input"] == [
         {
             "role": "assistant",
-            "phase": "commentary",
             "content": "I will inspect the compile error.",
+            "phase": "commentary",
         },
         {"id": "rs_123", "type": "reasoning", "summary": []},
         {"role": "user", "content": "continue"},
     ]
-    assert responses.requests[0]["max_output_tokens"] == 25_000
-    assert responses.requests[0]["include"] == ["reasoning.encrypted_content"]
 
 
-def test_openai_model_rejects_phase_on_user_message(monkeypatch: pytest.MonkeyPatch) -> None:
-    class FakeOpenAI:
-        def __init__(self, *, api_key: str):
-            self.responses = FakeResponses(FakeResponse("result"))
-
-    monkeypatch.setattr("mini_articraft.models.openai.OpenAI", FakeOpenAI)
-
+def test_openai_model_rejects_phase_on_user_message() -> None:
     with pytest.raises(ValueError, match="phase is only valid"):
-        OpenAIModel(api_key="sk-test").query(
-            [{"role": "user", "phase": "final_answer", "content": "hello"}]
+        run(
+            OpenAIModel(api_key="sk-test").query(
+                [{"role": "user", "phase": "final_answer", "content": "hello"}]
+            )
         )
 
 
@@ -125,79 +228,84 @@ def test_openai_model_loads_dotenv(tmp_path, monkeypatch: pytest.MonkeyPatch) ->
     tmp_path.joinpath(".env").write_text(
         "\n".join(
             [
-                "OPENAI_API_KEY=sk-dotenv",
+                "OPENAI_API_KEY=sk-test",
                 "MINI_ARTICRAFT_MODEL=gpt-test",
                 "MINI_ARTICRAFT_REASONING_EFFORT=low",
                 "MINI_ARTICRAFT_REASONING_SUMMARY=auto",
                 "MINI_ARTICRAFT_MAX_OUTPUT_TOKENS=12345",
+                "MINI_ARTICRAFT_OPENAI_STORE=true",
             ]
         )
     )
-    responses = FakeResponses(FakeResponse("result"))
+    socket = FakeWebSocket([response_event("result")])
+    patch_websocket(monkeypatch, socket)
 
-    class FakeOpenAI:
-        def __init__(self, *, api_key: str):
-            assert api_key == "sk-dotenv"
-            self.responses = responses
+    run(OpenAIModel().query([{"role": "user", "content": "hello"}]))
 
-    monkeypatch.setattr("mini_articraft.models.openai.OpenAI", FakeOpenAI)
-
-    OpenAIModel().query([{"role": "user", "content": "hello"}])
-
-    assert responses.requests[0]["model"] == "gpt-test"
-    assert responses.requests[0]["reasoning"] == {"effort": "low", "summary": "auto"}
-    assert responses.requests[0]["max_output_tokens"] == 12345
-    assert responses.requests[0]["include"] == ["reasoning.encrypted_content"]
+    assert socket.sent[0]["model"] == "gpt-test"
+    assert socket.sent[0]["reasoning"] == {"effort": "low", "summary": "auto"}
+    assert socket.sent[0]["max_output_tokens"] == 12345
+    assert socket.sent[0]["include"] == ["reasoning.encrypted_content"]
+    assert socket.sent[0]["store"] is True
 
 
 def test_openai_model_raises_on_incomplete_response(monkeypatch: pytest.MonkeyPatch) -> None:
-    responses = FakeResponses(
-        FakeResponse(
-            "",
-            status="incomplete",
-            incomplete_details={"reason": "max_output_tokens"},
-        )
+    socket = FakeWebSocket(
+        [
+            response_event(
+                "",
+                status="incomplete",
+                incomplete_details={"reason": "max_output_tokens"},
+                output=[],
+            )
+        ]
     )
-
-    class FakeOpenAI:
-        def __init__(self, *, api_key: str):
-            self.responses = responses
-
-    monkeypatch.setattr("mini_articraft.models.openai.OpenAI", FakeOpenAI)
+    patch_websocket(monkeypatch, socket)
 
     with pytest.raises(ModelError, match="max_output_tokens.*no visible output"):
-        OpenAIModel(api_key="sk-test").query([{"role": "user", "content": "hello"}])
+        run(OpenAIModel(api_key="sk-test").query([{"role": "user", "content": "hello"}]))
 
 
 def test_openai_model_raises_on_partial_incomplete_response(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    responses = FakeResponses(
-        FakeResponse(
-            "partial",
-            status="incomplete",
-            incomplete_details={"reason": "max_output_tokens"},
-        )
+    socket = FakeWebSocket(
+        [
+            response_event(
+                "partial",
+                status="incomplete",
+                incomplete_details={"reason": "max_output_tokens"},
+            )
+        ]
     )
-
-    class FakeOpenAI:
-        def __init__(self, *, api_key: str):
-            self.responses = responses
-
-    monkeypatch.setattr("mini_articraft.models.openai.OpenAI", FakeOpenAI)
+    patch_websocket(monkeypatch, socket)
 
     with pytest.raises(ModelError, match="partial output returned"):
-        OpenAIModel(api_key="sk-test").query([{"role": "user", "content": "hello"}])
+        run(OpenAIModel(api_key="sk-test").query([{"role": "user", "content": "hello"}]))
+
+
+def test_openai_model_raises_on_websocket_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    socket = FakeWebSocket(
+        [
+            {
+                "type": "error",
+                "status": 400,
+                "error": {
+                    "code": "previous_response_not_found",
+                    "message": "missing response",
+                },
+            }
+        ]
+    )
+    patch_websocket(monkeypatch, socket)
+
+    with pytest.raises(ModelError, match="previous_response_not_found"):
+        run(OpenAIModel(api_key="sk-test").query([{"role": "user", "content": "hello"}]))
 
 
 def test_openai_model_raises_without_text(monkeypatch: pytest.MonkeyPatch) -> None:
-    responses = FakeResponses(FakeResponse(""))
+    socket = FakeWebSocket([response_event("", output=[])])
+    patch_websocket(monkeypatch, socket)
 
-    class FakeOpenAI:
-        def __init__(self, *, api_key: str):
-            self.responses = responses
-
-    monkeypatch.setattr("mini_articraft.models.openai.OpenAI", FakeOpenAI)
-
-    with pytest.raises(ModelError):
-        OpenAIModel(api_key="sk-test").query([{"role": "user", "content": "hello"}])
+    with pytest.raises(ModelError, match="output_text"):
+        run(OpenAIModel(api_key="sk-test").query([{"role": "user", "content": "hello"}]))
