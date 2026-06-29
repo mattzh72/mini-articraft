@@ -23,3 +23,4 @@ uv run ruff check .
 ```
 
 Put `OPENAI_API_KEY` in `.env` to use the default OpenAI Responses model adapter.
+Reasoning output is capped with `MINI_ARTICRAFT_MAX_OUTPUT_TOKENS`, which includes hidden reasoning tokens.

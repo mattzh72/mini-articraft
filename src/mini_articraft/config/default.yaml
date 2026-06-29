@@ -6,3 +6,4 @@ environment:
 model:
   model_name: gpt-5.5
   reasoning_effort: high
+  max_output_tokens: 25000
