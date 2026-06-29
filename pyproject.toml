@@ -1,0 +1,58 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mini-articraft"
+dynamic = ["version"]
+description = "A small reference agent for generating articulated CadQuery objects."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+authors = [{ name = "mini-articraft contributors" }]
+dependencies = [
+    "cadquery>=2.5",
+    "openai>=1.40.0",
+    "pydantic>=2.0.0",
+    "python-dotenv>=1.0.0",
+    "pyyaml>=6.0.0",
+    "typer>=0.12.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+    "ruff>=0.11.0",
+]
+
+[project.scripts]
+mini-articraft = "mini_articraft.cli.mini:main"
+
+[tool.uv]
+required-version = ">=0.9.0"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+include-package-data = true
+
+[tool.setuptools.dynamic]
+version = { attr = "mini_articraft.__version__" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["mini_articraft*"]
+
+[tool.setuptools.package-data]
+mini_articraft = ["prompts/*.md", "config/*.yaml"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+ignore = ["E501"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"

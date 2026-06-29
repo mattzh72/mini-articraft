@@ -1,0 +1,7 @@
+agent:
+  attempts: 3
+environment:
+  workdir: runs
+  timeout_seconds: 30
+model:
+  model_name: gpt-4.1
