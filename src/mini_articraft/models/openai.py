@@ -36,7 +36,7 @@ class OpenAIModel:
         self._last_message_count = 0
         self._previous_response_id: str | None = None
 
-    async def query(self, messages: list[dict[str, Any]], **kwargs: Any) -> dict[str, Any]:
+    async def query(self, messages: list[dict[str, Any]]) -> dict[str, Any]:
         """Query the OpenAI Responses API and return the completed text response."""
         new_items = self._new_input_items(messages)
         previous_response_id = None
@@ -46,7 +46,6 @@ class OpenAIModel:
             input_items = new_items
 
         request = self._request(messages, input_items, previous_response_id)
-        request.update(kwargs)
 
         response = await self._send_websocket(request)
         text = _response_text(response)

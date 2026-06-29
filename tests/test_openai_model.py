@@ -70,12 +70,11 @@ def test_openai_model_uses_websocket(monkeypatch: pytest.MonkeyPatch) -> None:
     patch_websocket(monkeypatch, socket)
 
     result = run(
-        OpenAIModel(api_key="sk-test").query(
+        OpenAIModel(api_key="sk-test", max_output_tokens=1000).query(
             [
                 {"role": "system", "content": "write clean code"},
                 {"role": "user", "content": "build a hinge"},
-            ],
-            max_output_tokens=1000,
+            ]
         )
     )
 
