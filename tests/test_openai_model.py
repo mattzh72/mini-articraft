@@ -65,29 +65,7 @@ def patch_websocket(monkeypatch: pytest.MonkeyPatch, socket: FakeWebSocket) -> N
     monkeypatch.setattr("mini_articraft.models.openai.websockets.connect", connect)
 
 
-class FakeResponse:
-    output_text = "result"
-
-    def model_dump(self, *, mode: str) -> dict[str, object]:
-        assert mode == "json"
-        return {
-            "id": "resp_http",
-            "status": "completed",
-            "output_text": "result",
-            "output": [],
-        }
-
-
-class FakeResponses:
-    def __init__(self):
-        self.requests: list[dict[str, object]] = []
-
-    async def create(self, **kwargs: object) -> FakeResponse:
-        self.requests.append(kwargs)
-        return FakeResponse()
-
-
-def test_openai_model_uses_websocket_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_openai_model_uses_websocket(monkeypatch: pytest.MonkeyPatch) -> None:
     socket = FakeWebSocket([response_event("result")])
     patch_websocket(monkeypatch, socket)
 
@@ -155,28 +133,9 @@ def test_openai_model_uses_incremental_websocket_inputs(
     assert model._input_items[1] == {"type": "reasoning", "encrypted_content": "encrypted"}
 
 
-def test_openai_model_supports_explicit_http(monkeypatch: pytest.MonkeyPatch) -> None:
-    responses = FakeResponses()
-
-    class FakeAsyncOpenAI:
-        def __init__(self, *, api_key: str):
-            assert api_key == "sk-test"
-            self.responses = responses
-
-        async def close(self) -> None:
-            return None
-
-    monkeypatch.setattr("mini_articraft.models.openai.AsyncOpenAI", FakeAsyncOpenAI)
-
-    result = run(
-        OpenAIModel(api_key="sk-test", transport="http").query(
-            [{"role": "user", "content": "hello"}]
-        )
-    )
-
-    assert result["text"] == "result"
-    assert responses.requests[0]["input"] == [{"role": "user", "content": "hello"}]
-    assert "previous_response_id" not in responses.requests[0]
+def test_openai_model_rejects_unknown_options() -> None:
+    with pytest.raises(TypeError, match="transport"):
+        OpenAIModel(api_key="sk-test", transport="http")
 
 
 def test_openai_model_round_trips_phase_and_response_items(
@@ -231,9 +190,7 @@ def test_openai_model_loads_dotenv(tmp_path, monkeypatch: pytest.MonkeyPatch) ->
                 "OPENAI_API_KEY=sk-test",
                 "MINI_ARTICRAFT_MODEL=gpt-test",
                 "MINI_ARTICRAFT_REASONING_EFFORT=low",
-                "MINI_ARTICRAFT_REASONING_SUMMARY=auto",
                 "MINI_ARTICRAFT_MAX_OUTPUT_TOKENS=12345",
-                "MINI_ARTICRAFT_OPENAI_STORE=true",
             ]
         )
     )
@@ -243,10 +200,10 @@ def test_openai_model_loads_dotenv(tmp_path, monkeypatch: pytest.MonkeyPatch) ->
     run(OpenAIModel().query([{"role": "user", "content": "hello"}]))
 
     assert socket.sent[0]["model"] == "gpt-test"
-    assert socket.sent[0]["reasoning"] == {"effort": "low", "summary": "auto"}
+    assert socket.sent[0]["reasoning"] == {"effort": "low"}
     assert socket.sent[0]["max_output_tokens"] == 12345
     assert socket.sent[0]["include"] == ["reasoning.encrypted_content"]
-    assert socket.sent[0]["store"] is True
+    assert socket.sent[0]["store"] is False
 
 
 def test_openai_model_raises_on_incomplete_response(monkeypatch: pytest.MonkeyPatch) -> None:

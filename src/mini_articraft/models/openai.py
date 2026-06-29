@@ -1,52 +1,37 @@
 from __future__ import annotations
 
-import inspect
 import json
-import time
 from typing import Any
 
 import websockets
-from openai import AsyncOpenAI
-from pydantic import BaseModel, Field
 
-from mini_articraft.env import env_bool, env_float, env_int, getenv, require_env
 from mini_articraft.errors import ModelError
+from mini_articraft.settings import Settings, get_settings
+
+_WEBSOCKET_URL = "wss://api.openai.com/v1/responses"
+
+_CONFIG_KEYS = {
+    "api_key": "openai_api_key",
+    "max_output_tokens": "openai_max_output_tokens",
+    "model_name": "openai_model",
+    "reasoning_effort": "openai_reasoning_effort",
+}
 
 
-class OpenAIModelConfig(BaseModel):
-    model_name: str = Field(default_factory=lambda: getenv("MINI_ARTICRAFT_MODEL", "gpt-5.5"))
-    reasoning_effort: str = Field(
-        default_factory=lambda: getenv("MINI_ARTICRAFT_REASONING_EFFORT", "high")
-    )
-    reasoning_summary: str | None = Field(
-        default_factory=lambda: getenv("MINI_ARTICRAFT_REASONING_SUMMARY")
-    )
-    max_output_tokens: int | None = Field(
-        default_factory=lambda: env_int("MINI_ARTICRAFT_MAX_OUTPUT_TOKENS", 25_000)
-    )
-    transport: str = Field(
-        default_factory=lambda: getenv("MINI_ARTICRAFT_OPENAI_TRANSPORT", "websocket")
-    )
-    store: bool = Field(default_factory=lambda: env_bool("MINI_ARTICRAFT_OPENAI_STORE", False))
-    websocket_url: str = Field(
-        default_factory=lambda: getenv(
-            "MINI_ARTICRAFT_OPENAI_WEBSOCKET_URL",
-            "wss://api.openai.com/v1/responses",
-        )
-    )
-    websocket_max_age_seconds: float = Field(
-        default_factory=lambda: env_float("MINI_ARTICRAFT_OPENAI_WEBSOCKET_MAX_AGE_SECONDS", 3300.0)
-    )
-    api_key: str = Field(default_factory=lambda: require_env("OPENAI_API_KEY"))
+def _config(kwargs: dict[str, Any]) -> Settings:
+    if not kwargs:
+        return get_settings()
+    unknown_keys = sorted(set(kwargs) - set(_CONFIG_KEYS))
+    if unknown_keys:
+        names = ", ".join(unknown_keys)
+        raise TypeError(f"unsupported OpenAIModel option: {names}")
+    return Settings(**{_CONFIG_KEYS[key]: value for key, value in kwargs.items()})
 
 
 class OpenAIModel:
     def __init__(self, **kwargs: Any):
-        self.config = OpenAIModelConfig(**kwargs)
-        self.transport = _transport(self.config.transport)
-        self.client = AsyncOpenAI(api_key=self.config.api_key)
+        self.config = _config(kwargs)
         self._websocket: Any = None
-        self._websocket_opened_at: float | None = None
         self._input_items: list[dict[str, Any]] = []
         self._last_message_count = 0
         self._previous_response_id: str | None = None
@@ -56,14 +41,14 @@ class OpenAIModel:
         new_items = self._new_input_items(messages)
         previous_response_id = None
         input_items = [*self._input_items, *new_items]
-        if self.transport == "websocket" and self._previous_response_id is not None:
+        if self._previous_response_id is not None:
             previous_response_id = self._previous_response_id
             input_items = new_items
 
         request = self._request(messages, input_items, previous_response_id)
         request.update(kwargs)
 
-        response = await self._send(request)
+        response = await self._send_websocket(request)
         text = _response_text(response)
         _raise_for_bad_status(response, text)
         if not text:
@@ -77,9 +62,6 @@ class OpenAIModel:
 
     async def close(self) -> None:
         await self._close_websocket()
-        result = self.client.close()
-        if inspect.isawaitable(result):
-            await result
 
     def _request(
         self,
@@ -88,14 +70,14 @@ class OpenAIModel:
         previous_response_id: str | None,
     ) -> dict[str, Any]:
         request: dict[str, Any] = {
-            "model": self.config.model_name,
+            "model": self.config.openai_model,
             "input": input_items,
             "reasoning": self._reasoning(),
             "include": ["reasoning.encrypted_content"],
-            "store": self.config.store,
+            "store": False,
         }
-        if self.config.max_output_tokens is not None:
-            request["max_output_tokens"] = self.config.max_output_tokens
+        if self.config.openai_max_output_tokens is not None:
+            request["max_output_tokens"] = self.config.openai_max_output_tokens
         if previous_response_id is not None:
             request["previous_response_id"] = previous_response_id
         instructions = _instructions(messages)
@@ -104,16 +86,7 @@ class OpenAIModel:
         return request
 
     def _reasoning(self) -> dict[str, str]:
-        reasoning = {"effort": self.config.reasoning_effort}
-        if self.config.reasoning_summary:
-            reasoning["summary"] = self.config.reasoning_summary
-        return reasoning
-
-    async def _send(self, request: dict[str, Any]) -> dict[str, Any]:
-        if self.transport == "websocket":
-            return await self._send_websocket(request)
-        response = await self.client.responses.create(**request)
-        return response.model_dump(mode="json")
+        return {"effort": self.config.openai_reasoning_effort}
 
     async def _send_websocket(self, request: dict[str, Any]) -> dict[str, Any]:
         websocket = await self._ensure_websocket()
@@ -121,39 +94,22 @@ class OpenAIModel:
         return await _receive_websocket_response(websocket)
 
     async def _ensure_websocket(self) -> Any:
-        if (
-            self._websocket is not None
-            and not getattr(self._websocket, "closed", False)
-            and not self._websocket_is_stale()
-        ):
+        if self._websocket is not None and not getattr(self._websocket, "closed", False):
             return self._websocket
 
         await self._close_websocket()
         self._websocket = await websockets.connect(
-            self.config.websocket_url,
-            additional_headers={"Authorization": f"Bearer {self.config.api_key}"},
+            _WEBSOCKET_URL,
+            additional_headers={"Authorization": f"Bearer {self.config.openai_api_key}"},
             max_size=None,
         )
-        self._websocket_opened_at = time.monotonic()
         return self._websocket
-
-    def _websocket_is_stale(self) -> bool:
-        if self._websocket_opened_at is None:
-            return False
-        if self.config.websocket_max_age_seconds <= 0:
-            return False
-        return (
-            time.monotonic() - self._websocket_opened_at
-        ) >= self.config.websocket_max_age_seconds
 
     async def _close_websocket(self) -> None:
         websocket = self._websocket
         self._websocket = None
-        self._websocket_opened_at = None
         if websocket is not None:
-            result = websocket.close()
-            if inspect.isawaitable(result):
-                await result
+            await websocket.close()
 
     def _new_input_items(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
         new_items: list[dict[str, Any]] = []
@@ -259,10 +215,3 @@ def _raise_for_bad_status(response: dict[str, Any], text: str) -> None:
             raise ModelError(f"OpenAI response incomplete ({reason}); partial output returned")
         raise ModelError(f"OpenAI response incomplete ({reason}); no visible output")
     raise ModelError(f"OpenAI response ended with status {status}")
-
-
-def _transport(value: str) -> str:
-    normalized = value.strip().lower()
-    if normalized not in {"websocket", "http"}:
-        raise ValueError(f"unsupported OpenAI transport: {value}")
-    return normalized
