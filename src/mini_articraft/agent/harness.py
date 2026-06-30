@@ -60,8 +60,10 @@ class Agent:
         for message in self.messages:
             append_conversation(conversation_path, message)
 
-        model_name = getattr(getattr(self.model, "config", None), "openai_model", "")
-        self._emit(events.RunStarted(run_id, model_name, prompt))
+        model_config = getattr(self.model, "config", None)
+        model_name = getattr(model_config, "openai_model", "")
+        reasoning_effort = getattr(model_config, "openai_reasoning_effort", "")
+        self._emit(events.RunStarted(run_id, model_name, prompt, reasoning_effort))
 
         started = time.perf_counter()
         final_text = ""

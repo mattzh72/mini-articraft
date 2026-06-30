@@ -17,6 +17,7 @@ class RunStarted:
     run_id: str
     model: str
     prompt: str
+    reasoning_effort: str = ""
 
 
 @dataclass(frozen=True)

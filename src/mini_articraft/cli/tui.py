@@ -121,10 +121,19 @@ class RunRenderer:
 
     def handle(self, event: events.Event) -> None:
         match event:
-            case events.RunStarted(run_id=run_id, model=model):
+            case events.RunStarted(
+                run_id=run_id,
+                model=model,
+                reasoning_effort=reasoning_effort,
+            ):
                 self._started = time.monotonic()
                 self._activity = "thinking"
-                title = f"{run_id} · {model}" if model else run_id
+                title_parts = [run_id]
+                if model:
+                    title_parts.append(model)
+                if reasoning_effort:
+                    title_parts.append(f"reasoning {reasoning_effort}")
+                title = " · ".join(title_parts)
                 self._print(Rule(title, style=PRIMARY_STYLE))
             case events.TurnStarted(turn=turn):
                 self._turn = turn

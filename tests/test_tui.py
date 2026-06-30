@@ -27,7 +27,7 @@ def test_renderer_primary_status_style_is_white() -> None:
 def test_renderer_streams_transcript() -> None:
     renderer, console = _renderer()
     sequence = [
-        events.RunStarted("run-x", "gpt-5.5", "a box"),
+        events.RunStarted("run-x", "gpt-5.5", "a box", "high"),
         events.TurnStarted(1),
         events.AssistantMessage(1, "I'll write the file.", [{"id": "c1", "name": "write"}]),
         events.ToolStarted("c1", "write", '{"path": "main.py"}'),
@@ -39,6 +39,7 @@ def test_renderer_streams_transcript() -> None:
     out = _text(console)
     assert "run-x" in out
     assert "gpt-5.5" in out
+    assert "reasoning high" in out
     assert "I'll write the file." in out
     assert "write(main.py)" in out
     assert "main.py (412 bytes)" in out

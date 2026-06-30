@@ -21,6 +21,11 @@ class FakeModel:
     def __init__(self, responses: list[dict[str, Any]]):
         self.responses = responses
         self.calls: list[dict[str, Any]] = []
+        self.config = type(
+            "FakeConfig",
+            (),
+            {"openai_model": "gpt-test", "openai_reasoning_effort": "low"},
+        )()
 
     async def query(
         self,
@@ -211,6 +216,8 @@ def test_agent_emits_run_events(tmp_path) -> None:
 
     assert result["status"] == "success"
     assert isinstance(captured[0], events.RunStarted)
+    assert captured[0].model == "gpt-test"
+    assert captured[0].reasoning_effort == "low"
     assert isinstance(captured[-1], events.RunFinished)
     kinds = {type(event) for event in captured}
     assert events.TurnStarted in kinds
