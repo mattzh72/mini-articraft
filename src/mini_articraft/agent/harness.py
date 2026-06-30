@@ -55,6 +55,10 @@ class Agent:
                 "role": "system",
                 "content": _read_prompt("system.md"),
             },
+            {
+                "role": "user",
+                "content": _read_sdk_quickstart(),
+            },
             {"role": "user", "content": _read_prompt("task.md").replace("{{ prompt }}", prompt)},
         ]
         for message in self.messages:
@@ -212,6 +216,19 @@ def _cost(response: dict[str, Any]) -> float:
 
 def _read_prompt(name: str) -> str:
     return (package_dir / "prompts" / name).read_text(encoding="utf-8")
+
+
+def _read_sdk_quickstart() -> str:
+    quickstart = (package_dir / "sdk" / "docs" / "common" / "00_quickstart.md").read_text(
+        encoding="utf-8"
+    )
+    return (
+        "<sdk_quickstart>\n"
+        "This SDK quickstart is preloaded for the run. Use it as the first "
+        "reference, then read only the routed docs needed for the current object.\n\n"
+        f"{quickstart.rstrip()}\n"
+        "</sdk_quickstart>"
+    )
 
 
 def _run_id_for_prompt(prompt: str, *, now: datetime | None = None) -> str:

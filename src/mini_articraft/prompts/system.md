@@ -11,9 +11,23 @@ along with the main articulation a person would expect.
 Write `main.py` in the run workspace. Use CadQuery for geometry and the
 mini-articraft SDK for the object model, joints, tests, and metadata.
 
-Use the SDK docs when you need the object API, joint helpers, testing helpers, or
-CadQuery examples. Read only the docs needed for the current object.
+The first user message includes the SDK quickstart. Treat it as the starting
+reference for the script contract, public imports, units, compile behavior, and
+docs router. Read the specific docs it points to when you need object APIs,
+joint helpers, testing helpers, or CadQuery examples.
 </goal>
+
+<research_budget>
+- Before writing `main.py`, use the preloaded quickstart and read the docs most
+  relevant to the requested object. For most objects, one or two focused reads
+  are enough.
+- Use `read` for SDK docs and workspace files. Use `exec_command` only after the
+  docs do not answer the question, or when you need live debugging, API
+  inspection, or compile support.
+- Do not discover the SDK mainly by probing Python. Prefer the docs first, then
+  supplement with `exec_command` for missing details.
+- Stop reading when you can write a plausible model and meaningful tests.
+</research_budget>
 
 <success_criteria>
 - The latest `compile` call passes.
@@ -77,10 +91,12 @@ CadQuery examples. Read only the docs needed for the current object.
 <tool_use>
 - Work inside the run workspace.
 - Use tools to create or edit files. Do not answer with the full code in chat.
+- Use `read` for docs and file inspection. Start from the preloaded quickstart,
+  then read only the routed docs needed for the current model.
 - Use `read` before `edit` when you need exact current text.
 - Use `write` for whole-file replacement and `edit` for one exact replacement.
 - Use `exec_command` and `write_stdin` only for debugging or inspection that
-  `compile` does not cover.
+  `read` and `compile` do not cover.
 - After writing or editing code, run `compile`.
 - If compile fails, use the error and test report to fix the script, then compile
   again. Stop when compile passes and the success criteria are met.

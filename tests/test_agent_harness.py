@@ -7,7 +7,12 @@ from typing import Any
 
 import mini_articraft.agent.tools as agent_tools
 from mini_articraft.agent import Agent, events
-from mini_articraft.agent.harness import PROMPT_SLUG_MAX_LENGTH, _prompt_slug, _run_id_for_prompt
+from mini_articraft.agent.harness import (
+    PROMPT_SLUG_MAX_LENGTH,
+    _prompt_slug,
+    _read_sdk_quickstart,
+    _run_id_for_prompt,
+)
 from mini_articraft.agent.tools import Tool
 from mini_articraft.environments.local import LocalEnvironment
 from mini_articraft.record import Record, append_conversation, read_conversation
@@ -115,6 +120,12 @@ def test_agent_writes_compiles_and_returns_final_response(tmp_path) -> None:
     assert tmp_path.joinpath("box", "workspace", "main.py").is_file()
     assert Record.load(tmp_path / "box" / "record.json").cost == 1.0
     assert "<sdk_docs>" not in model.calls[0]["messages"][0]["content"]
+    first_messages = model.calls[0]["messages"]
+    assert [message["role"] for message in first_messages[:3]] == ["system", "user", "user"]
+    assert first_messages[1]["content"].startswith("<sdk_quickstart>")
+    assert "## Docs router" in first_messages[1]["content"]
+    assert first_messages[2]["content"].startswith("<task>")
+    assert "a box" in first_messages[2]["content"]
     assert {tool["name"] for tool in model.calls[0]["tools"]} == {
         "read",
         "edit",
@@ -330,6 +341,16 @@ def test_agent_serializes_non_parallel_tools(monkeypatch, tmp_path) -> None:
 
     assert result["status"] == "success"
     assert max_active == 1
+
+
+def test_sdk_quickstart_user_message_is_preloaded() -> None:
+    content = _read_sdk_quickstart()
+
+    assert content.startswith("<sdk_quickstart>")
+    assert "This SDK quickstart is preloaded for the run." in content
+    assert "# SDK quickstart" in content
+    assert "`docs/sdk/common/40_testing.md`" in content
+    assert content.endswith("</sdk_quickstart>")
 
 
 def test_default_run_id_uses_datetime_and_clipped_prompt() -> None:
