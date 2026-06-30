@@ -20,7 +20,12 @@ class OpenAIModel:
         self._last_message_count = 0
         self._previous_response_id: str | None = None
 
-    async def query(self, messages: list[dict[str, Any]]) -> dict[str, Any]:
+    async def query(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        tools: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
         """Query the OpenAI Responses API and return the completed text response."""
         new_items = self._new_input_items(messages)
         previous_response_id = None
@@ -29,19 +34,20 @@ class OpenAIModel:
             previous_response_id = self._previous_response_id
             input_items = new_items
 
-        request = self._request(messages, input_items, previous_response_id)
+        request = self._request(messages, input_items, previous_response_id, tools)
 
         response = await self._send_websocket(request)
         text = _response_text(response)
+        tool_calls = _response_tool_calls(response)
         _raise_for_bad_status(response, text)
-        if not text:
+        if not text and not tool_calls:
             raise ModelError("OpenAI response did not contain output_text")
 
         self._input_items.extend(new_items)
         self._input_items.extend(_response_output(response))
         self._previous_response_id = _response_id(response)
         self._last_message_count = len(messages)
-        return {"text": text, "response": response}
+        return {"text": text, "tool_calls": tool_calls, "response": response}
 
     async def close(self) -> None:
         await self._close_websocket()
@@ -51,6 +57,7 @@ class OpenAIModel:
         messages: list[dict[str, Any]],
         input_items: list[dict[str, Any]],
         previous_response_id: str | None,
+        tools: list[dict[str, Any]] | None,
     ) -> dict[str, Any]:
         request: dict[str, Any] = {
             "model": self.config.openai_model,
@@ -62,6 +69,9 @@ class OpenAIModel:
         }
         if previous_response_id is not None:
             request["previous_response_id"] = previous_response_id
+        if tools:
+            request["tools"] = tools
+            request["parallel_tool_calls"] = False
         instructions = _instructions(messages)
         if instructions:
             request["instructions"] = instructions
@@ -184,6 +194,21 @@ def _response_text(response: dict[str, Any]) -> str:
                 if isinstance(text, str):
                     parts.append(text)
     return "".join(parts)
+
+
+def _response_tool_calls(response: dict[str, Any]) -> list[dict[str, Any]]:
+    calls: list[dict[str, Any]] = []
+    for item in _response_output(response):
+        if item.get("type") != "function_call":
+            continue
+        calls.append(
+            {
+                "id": item["call_id"],
+                "name": item["name"],
+                "arguments": item.get("arguments") or "{}",
+            }
+        )
+    return calls
 
 
 def _raise_for_bad_status(response: dict[str, Any], text: str) -> None:

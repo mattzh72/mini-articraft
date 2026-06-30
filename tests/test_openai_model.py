@@ -98,6 +98,85 @@ def test_openai_model_uses_websocket(monkeypatch: pytest.MonkeyPatch) -> None:
     ]
 
 
+def test_openai_model_sends_tools_and_returns_function_calls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    socket = FakeWebSocket(
+        [
+            response_event(
+                "",
+                output=[
+                    {
+                        "type": "function_call",
+                        "call_id": "call_1",
+                        "name": "write",
+                        "arguments": '{"path": "main.py", "content": "x"}',
+                    }
+                ],
+            )
+        ]
+    )
+    patch_websocket(monkeypatch, socket)
+    tool = {
+        "type": "function",
+        "name": "write",
+        "description": "write",
+        "parameters": {"type": "object", "properties": {}, "required": []},
+    }
+
+    result = run(openai_model().query([{"role": "user", "content": "build"}], tools=[tool]))
+
+    assert result["text"] == ""
+    assert result["tool_calls"] == [
+        {
+            "id": "call_1",
+            "name": "write",
+            "arguments": '{"path": "main.py", "content": "x"}',
+        }
+    ]
+    assert socket.sent[0]["tools"] == [tool]
+    assert socket.sent[0]["parallel_tool_calls"] is False
+
+
+def test_openai_model_sends_function_call_outputs_with_previous_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    socket = FakeWebSocket(
+        [
+            response_event(
+                "",
+                response_id="resp_1",
+                output=[
+                    {
+                        "type": "function_call",
+                        "call_id": "call_1",
+                        "name": "compile",
+                        "arguments": "{}",
+                    }
+                ],
+            ),
+            response_event("done", response_id="resp_2"),
+        ]
+    )
+    patch_websocket(monkeypatch, socket)
+    model = openai_model()
+    messages = [{"role": "user", "content": "build"}]
+
+    run(model.query(messages, tools=[]))
+    messages.extend(
+        [
+            {"role": "assistant", "content": "", "tool_calls": []},
+            {"type": "function_call_output", "call_id": "call_1", "output": '{"ok": true}'},
+        ]
+    )
+    run(model.query(messages, tools=[]))
+
+    assert socket.sent[1]["previous_response_id"] == "resp_1"
+    assert socket.sent[1]["input"] == [
+        {"type": "function_call_output", "call_id": "call_1", "output": '{"ok": true}'}
+    ]
+
+
 def test_openai_model_uses_incremental_websocket_inputs(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

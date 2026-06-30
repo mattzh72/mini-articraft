@@ -9,7 +9,12 @@ package_dir = Path(__file__).resolve().parent
 
 
 class Model(Protocol):
-    async def query(self, messages: list[dict[str, Any]]) -> dict[str, Any]: ...
+    async def query(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        tools: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]: ...
     async def close(self) -> None: ...
 
 
