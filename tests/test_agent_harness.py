@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import json
+from datetime import datetime
 from typing import Any
 
-from mini_articraft.agent import Agent
+from mini_articraft.agent import Agent, events
+from mini_articraft.agent.harness import PROMPT_SLUG_MAX_LENGTH, _prompt_slug, _run_id_for_prompt
 from mini_articraft.environments.local import LocalEnvironment
 from mini_articraft.record import read_conversation
 
@@ -48,7 +50,10 @@ object_model.part("base", cq.Workplane("XY").box(1, 1, 1))
 def test_agent_writes_compiles_and_returns_final_response(tmp_path) -> None:
     model = FakeModel(
         [
-            {"text": "", "tool_calls": [call("call_1", "write", {"path": "main.py", "content": MODEL_CODE})]},
+            {
+                "text": "",
+                "tool_calls": [call("call_1", "write", {"path": "main.py", "content": MODEL_CODE})],
+            },
             {"text": "", "tool_calls": [call("call_2", "compile", {})]},
             {"text": "done", "tool_calls": []},
         ]
@@ -76,7 +81,10 @@ def test_agent_writes_compiles_and_returns_final_response(tmp_path) -> None:
 def test_agent_requires_compile_before_final_response(tmp_path) -> None:
     model = FakeModel(
         [
-            {"text": "", "tool_calls": [call("call_1", "write", {"path": "main.py", "content": MODEL_CODE})]},
+            {
+                "text": "",
+                "tool_calls": [call("call_1", "write", {"path": "main.py", "content": MODEL_CODE})],
+            },
             {"text": "done too early", "tool_calls": []},
             {"text": "", "tool_calls": [call("call_2", "compile", {})]},
             {"text": "done", "tool_calls": []},
@@ -94,4 +102,60 @@ def test_agent_requires_compile_before_final_response(tmp_path) -> None:
         for message in model.calls[2]["messages"]
     )
     conversation = read_conversation(tmp_path / "box" / "conversation.jsonl")
-    assert any(event.get("content") == "Run compile before the final response." for event in conversation)
+    assert any(
+        event.get("content") == "Run compile before the final response." for event in conversation
+    )
+
+
+def test_agent_emits_run_events(tmp_path) -> None:
+    model = FakeModel(
+        [
+            {
+                "text": "",
+                "tool_calls": [call("call_1", "write", {"path": "main.py", "content": MODEL_CODE})],
+            },
+            {"text": "", "tool_calls": [call("call_2", "compile", {})]},
+            {"text": "done", "tool_calls": []},
+        ]
+    )
+    env = LocalEnvironment(output_dir=tmp_path)
+    captured: list[events.Event] = []
+    agent = Agent(model, env, max_turns=3, on_event=captured.append)
+
+    result = run(agent.run("a box", run_id="box"))
+
+    assert result["status"] == "success"
+    assert isinstance(captured[0], events.RunStarted)
+    assert isinstance(captured[-1], events.RunFinished)
+    kinds = {type(event) for event in captured}
+    assert events.TurnStarted in kinds
+    assert events.AssistantMessage in kinds
+    assert events.ToolStarted in kinds
+    assert events.ToolFinished in kinds
+
+    write_finished = next(
+        event
+        for event in captured
+        if isinstance(event, events.ToolFinished) and event.name == "write"
+    )
+    assert write_finished.payload["result"]["path"] == "main.py"
+    assert write_finished.payload["result"]["bytes"] > 0
+
+    run_finished = captured[-1]
+    assert isinstance(run_finished, events.RunFinished)
+    assert run_finished.status == "success"
+    assert run_finished.turns == 3
+
+
+def test_default_run_id_uses_datetime_and_clipped_prompt() -> None:
+    prompt = "Make a tiny articulated desk lamp with a compliant hinge and a wide base"
+
+    run_id = _run_id_for_prompt(prompt, now=datetime(2026, 6, 30, 14, 5, 9))
+
+    assert run_id == "20260630-140509-make-a-tiny-articulated-desk-lamp-with-a-complia"
+
+
+def test_prompt_slug_sanitizes_and_falls_back() -> None:
+    assert _prompt_slug("  Drawer: 2-stage / slide!  ") == "drawer-2-stage-slide"
+    assert _prompt_slug("...") == "prompt"
+    assert len(_prompt_slug("x" * 200)) == PROMPT_SLUG_MAX_LENGTH

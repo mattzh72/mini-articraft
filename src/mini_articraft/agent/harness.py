@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import json
-import uuid
+import re
+import time
+from collections.abc import Callable
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -9,9 +12,12 @@ from pydantic import BaseModel
 
 import mini_articraft.agent.tools as tools
 from mini_articraft import Environment, Model, package_dir
+from mini_articraft.agent import events
 from mini_articraft.agent.sdk_docs import render_sdk_quickstart_context
 from mini_articraft.agent.tools import ToolContext
 from mini_articraft.record import Record, append_conversation
+
+PROMPT_SLUG_MAX_LENGTH = 48
 
 
 class AgentConfig(BaseModel):
@@ -20,14 +26,26 @@ class AgentConfig(BaseModel):
 
 
 class Agent:
-    def __init__(self, model: Model, env: Environment, **kwargs: Any):
+    def __init__(
+        self,
+        model: Model,
+        env: Environment,
+        *,
+        on_event: Callable[[events.Event], None] | None = None,
+        **kwargs: Any,
+    ):
         self.config = AgentConfig(**kwargs)
         self.model = model
         self.env = env
         self.messages: list[dict[str, Any]] = []
+        self._on_event = on_event
+
+    def _emit(self, event: events.Event) -> None:
+        if self._on_event is not None:
+            self._on_event(event)
 
     async def run(self, prompt: str, **kwargs: Any) -> dict[str, Any]:
-        run_id = str(kwargs.get("run_id") or f"run-{uuid.uuid4().hex[:8]}")
+        run_id = str(kwargs.get("run_id") or _run_id_for_prompt(prompt))
         run_dir = self.env.create_run(run_id)
         context = ToolContext(self.env, run_dir, run_dir / "workspace")
         conversation_path = run_dir / "conversation.jsonl"
@@ -45,14 +63,21 @@ class Agent:
         for message in self.messages:
             append_conversation(conversation_path, message)
 
+        model_name = getattr(getattr(self.model, "config", None), "openai_model", "")
+        self._emit(events.RunStarted(run_id, model_name, prompt))
+
+        started = time.perf_counter()
         final_text = ""
-        for _ in range(self.config.max_turns):
+        turn = 0
+        for turn in range(1, self.config.max_turns + 1):
+            self._emit(events.TurnStarted(turn))
             response = await self.model.query(self.messages, tools=tools.schemas())
             text = str(response.get("text") or "")
             tool_calls = list(response.get("tool_calls") or [])
             assistant = {"role": "assistant", "content": text, "tool_calls": tool_calls}
             self.messages.append(assistant)
             append_conversation(conversation_path, assistant)
+            self._emit(events.AssistantMessage(turn, text, tool_calls))
 
             if not tool_calls:
                 if context.compiled_revision == context.revision and context.compile_result:
@@ -64,9 +89,23 @@ class Agent:
                 continue
 
             for call in tool_calls:
+                self._emit(
+                    events.ToolStarted(
+                        str(call["id"]), str(call["name"]), str(call.get("arguments") or "{}")
+                    )
+                )
+                tool_started = time.perf_counter()
                 item = await self._run_tool(context, call)
                 self.messages.append(item)
                 append_conversation(conversation_path, item)
+                self._emit(
+                    events.ToolFinished(
+                        str(call["id"]),
+                        str(call["name"]),
+                        json.loads(item["output"]),
+                        round(time.perf_counter() - tool_started, 4),
+                    )
+                )
         else:
             record = Record.load(run_dir / "record.json")
             record.status = "error"
@@ -78,6 +117,16 @@ class Agent:
         data["run"] = str(run_dir)
         if self.config.output_path:
             Record.load(run_dir / "record.json").save(self.config.output_path)
+        self._emit(
+            events.RunFinished(
+                status=str(data.get("status") or ""),
+                run=str(run_dir),
+                result=str(data.get("result") or ""),
+                error=str(data.get("error") or ""),
+                turns=turn,
+                duration=round(time.perf_counter() - started, 4),
+            )
+        )
         return data
 
     async def _run_tool(self, context: ToolContext, call: dict[str, Any]) -> dict[str, Any]:
@@ -103,3 +152,14 @@ def _arguments(call: dict[str, Any]) -> dict[str, Any]:
 
 def _read_prompt(name: str) -> str:
     return (package_dir / "prompts" / name).read_text(encoding="utf-8")
+
+
+def _run_id_for_prompt(prompt: str, *, now: datetime | None = None) -> str:
+    timestamp = (now or datetime.now()).strftime("%Y%m%d-%H%M%S")
+    return f"{timestamp}-{_prompt_slug(prompt)}"
+
+
+def _prompt_slug(prompt: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", prompt.lower()).strip("-")
+    slug = slug[:PROMPT_SLUG_MAX_LENGTH].strip("-")
+    return slug or "prompt"
