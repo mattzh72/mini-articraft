@@ -1,16 +1,16 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from enum import Enum
-from math import sqrt
-from typing import Sequence, Union
+from collections.abc import Sequence
+from dataclasses import dataclass, field
+from enum import StrEnum
+from typing import TypeAlias
 
 from mini_articraft.errors import ValidationError
 
-Vec3 = tuple[float, float, float]
+Vec3: TypeAlias = tuple[float, float, float]
 
 
-class JointType(str, Enum):
+class JointType(StrEnum):
     FIXED = "fixed"
     REVOLUTE = "revolute"
     CONTINUOUS = "continuous"
@@ -18,43 +18,42 @@ class JointType(str, Enum):
 
 
 def as_vec3(value: Sequence[float], *, field: str) -> Vec3:
-    if len(value) != 3:
-        raise ValidationError(f"{field} must have 3 values")
-    return (float(value[0]), float(value[1]), float(value[2]))
+    try:
+        x, y, z = value
+        return (float(x), float(y), float(z))
+    except (TypeError, ValueError) as exc:
+        raise ValidationError(f"{field} must have 3 numeric values") from exc
 
 
-def _coerce_joint_type(value: JointType | str) -> JointType:
+def coerce_joint_type(value: JointType | str) -> JointType:
     try:
         return value if isinstance(value, JointType) else JointType(str(value))
     except ValueError as exc:
-        raise ValidationError(f"Unknown joint type: {value}") from exc
+        raise ValidationError(f"unknown joint type: {value}") from exc
 
 
 def coerce_part_name(value: str | object, *, field: str) -> str:
     name = value if isinstance(value, str) else getattr(value, "name", None)
     if not isinstance(name, str):
         raise ValidationError(f"{field} must be a part name or Part")
+
     name = name.strip()
     if not name:
         raise ValidationError(f"{field} must be non-empty")
     return name
 
 
-def axis_norm(axis: Vec3) -> float:
-    return sqrt(sum(value * value for value in axis))
-
-
-@dataclass(frozen=True)
+@dataclass
 class Origin:
     xyz: Vec3 = (0.0, 0.0, 0.0)
     rpy: Vec3 = (0.0, 0.0, 0.0)
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "xyz", as_vec3(self.xyz, field="origin.xyz"))
-        object.__setattr__(self, "rpy", as_vec3(self.rpy, field="origin.rpy"))
+        self.xyz = as_vec3(self.xyz, field="origin.xyz")
+        self.rpy = as_vec3(self.rpy, field="origin.rpy")
 
 
-@dataclass(frozen=True)
+@dataclass
 class JointLimits:
     lower: float
     upper: float
@@ -62,16 +61,12 @@ class JointLimits:
     velocity: float = 1.0
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "lower", float(self.lower))
-        object.__setattr__(self, "upper", float(self.upper))
-        object.__setattr__(self, "effort", float(self.effort))
-        object.__setattr__(self, "velocity", float(self.velocity))
+        self.lower = float(self.lower)
+        self.upper = float(self.upper)
+        self.effort = _positive(self.effort, "joint limit effort")
+        self.velocity = _positive(self.velocity, "joint limit velocity")
         if self.lower > self.upper:
             raise ValidationError("joint limit lower value cannot exceed upper value")
-        if self.effort <= 0.0:
-            raise ValidationError("joint limit effort must be positive")
-        if self.velocity <= 0.0:
-            raise ValidationError("joint limit velocity must be positive")
 
     def to_dict(self) -> dict[str, float]:
         return {
@@ -82,61 +77,74 @@ class JointLimits:
         }
 
 
-@dataclass(frozen=True)
+@dataclass
 class ContinuousLimits:
     effort: float = 1.0
     velocity: float = 1.0
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "effort", float(self.effort))
-        object.__setattr__(self, "velocity", float(self.velocity))
-        if self.effort <= 0.0:
-            raise ValidationError("continuous joint effort must be positive")
-        if self.velocity <= 0.0:
-            raise ValidationError("continuous joint velocity must be positive")
+        self.effort = _positive(self.effort, "continuous joint effort")
+        self.velocity = _positive(self.velocity, "continuous joint velocity")
 
     def to_dict(self) -> dict[str, float]:
-        return {
-            "effort": self.effort,
-            "velocity": self.velocity,
-        }
+        return {"effort": self.effort, "velocity": self.velocity}
 
 
-LimitsLike = Union[JointLimits, ContinuousLimits, Sequence[float]]
+LimitsLike: TypeAlias = JointLimits | ContinuousLimits | Sequence[float]
 
 
-def coerce_limits(value: LimitsLike | None) -> JointLimits | None:
-    if value is None:
-        return None
-    if isinstance(value, (JointLimits, ContinuousLimits)):
+def coerce_limits(value: LimitsLike | None) -> JointLimits | ContinuousLimits | None:
+    if value is None or isinstance(value, (JointLimits, ContinuousLimits)):
         return value
     if isinstance(value, (str, bytes)) or not isinstance(value, Sequence):
         raise ValidationError("limits must be JointLimits or a (lower, upper) pair")
-    if len(value) != 2:
-        raise ValidationError("limits must be a (lower, upper) pair")
-    return JointLimits(lower=value[0], upper=value[1])
+
+    try:
+        lower, upper = value
+    except ValueError as exc:
+        raise ValidationError("limits must be a (lower, upper) pair") from exc
+    return JointLimits(lower=lower, upper=upper)
 
 
-@dataclass(frozen=True)
+@dataclass
 class Joint:
     name: str
     type: JointType | str
     parent: str
     child: str
-    origin: Origin = Origin()
+    origin: Origin = field(default_factory=Origin)
     axis: Vec3 = (0.0, 0.0, 1.0)
     limits: JointLimits | ContinuousLimits | None = None
 
     def __post_init__(self) -> None:
-        name = str(self.name).strip()
-        if not name:
+        self.name = str(self.name).strip()
+        if not self.name:
             raise ValidationError("joint name must be non-empty")
-        object.__setattr__(self, "name", name)
-        object.__setattr__(self, "type", _coerce_joint_type(self.type))
-        object.__setattr__(self, "parent", coerce_part_name(self.parent, field="parent"))
-        object.__setattr__(self, "child", coerce_part_name(self.child, field="child"))
-        object.__setattr__(self, "axis", as_vec3(self.axis, field="joint.axis"))
-        object.__setattr__(self, "limits", coerce_limits(self.limits))
+        if not isinstance(self.origin, Origin):
+            raise ValidationError("joint origin must be an Origin")
+
+        self.type = coerce_joint_type(self.type)
+        self.parent = coerce_part_name(self.parent, field="parent")
+        self.child = coerce_part_name(self.child, field="child")
+        self.axis = as_vec3(self.axis, field="joint.axis")
+        self.limits = coerce_limits(self.limits)
+
+    def validate(self) -> None:
+        if self.parent == self.child:
+            raise ValidationError(f"joint {self.name!r} parent and child cannot match")
+        if self.type == JointType.FIXED:
+            if self.limits is not None:
+                raise ValidationError(f"fixed joint {self.name!r} cannot have limits")
+            return
+
+        if not any(self.axis):
+            raise ValidationError(f"joint {self.name!r} axis must be non-zero")
+        if self.type == JointType.CONTINUOUS:
+            if not isinstance(self.limits, ContinuousLimits):
+                raise ValidationError(f"continuous joint {self.name!r} must use ContinuousLimits")
+            return
+        if not isinstance(self.limits, JointLimits):
+            raise ValidationError(f"joint {self.name!r} must include limits")
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -148,3 +156,10 @@ class Joint:
             "axis": self.axis,
             "limits": None if self.limits is None else self.limits.to_dict(),
         }
+
+
+def _positive(value: object, field: str) -> float:
+    value = float(value)
+    if value <= 0.0:
+        raise ValidationError(f"{field} must be positive")
+    return value

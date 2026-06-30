@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Iterable
+from typing import TypeAlias
 
 import cadquery as cq
 
@@ -9,17 +9,15 @@ from mini_articraft.errors import ValidationError
 from mini_articraft.sdk.joints import (
     ContinuousLimits,
     Joint,
-    JointLimits,
     JointType,
     LimitsLike,
     Origin,
     Vec3,
-    axis_norm,
-    coerce_limits,
     coerce_part_name,
 )
 
-CadQueryShape = cq.Workplane | cq.Shape | cq.Assembly
+CadQueryShape: TypeAlias = cq.Workplane | cq.Shape | cq.Assembly
+_CADQUERY_TYPES = (cq.Workplane, cq.Shape, cq.Assembly)
 
 
 @dataclass
@@ -31,10 +29,13 @@ class Part:
         self.name = str(self.name).strip()
         if not self.name:
             raise ValidationError("part name must be non-empty")
-        if not isinstance(self.shape, (cq.Workplane, cq.Shape, cq.Assembly)):
+        if not isinstance(self.shape, _CADQUERY_TYPES):
             raise ValidationError(
                 f"part {self.name!r} shape must be a CadQuery Workplane, Shape, or Assembly"
             )
+
+
+PartRef: TypeAlias = str | Part
 
 
 @dataclass
@@ -48,11 +49,7 @@ class ArticulatedObject:
         if not self.name:
             raise ValidationError("object name must be non-empty")
 
-    def part(
-        self,
-        name: str,
-        shape: CadQueryShape,
-    ) -> Part:
+    def part(self, name: str, shape: CadQueryShape) -> Part:
         part = Part(name=name, shape=shape)
         if any(existing.name == part.name for existing in self.parts):
             raise ValidationError(f"duplicate part name: {part.name!r}")
@@ -63,30 +60,25 @@ class ArticulatedObject:
         self,
         name: str,
         joint_type: JointType | str,
-        parent: str | Part,
-        child: str | Part,
+        parent: PartRef,
+        child: PartRef,
         *,
         origin: Origin | None = None,
         axis: Vec3 = (0.0, 0.0, 1.0),
         limits: LimitsLike | None = None,
     ) -> Joint:
-        parent_name = coerce_part_name(parent, field="parent")
-        child_name = coerce_part_name(child, field="child")
-        if parent_name == child_name:
-            raise ValidationError("joint parent and child cannot match")
-        self.get_part(parent_name)
-        self.get_part(child_name)
-
         joint = Joint(
             name=name,
             type=joint_type,
-            parent=parent_name,
-            child=child_name,
+            parent=coerce_part_name(parent, field="parent"),
+            child=coerce_part_name(child, field="child"),
             origin=origin or Origin(),
             axis=axis,
-            limits=coerce_limits(limits),
+            limits=limits,
         )
-        _validate_joint(joint)
+        joint.validate()
+        self.get_part(joint.parent)
+        self.get_part(joint.child)
         if any(existing.name == joint.name for existing in self.joints):
             raise ValidationError(f"duplicate joint name: {joint.name!r}")
         self.joints.append(joint)
@@ -95,8 +87,8 @@ class ArticulatedObject:
     def fixed(
         self,
         name: str,
-        parent: str | Part,
-        child: str | Part,
+        parent: PartRef,
+        child: PartRef,
         *,
         origin: Origin | None = None,
     ) -> Joint:
@@ -105,8 +97,8 @@ class ArticulatedObject:
     def revolute(
         self,
         name: str,
-        parent: str | Part,
-        child: str | Part,
+        parent: PartRef,
+        child: PartRef,
         *,
         axis: Vec3 = (0.0, 0.0, 1.0),
         limits: LimitsLike,
@@ -125,8 +117,8 @@ class ArticulatedObject:
     def prismatic(
         self,
         name: str,
-        parent: str | Part,
-        child: str | Part,
+        parent: PartRef,
+        child: PartRef,
         *,
         axis: Vec3 = (1.0, 0.0, 0.0),
         limits: LimitsLike,
@@ -145,8 +137,8 @@ class ArticulatedObject:
     def continuous(
         self,
         name: str,
-        parent: str | Part,
-        child: str | Part,
+        parent: PartRef,
+        child: PartRef,
         *,
         axis: Vec3 = (0.0, 0.0, 1.0),
         limits: ContinuousLimits,
@@ -162,7 +154,7 @@ class ArticulatedObject:
             limits=limits,
         )
 
-    def get_part(self, part: str | Part) -> Part:
+    def get_part(self, part: PartRef) -> Part:
         name = coerce_part_name(part, field="part")
         for existing in self.parts:
             if existing.name == name:
@@ -172,101 +164,59 @@ class ArticulatedObject:
     def validate(self) -> None:
         if not self.parts:
             raise ValidationError("object must contain at least one part")
-        _validate_unique((part.name for part in self.parts), "part")
-        _validate_unique((joint.name for joint in self.joints), "joint")
 
         part_names = {part.name for part in self.parts}
-        child_to_joint: dict[str, Joint] = {}
+        joint_names = {joint.name for joint in self.joints}
+        if len(part_names) != len(self.parts):
+            raise ValidationError("part names must be unique")
+        if len(joint_names) != len(self.joints):
+            raise ValidationError("joint names must be unique")
+
+        child_parent: dict[str, str] = {}
+        children: dict[str, list[str]] = {name: [] for name in part_names}
         for joint in self.joints:
-            if joint.parent not in part_names:
-                raise ValidationError(
-                    f"joint {joint.name!r} references missing parent part {joint.parent!r}"
-                )
-            if joint.child not in part_names:
-                raise ValidationError(
-                    f"joint {joint.name!r} references missing child part {joint.child!r}"
-                )
-            if joint.parent == joint.child:
-                raise ValidationError(f"joint {joint.name!r} parent and child cannot match")
-            if joint.child in child_to_joint:
-                other = child_to_joint[joint.child]
+            joint.validate()
+            for role, part in (("parent", joint.parent), ("child", joint.child)):
+                if part not in part_names:
+                    raise ValidationError(
+                        f"joint {joint.name!r} references missing {role} part {part!r}"
+                    )
+            if joint.child in child_parent:
                 raise ValidationError(
                     f"part {joint.child!r} has multiple parent joints: "
-                    f"{other.name!r} and {joint.name!r}"
+                    f"{child_parent[joint.child]!r} and {joint.name!r}"
                 )
-            child_to_joint[joint.child] = joint
-            _validate_joint(joint)
+            child_parent[joint.child] = joint.name
+            children[joint.parent].append(joint.child)
 
-        self._validate_connectivity(part_names)
-
-    def _validate_connectivity(self, part_names: set[str]) -> None:
         if len(part_names) <= 1:
             return
-        parent_to_children: dict[str, list[str]] = {name: [] for name in part_names}
-        child_names: set[str] = set()
-        for joint in self.joints:
-            parent_to_children[joint.parent].append(joint.child)
-            child_names.add(joint.child)
 
-        roots = sorted(part_names - child_names)
+        roots = sorted(part_names - set(child_parent))
         if not roots:
             raise ValidationError("object has no root part")
         if len(roots) > 1:
             raise ValidationError(f"object must have exactly one root part, found {roots}")
 
         visited: set[str] = set()
-        stack = list(roots)
+        stack = roots[:]
         while stack:
-            current = stack.pop()
-            if current in visited:
+            part = stack.pop()
+            if part in visited:
                 continue
-            visited.add(current)
-            stack.extend(parent_to_children.get(current, []))
+            visited.add(part)
+            stack.extend(children[part])
 
         if visited != part_names:
-            missing = sorted(part_names - visited)
-            raise ValidationError(f"object contains unreachable parts: {missing}")
+            raise ValidationError(
+                f"object contains unreachable parts: {sorted(part_names - visited)}"
+            )
 
     def to_dict(self) -> dict[str, object]:
         return {
             "name": self.name,
             "parts": [
-                {
-                    "name": part.name,
-                    "shape_type": type(part.shape).__name__,
-                }
-                for part in self.parts
+                {"name": part.name, "shape_type": type(part.shape).__name__} for part in self.parts
             ],
             "joints": [joint.to_dict() for joint in self.joints],
         }
-
-
-def _validate_unique(names: Iterable[str], kind: str) -> None:
-    seen: set[str] = set()
-    for name in names:
-        if name in seen:
-            raise ValidationError(f"{kind} names must be unique")
-        seen.add(name)
-
-
-def _validate_joint(joint: Joint) -> None:
-    if joint.type == JointType.FIXED:
-        if joint.limits is not None:
-            raise ValidationError(f"fixed joint {joint.name!r} cannot have limits")
-        return
-
-    if joint.type in {JointType.REVOLUTE, JointType.PRISMATIC}:
-        if axis_norm(joint.axis) == 0.0:
-            raise ValidationError(f"joint {joint.name!r} axis must be non-zero")
-        if not isinstance(joint.limits, JointLimits):
-            raise ValidationError(f"joint {joint.name!r} must include limits")
-        return
-
-    if joint.type == JointType.CONTINUOUS:
-        if axis_norm(joint.axis) == 0.0:
-            raise ValidationError(f"joint {joint.name!r} axis must be non-zero")
-        if not isinstance(joint.limits, ContinuousLimits):
-            raise ValidationError(f"continuous joint {joint.name!r} must use ContinuousLimits")
-        return
-
-    raise ValidationError(f"unsupported joint type: {joint.type}")
