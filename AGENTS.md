@@ -24,7 +24,7 @@ The Python package lives in `src/mini_articraft/`.
 
 Use these areas as the main boundaries:
 
-- `agents/` owns the generate and compile loop.
+- `agent/` owns the generate and compile loop.
 - `models/` owns model adapters.
 - `environments/` owns local run creation and compile execution.
 - `sdk/` owns the small CadQuery object API, joints, and export helpers.
