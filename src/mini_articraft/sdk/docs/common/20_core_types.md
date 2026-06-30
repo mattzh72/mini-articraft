@@ -3,7 +3,10 @@
 ## Scope
 
 This page documents the public names exported by `mini_articraft.sdk` and the
-data values returned by the public methods.
+data values returned by public methods.
+
+Generated scripts author SDK objects only. Compile owns export and record
+creation.
 
 ## Public exports
 
@@ -15,7 +18,7 @@ from mini_articraft.sdk import (
     ArticulatedObject,
     CollisionFinding,
     DistanceFinding,
-    Origin,
+    Frame,
     SDKError,
     TestContext,
     TestFailure,
@@ -24,20 +27,27 @@ from mini_articraft.sdk import (
 )
 ```
 
+Do not import `Origin`. Use `Frame`.
+
 Do not import from modules below `mini_articraft.sdk`. Those modules are
 implementation details.
 
 ## `ArticulatedObject`
 
 ```python
-ArticulatedObject(name: str)
+ArticulatedObject(name: str, *, units: str)
 ```
 
 Creates an empty object model.
 
+`units` is required. Supported values are `"meters"`, `"centimeters"`,
+`"millimeters"`, `"inches"`, and `"feet"`.
+
 The model owns:
 
 - `name`, which is a non-empty string.
+- `units`, which declares what CadQuery coordinates mean.
+- `meters_per_unit`, which is the scale of one model unit in meters.
 - `parts`, which is a list of registered part handles.
 - `joints`, which is a list of registered joint handles.
 
@@ -54,6 +64,11 @@ A part handle has these public fields:
 
 - `name`, which is the part name.
 - `shape`, which is the CadQuery `Workplane`, `Shape`, or `Assembly` used for the part.
+- `color`, which is either `None` or an RGBA tuple with values from `0.0` to `1.0`.
+
+The `color=` argument accepts RGB or RGBA. RGB is stored with alpha `1.0`.
+
+Use color to make important parts readable in exported artifacts and previews.
 
 You may pass a part handle anywhere a method accepts `str | part_handle`.
 
@@ -69,7 +84,7 @@ A joint handle has these public fields:
 - `type`
 - `parent`
 - `child`
-- `origin`
+- `frame`
 - `axis`
 - `limits`
 
@@ -78,16 +93,16 @@ String joint names are preferred in simple code.
 
 Do not construct joint handles directly.
 
-## `Origin`
+## `Frame`
 
 ```python
-Origin(
+Frame(
     xyz: tuple[float, float, float] = (0.0, 0.0, 0.0),
     rpy: tuple[float, float, float] = (0.0, 0.0, 0.0),
 )
 ```
 
-`Origin` defines the joint frame in the parent part frame.
+`Frame` defines the joint frame in the parent part frame.
 
 `xyz` is translation.
 
@@ -95,8 +110,8 @@ Origin(
 
 Both fields must contain exactly three numeric values.
 
-Use `Origin()` when the joint frame is at the parent part origin with no
-rotation.
+Use `Frame()` when the joint frame is at the parent part frame with no
+translation and no rotation.
 
 ## Test dataclasses
 
@@ -189,9 +204,9 @@ Generated scripts do not need to catch these errors. Compile reports them.
 
 ## Units
 
-Use meters for linear dimensions in generated scripts.
+Every object must declare units.
 
 Use radians for rotations.
 
-Use the same unit for CadQuery geometry, `Origin.xyz`, prismatic motion, mesh
-distance checks, and contact tolerances.
+Use the same linear unit for CadQuery geometry, `Frame.xyz`, prismatic motion,
+mesh distance checks, and contact tolerances.

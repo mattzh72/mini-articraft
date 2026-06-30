@@ -8,9 +8,13 @@ The first goal is to keep the code easy to read. The core loop is:
 prompt -> model -> environment -> record
 ```
 
-The first version will include a tiny CadQuery-based SDK, basic joints, a local compile environment, Markdown prompts, and simple CLI commands.
+The core version includes a tiny CadQuery-based SDK, basic joints, a local compile environment, Markdown prompts, simple CLI commands, and USDZ output.
 
 It will not include the full Articraft SDK, viewer, provenance system, or data library.
+
+Generated scripts author `ArticulatedObject` instances. Compile translates the
+SDK object into `result/model.usdz` and keeps `result/model.json` as a small
+manifest.
 
 ## Development
 

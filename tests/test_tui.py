@@ -91,7 +91,7 @@ def test_final_summary_success() -> None:
     renderer, console = _renderer()
     summary = renderer.final_summary(
         events.RunFinished(
-            status="success", run="runs/run-x", result="result/model.json", turns=3, duration=18.4
+            status="success", run="runs/run-x", result="result/model.usdz", turns=3, duration=18.4
         )
     )
     console.print(summary)

@@ -5,15 +5,19 @@
 `ArticulatedObject` is the object model that `main.py` must export as
 `object_model`.
 
-Use it to register CadQuery parts and connect those parts with joints.
+Use it to register CadQuery parts and connect those parts with joints. Compile
+reads this object, runs tests, and exports the result.
 
 ## Constructor
 
 ```python
-model = ArticulatedObject(name: str)
+model = ArticulatedObject(name: str, *, units: str)
 ```
 
 `name` must be a non-empty string.
+
+`units` is required. Supported values are `"meters"`, `"centimeters"`,
+`"millimeters"`, `"inches"`, and `"feet"`.
 
 Create one `ArticulatedObject` per generated script.
 
@@ -23,6 +27,8 @@ Create one `ArticulatedObject` per generated script.
 part = model.part(
     name: str,
     shape: cq.Workplane | cq.Shape | cq.Assembly,
+    *,
+    color: tuple[float, float, float] | tuple[float, float, float, float] | None = None,
 )
 ```
 
@@ -33,13 +39,24 @@ Rules:
 - `name` must be a non-empty string.
 - `name` must be unique within the model.
 - `shape` must be a CadQuery `Workplane`, `Shape`, or `Assembly`.
+- `color` must have three or four values from `0.0` to `1.0` when provided.
 - A part is the unit used by joints, export, and collision tests.
+
+Part color is optional visual styling for exported artifacts and previews.
 
 Example:
 
 ```python
-base = model.part("base", cq.Workplane("XY").box(0.3, 0.2, 0.04))
-lid = model.part("lid", cq.Workplane("XY").box(0.28, 0.18, 0.018))
+base = model.part(
+    "base",
+    cq.Workplane("XY").box(0.3, 0.2, 0.04),
+    color=(0.55, 0.57, 0.60),
+)
+lid = model.part(
+    "lid",
+    cq.Workplane("XY").box(0.28, 0.18, 0.018),
+    color=(0.20, 0.36, 0.70),
+)
 ```
 
 ## Part references
@@ -64,7 +81,7 @@ joint = model.fixed(
     parent: str | part_handle,
     child: str | part_handle,
     *,
-    origin: Origin | None = None,
+    frame: Frame | None = None,
 )
 ```
 
@@ -82,7 +99,7 @@ joint = model.revolute(
     *,
     axis: tuple[float, float, float] = (0.0, 0.0, 1.0),
     limits: tuple[float, float],
-    origin: Origin | None = None,
+    frame: Frame | None = None,
 )
 ```
 
@@ -99,7 +116,7 @@ joint = model.continuous(
     child: str | part_handle,
     *,
     axis: tuple[float, float, float] = (0.0, 0.0, 1.0),
-    origin: Origin | None = None,
+    frame: Frame | None = None,
 )
 ```
 
@@ -117,7 +134,7 @@ joint = model.prismatic(
     *,
     axis: tuple[float, float, float] = (1.0, 0.0, 0.0),
     limits: tuple[float, float],
-    origin: Origin | None = None,
+    frame: Frame | None = None,
 )
 ```
 
@@ -145,6 +162,7 @@ Validates the part and joint graph.
 
 Validation requires:
 
+- Units must be declared on the object.
 - At least one part.
 - Unique part names.
 - Unique joint names.

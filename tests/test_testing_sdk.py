@@ -8,7 +8,7 @@ from mini_articraft.errors import ValidationError
 from mini_articraft.sdk import (
     AllowedOverlap,
     ArticulatedObject,
-    Origin,
+    Frame,
     TestContext,
 )
 
@@ -18,7 +18,7 @@ def box(size: float = 1.0) -> cq.Workplane:
 
 
 def test_report_records_checks_warnings_and_allowances() -> None:
-    model = ArticulatedObject("report")
+    model = ArticulatedObject("report", units="meters")
     model.part("base", box())
     ctx = TestContext(model)
 
@@ -43,14 +43,14 @@ def test_report_records_checks_warnings_and_allowances() -> None:
 
 
 def test_expect_collision_and_no_collision_use_mesh_queries() -> None:
-    model = ArticulatedObject("collisions")
+    model = ArticulatedObject("collisions", units="meters")
     root = model.part("root", box(0.1))
     left = model.part("left", box())
     far = model.part("far", box())
     overlapping = model.part("overlapping", box())
     model.fixed("root_to_left", root, left)
-    model.fixed("root_to_far", root, far, origin=Origin(xyz=(3.0, 0.0, 0.0)))
-    model.fixed("root_to_overlapping", root, overlapping, origin=Origin(xyz=(0.25, 0.0, 0.0)))
+    model.fixed("root_to_far", root, far, frame=Frame(xyz=(3.0, 0.0, 0.0)))
+    model.fixed("root_to_overlapping", root, overlapping, frame=Frame(xyz=(0.25, 0.0, 0.0)))
     ctx = TestContext(model)
 
     assert ctx.expect_no_collision("left", "far")
@@ -65,10 +65,10 @@ def test_expect_collision_and_no_collision_use_mesh_queries() -> None:
 
 
 def test_expect_distance_and_contact_use_fcl_distance() -> None:
-    model = ArticulatedObject("distance")
+    model = ArticulatedObject("distance", units="meters")
     left = model.part("left", box())
     right = model.part("right", box())
-    model.fixed("left_to_right", left, right, origin=Origin(xyz=(2.0, 0.0, 0.0)))
+    model.fixed("left_to_right", left, right, frame=Frame(xyz=(2.0, 0.0, 0.0)))
     ctx = TestContext(model)
 
     assert ctx.expect_distance("left", "right", min_distance=0.99, max_distance=1.01)
@@ -81,10 +81,10 @@ def test_expect_distance_and_contact_use_fcl_distance() -> None:
 
 
 def test_mesh_cache_uses_shape_identity() -> None:
-    model = ArticulatedObject("cache")
+    model = ArticulatedObject("cache", units="meters")
     left = model.part("left", box())
     right = model.part("right", box())
-    model.fixed("left_to_right", left, right, origin=Origin(xyz=(3.0, 0.0, 0.0)))
+    model.fixed("left_to_right", left, right, frame=Frame(xyz=(3.0, 0.0, 0.0)))
     ctx = TestContext(model)
 
     assert ctx.expect_no_collision("left", "right")
@@ -96,12 +96,12 @@ def test_mesh_cache_uses_shape_identity() -> None:
 
 
 def test_expect_gap_and_within_use_mesh_vertex_projections() -> None:
-    model = ArticulatedObject("projections")
+    model = ArticulatedObject("projections", units="meters")
     outer = model.part("outer", box(3.0))
     inner = model.part("inner", box(1.0))
     right = model.part("right", box(1.0))
     model.fixed("outer_to_inner", outer, inner)
-    model.fixed("outer_to_right", outer, right, origin=Origin(xyz=(2.0, 0.0, 0.0)))
+    model.fixed("outer_to_right", outer, right, frame=Frame(xyz=(2.0, 0.0, 0.0)))
     ctx = TestContext(model)
 
     assert ctx.expect_within("inner", "outer", axes="xyz")
@@ -111,7 +111,7 @@ def test_expect_gap_and_within_use_mesh_vertex_projections() -> None:
 
 
 def test_pose_rejects_unknown_joint_name() -> None:
-    model = ArticulatedObject("pose")
+    model = ArticulatedObject("pose", units="meters")
     model.part("base", box())
     ctx = TestContext(model)
 
@@ -121,7 +121,7 @@ def test_pose_rejects_unknown_joint_name() -> None:
 
 
 def test_pose_context_changes_mesh_collision_state_and_restores() -> None:
-    model = ArticulatedObject("pose")
+    model = ArticulatedObject("pose", units="meters")
     base = model.part("base", box())
     slider = model.part("slider", box())
     model.prismatic(
@@ -130,7 +130,7 @@ def test_pose_context_changes_mesh_collision_state_and_restores() -> None:
         slider,
         axis=(1.0, 0.0, 0.0),
         limits=(-1.5, 0.0),
-        origin=Origin(xyz=(2.0, 0.0, 0.0)),
+        frame=Frame(xyz=(2.0, 0.0, 0.0)),
     )
     ctx = TestContext(model)
 
@@ -168,12 +168,12 @@ def test_baseline_collision_check_uses_fcl_broadphase_manager(monkeypatch) -> No
 
     monkeypatch.setattr(collision_kernel.fcl, "DynamicAABBTreeCollisionManager", SpyManager)
 
-    model = ArticulatedObject("manager")
+    model = ArticulatedObject("manager", units="meters")
     root = model.part("root", cq.Workplane("XY").box(3.0, 3.0, 0.1))
     part_a = model.part("part_a", box())
     part_b = model.part("part_b", box())
-    model.fixed("root_to_a", root, part_a, origin=Origin(xyz=(0.0, 0.0, 0.55)))
-    model.fixed("root_to_b", root, part_b, origin=Origin(xyz=(0.0, 0.0, 0.55)))
+    model.fixed("root_to_a", root, part_a, frame=Frame(xyz=(0.0, 0.0, 0.55)))
+    model.fixed("root_to_b", root, part_b, frame=Frame(xyz=(0.0, 0.0, 0.55)))
     ctx = TestContext(model)
 
     assert not ctx.fail_if_parts_collide_in_current_pose()
@@ -184,12 +184,12 @@ def test_baseline_collision_check_uses_fcl_broadphase_manager(monkeypatch) -> No
 
 
 def test_allow_overlap_suppresses_only_baseline_collision() -> None:
-    model = ArticulatedObject("allowance")
+    model = ArticulatedObject("allowance", units="meters")
     root = model.part("root", cq.Workplane("XY").box(3.0, 3.0, 0.1))
     shaft = model.part("shaft", box())
     hub = model.part("hub", box())
-    model.fixed("root_to_shaft", root, shaft, origin=Origin(xyz=(0.0, 0.0, 0.55)))
-    model.fixed("root_to_hub", root, hub, origin=Origin(xyz=(0.0, 0.0, 0.55)))
+    model.fixed("root_to_shaft", root, shaft, frame=Frame(xyz=(0.0, 0.0, 0.55)))
+    model.fixed("root_to_hub", root, hub, frame=Frame(xyz=(0.0, 0.0, 0.55)))
     ctx = TestContext(model)
 
     ctx.allow_overlap("shaft", "hub", reason="captured shaft")

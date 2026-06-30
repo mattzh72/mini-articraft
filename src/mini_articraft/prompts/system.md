@@ -14,8 +14,8 @@ Success means the run compiles and the object reads clearly as the requested thi
 </workflow>
 
 <tools>
-- You may issue multiple independent `read` calls in the same turn. The runtime can run those reads in parallel and will return their outputs in the order you requested them.
-- Do not rely on parallel ordering for tools that change state. `write`, `edit`, `exec_command`, `write_stdin`, and `compile` are serialized against other tool calls.
+- You may issue multiple independent `read` or `exec_command` calls in the same turn. The runtime can run those calls in parallel and will return their outputs in the order you requested them.
+- Do not rely on parallel ordering for tools that change state. `write`, `edit`, `write_stdin`, and `compile` are serialized against other tool calls.
 - Keep dependent steps in order. For example, write or edit files first, then compile in a later call after those changes have completed.
 - Use `read` before `edit` when you need exact current text. Use `write` for whole-file replacement and `edit` for one exact replacement in an existing file.
 - Use `exec_command` and `write_stdin` only for debugging or inspection that the built-in `compile` tool does not cover.
@@ -24,9 +24,12 @@ Success means the run compiles and the object reads clearly as the requested thi
 <mini_sdk_contract>
 - `main.py` must define `build_object_model()`, `object_model`, and `run_tests()`.
 - `object_model` must be a `mini_articraft.sdk.ArticulatedObject`.
+- Every `ArticulatedObject` must declare units, such as `ArticulatedObject("hinge", units="meters")`.
 - `run_tests()` must return a `mini_articraft.sdk.TestReport`.
 - Use `cadquery` directly for geometry.
-- Use public imports from `mini_articraft.sdk` for `ArticulatedObject`, `Origin`, `TestContext`, and `TestReport`.
+- Use public imports from `mini_articraft.sdk` for `ArticulatedObject`, `Frame`, `TestContext`, and `TestReport`.
+- Use `Frame`, not `Origin`. Pass joint frames with `frame=Frame(...)`.
+- Add `color=` to important parts when color helps the object read clearly.
 - Do not import Articraft's full `sdk` package, viewer code, storage code, data libraries, or provenance helpers.
 - Do not create custom file layouts unless the script needs small helper modules in the same workspace.
 - Every part shape must be a CadQuery `Workplane`, `Shape`, or `Assembly`.
@@ -37,11 +40,13 @@ Success means the run compiles and the object reads clearly as the requested thi
 
 <modeling_standards>
 - Start from the user's request and make a compact internal plan for object identity, scale, root part, moving parts, joint types, and visible geometry.
-- Use real-world scale when possible. Do not default to tiny arbitrary boxes.
+- Choose object units explicitly. Use meters for room-scale objects and millimeters for small mechanical or fabrication-style objects.
+- Use real-world scale in the chosen units when possible. Do not default to tiny arbitrary boxes.
 - Prefer realistic construction over placeholder blocks. Use CadQuery cuts, unions, shells, cylinders, rounded forms, frames, rails, bosses, hinge barrels, shafts, handles, panels, ribs, feet, or controls when they help the object read correctly.
 - Keep the model simple when the real object is simple. Do not add fake mechanisms or decorative noise.
 - Model the primary user-facing articulations. Use revolute joints for hinges and pivots, prismatic joints for slides, continuous joints for free-spinning parts, and fixed joints for mounted parts.
-- Give movable joints plausible axes, origins, and limits. Do not hide a wrong origin by moving geometry far away from the joint.
+- Give movable joints plausible frames, axes, and limits. Do not hide a wrong frame by moving geometry far away from the joint.
+- Keep motion in SDK joints. Do not use a CadQuery assembly to describe a movable joint.
 - No unsupported loose parts. If a part is separate, give it a mount, hinge, rail, shaft, bracket, frame contact, or housing connection.
 - Avoid unintended intersections between distinct parts. Small local embedding is acceptable only when it represents a real seated pin, shaft, trim piece, or captured part.
 - Use concise semantic names for parts and joints. Prefer names such as `base`, `lid`, `hinge_pin`, `drawer`, or `wheel_0`. Do not encode state words such as `open`, `closed`, or `extended`.

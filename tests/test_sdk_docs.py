@@ -1,25 +1,42 @@
 from __future__ import annotations
 
-from mini_articraft.agent.sdk_docs import SDK_DOCS_ROOT, render_sdk_context
-
-
-def test_render_sdk_context_preloads_quickstart_and_testing() -> None:
-    text = render_sdk_context()
-
-    assert text.startswith("## docs/sdk/common/00_quickstart.md")
-    assert "# SDK quickstart" in text
-    assert "## docs/sdk/common/40_testing.md" in text
-    assert "# Testing" in text
-    assert not text.removeprefix("## docs/sdk/common/00_quickstart.md\n\n").startswith("---")
-    assert "description:" not in text
+from mini_articraft import package_dir
 
 
 def test_quickstart_router_lists_every_sdk_doc() -> None:
-    quickstart = (SDK_DOCS_ROOT / "common" / "00_quickstart.md").read_text(encoding="utf-8")
+    sdk_docs_root = package_dir / "sdk" / "docs"
+    quickstart = (sdk_docs_root / "common" / "00_quickstart.md").read_text(encoding="utf-8")
     doc_paths = sorted(
-        f"docs/sdk/{path.relative_to(SDK_DOCS_ROOT).as_posix()}"
-        for path in SDK_DOCS_ROOT.rglob("*.md")
+        f"docs/sdk/{path.relative_to(sdk_docs_root).as_posix()}"
+        for path in sdk_docs_root.rglob("*.md")
     )
 
     for doc_path in doc_paths:
         assert f"`{doc_path}`" in quickstart
+
+
+def test_prompt_and_docs_state_sdk_authoring_contract() -> None:
+    prompts_root = package_dir / "prompts"
+    docs_root = package_dir / "sdk" / "docs" / "common"
+    text = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in [
+            prompts_root / "system.md",
+            prompts_root / "task.md",
+            docs_root / "00_quickstart.md",
+            docs_root / "20_core_types.md",
+            docs_root / "30_articulated_object.md",
+            docs_root / "35_joints.md",
+        ]
+    )
+
+    for required in [
+        'units="meters"',
+        "Use `Frame`, not `Origin`",
+        "color=",
+        "Generated scripts must author a Python SDK object",
+    ]:
+        assert required in text
+
+    for hidden_export_detail in ["USD", "USDZ", "model.usdz", "OpenUSD", "pxr"]:
+        assert hidden_export_detail not in text

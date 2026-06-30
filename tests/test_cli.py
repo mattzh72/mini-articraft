@@ -36,7 +36,7 @@ class FakeAgent:
     result: dict[str, object] = {
         "status": "success",
         "run": "/tmp/run",
-        "result": "result/model.json",
+        "result": "result/model.usdz",
         "message": "done",
     }
 
@@ -59,7 +59,7 @@ def reset_fakes() -> None:
     FakeAgent.result = {
         "status": "success",
         "run": "/tmp/run",
-        "result": "result/model.json",
+        "result": "result/model.usdz",
         "message": "done",
     }
 
@@ -138,7 +138,7 @@ def test_cli_replays_recorded_run(tmp_path: Path) -> None:
         },
     )
     append_conversation(conversation, {"role": "compiler", "status": "success", "error": ""})
-    Record(run_id="run-demo", status="success", result="result/model.json").save(
+    Record(run_id="run-demo", status="success", result="result/model.usdz").save(
         run_dir / "record.json"
     )
 

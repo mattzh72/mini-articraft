@@ -14,7 +14,6 @@ from pydantic import BaseModel
 import mini_articraft.agent.tools as tools
 from mini_articraft import Environment, Model, package_dir
 from mini_articraft.agent import events
-from mini_articraft.agent.sdk_docs import render_sdk_context
 from mini_articraft.agent.tools import ToolContext
 from mini_articraft.record import Record, append_conversation
 
@@ -54,10 +53,7 @@ class Agent:
         self.messages = [
             {
                 "role": "system",
-                "content": _read_prompt("system.md")
-                + "\n\n<sdk_docs>\n"
-                + render_sdk_context()
-                + "\n</sdk_docs>",
+                "content": _read_prompt("system.md"),
             },
             {"role": "user", "content": _read_prompt("task.md").replace("{{ prompt }}", prompt)},
         ]

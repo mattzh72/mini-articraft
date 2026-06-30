@@ -16,7 +16,7 @@ Use this page when:
 ```python
 import cadquery as cq
 
-from mini_articraft.sdk import ArticulatedObject, Origin
+from mini_articraft.sdk import ArticulatedObject, Frame
 ```
 
 ## Recommended Surface
@@ -24,7 +24,7 @@ from mini_articraft.sdk import ArticulatedObject, Origin
 - `cq.Workplane(...)`
 - `cq.Shape`
 - `cq.Assembly`
-- `model.part(name, shape)`
+- `model.part(name, shape, color=...)`
 - `model.fixed(...)`
 - `model.revolute(...)`
 - `model.continuous(...)`
@@ -36,12 +36,16 @@ Articraft SDK.
 
 ## Units
 
-CadQuery is unitless. In mini-articraft, use meters when possible.
+CadQuery is unitless. In mini-articraft, the `ArticulatedObject` declares what
+the CadQuery numbers mean.
+
+Use meters for room-scale objects. Use millimeters for small mechanical or
+fabrication-style objects.
 
 - Revolute joint limits are radians.
 - Prismatic joint limits use the same unit as the CadQuery geometry.
-- `Origin.xyz` uses the same unit as the CadQuery geometry.
-- `Origin.rpy` uses radians.
+- `Frame.xyz` uses the same unit as the CadQuery geometry.
+- `Frame.rpy` uses radians.
 
 ## Recommended Pattern
 
@@ -55,7 +59,7 @@ door_shape = (
     .fillet(0.01)
 )
 
-door = model.part("door", door_shape)
+door = model.part("door", door_shape, color=(0.2, 0.35, 0.8))
 ```
 
 Keep motion in the SDK joint graph, not in CadQuery assemblies. Use CadQuery for
@@ -109,11 +113,11 @@ dial = model.part("dial", assembly)
 ```python
 import cadquery as cq
 
-from mini_articraft.sdk import ArticulatedObject, Origin
+from mini_articraft.sdk import ArticulatedObject, Frame
 
 
 def build_object_model() -> ArticulatedObject:
-    model = ArticulatedObject("cabinet_door")
+    model = ArticulatedObject("cabinet_door", units="meters")
 
     body = model.part(
         "body",
@@ -123,6 +127,7 @@ def build_object_model() -> ArticulatedObject:
         .workplane()
         .rect(0.50, 0.66)
         .cutBlind(-0.04),
+        color=(0.55, 0.57, 0.60),
     )
 
     door = model.part(
@@ -131,13 +136,14 @@ def build_object_model() -> ArticulatedObject:
         .box(0.58, 0.02, 0.78)
         .edges("|Z")
         .fillet(0.01),
+        color=(0.20, 0.36, 0.70),
     )
 
     model.revolute(
         "body_to_door",
         body,
         door,
-        origin=Origin(xyz=(-0.29, 0.15, 0.0)),
+        frame=Frame(xyz=(-0.29, 0.15, 0.0)),
         axis=(0.0, 0.0, 1.0),
         limits=(0.0, 1.7),
     )

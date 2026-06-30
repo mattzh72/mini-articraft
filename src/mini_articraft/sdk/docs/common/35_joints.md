@@ -14,7 +14,7 @@ Every joint has:
 
 - A parent part.
 - A child part.
-- An `Origin` that places the joint frame in the parent part frame.
+- A `Frame` that places the joint frame in the parent part frame.
 - An `axis` expressed in the joint frame.
 - A motion value read from `ctx.pose(...)` during tests.
 
@@ -22,19 +22,19 @@ The child part frame is placed by this transform order:
 
 ```text
 parent world transform
-then joint origin
+then joint frame
 then joint motion
 ```
 
 At pose value `0.0`, the joint motion is the identity transform.
 
-Author the child geometry so the child local origin is correct at pose value
+Author the child geometry so the child local frame is correct at pose value
 `0.0`.
 
-## `Origin`
+## `Frame`
 
 ```python
-Origin(
+Frame(
     xyz=(0.0, 0.0, 0.0),
     rpy=(0.0, 0.0, 0.0),
 )
@@ -52,7 +52,7 @@ model.fixed(
     "parent_to_child",
     parent,
     child,
-    origin=Origin(xyz=(0.0, 0.0, 0.04)),
+    frame=Frame(xyz=(0.0, 0.0, 0.04)),
 )
 ```
 
@@ -60,7 +60,7 @@ Rules:
 
 - No `axis` argument is accepted.
 - No `limits` argument is accepted.
-- The child stays fixed at `origin` relative to the parent.
+- The child stays fixed at `frame` relative to the parent.
 
 ## Revolute joint
 
@@ -69,7 +69,7 @@ model.revolute(
     "body_to_lid",
     body,
     lid,
-    origin=Origin(xyz=(-0.11, 0.0, 0.05)),
+    frame=Frame(xyz=(-0.11, 0.0, 0.05)),
     axis=(0.0, -1.0, 0.0),
     limits=(0.0, 1.2),
 )
@@ -92,7 +92,7 @@ model.continuous(
     "knob_axis",
     body,
     knob,
-    origin=Origin(xyz=(0.0, 0.0, 0.03)),
+    frame=Frame(xyz=(0.0, 0.0, 0.03)),
     axis=(0.0, 0.0, 1.0),
 )
 ```
@@ -113,7 +113,7 @@ model.prismatic(
     "case_to_drawer",
     case,
     drawer,
-    origin=Origin(xyz=(0.0, 0.0, 0.0)),
+    frame=Frame(xyz=(0.0, 0.0, 0.0)),
     axis=(1.0, 0.0, 0.0),
     limits=(0.0, 0.18),
 )

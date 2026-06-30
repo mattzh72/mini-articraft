@@ -10,7 +10,7 @@ import numpy as np
 import trimesh
 
 from mini_articraft.errors import ValidationError
-from mini_articraft.sdk.joints import Joint, JointType, Origin
+from mini_articraft.sdk.joints import Frame, Joint, JointType
 from mini_articraft.sdk.object import ArticulatedObject, CadQueryShape
 
 Vec3: TypeAlias = tuple[float, float, float]
@@ -103,9 +103,13 @@ class MeshCollisionKernel:
             part_name, transform = stack.pop()
             transforms[part_name] = transform
             for joint in child_joints.get(part_name, []):
-                child_transform = transform @ _origin_matrix(joint.origin) @ _motion_matrix(
-                    joint,
-                    float(pose.get(joint.name, 0.0)),
+                child_transform = (
+                    transform
+                    @ _frame_matrix(joint.frame)
+                    @ _motion_matrix(
+                        joint,
+                        float(pose.get(joint.name, 0.0)),
+                    )
                 )
                 stack.append((joint.child, child_transform))
         return transforms
@@ -344,9 +348,9 @@ def _identity() -> Mat4:
     return np.identity(4, dtype=np.float64)
 
 
-def _origin_matrix(origin: Origin) -> Mat4:
-    matrix = _rpy_matrix(origin.rpy)
-    matrix[:3, 3] = np.asarray(origin.xyz, dtype=np.float64)
+def _frame_matrix(frame: Frame) -> Mat4:
+    matrix = _rpy_matrix(frame.rpy)
+    matrix[:3, 3] = np.asarray(frame.xyz, dtype=np.float64)
     return matrix
 
 

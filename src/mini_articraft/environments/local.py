@@ -107,7 +107,7 @@ class LocalEnvironment:
         record.attempts += 1
         record.error = str(result.get("error") or "")
         if result["status"] == "success":
-            record.result = "result/model.json"
+            record.result = "result/model.usdz"
         record.save(run_dir / "record.json")
 
         append_conversation(
@@ -167,7 +167,7 @@ def _error_result(
     payload = {
         "status": "error",
         "manifest": "",
-        "parts": {},
+        "usdz": "",
         "test_report": None,
         "stdout": stdout,
         "stderr": stderr,

@@ -26,11 +26,7 @@ def compile_run(run_dir: Path) -> dict[str, Any]:
     if payload["status"] == "success":
         _replace_tree(pending_result_dir, result_dir)
         payload["manifest"] = str(result_dir / "model.json")
-        payload["parts"] = _retarget_part_paths(
-            payload.get("parts", {}),
-            old_root=pending_result_dir,
-            new_root=result_dir,
-        )
+        payload["usdz"] = str(result_dir / "model.usdz")
     else:
         _remove_tree(pending_result_dir)
     return payload
@@ -45,7 +41,7 @@ def _compile_workspace(workspace: Path, export_dir: Path) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "status": "error",
         "manifest": "",
-        "parts": {},
+        "usdz": "",
         "test_report": None,
         "error": "",
         "traceback": "",
@@ -73,7 +69,7 @@ def _compile_workspace(workspace: Path, export_dir: Path) -> dict[str, Any]:
             {
                 "status": "success",
                 "manifest": str(result.manifest),
-                "parts": {name: str(path) for name, path in result.parts.items()},
+                "usdz": str(result.usdz),
                 "test_report": _serialize_test_report(test_report),
             }
         )
@@ -232,26 +228,13 @@ def _replace_tree(source: Path, destination: Path) -> None:
     source.rename(destination)
 
 
-def _retarget_part_paths(parts: object, *, old_root: Path, new_root: Path) -> dict[str, str]:
-    if not isinstance(parts, dict):
-        return {}
-    retargeted: dict[str, str] = {}
-    for name, raw_path in parts.items():
-        try:
-            relative = Path(str(raw_path)).resolve().relative_to(old_root.resolve())
-        except ValueError:
-            continue
-        retargeted[str(name)] = str(new_root / relative)
-    return retargeted
-
-
 def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     if len(args) != 1:
         payload = {
             "status": "error",
             "manifest": "",
-            "parts": {},
+            "usdz": "",
             "test_report": None,
             "stdout": "",
             "stderr": "",

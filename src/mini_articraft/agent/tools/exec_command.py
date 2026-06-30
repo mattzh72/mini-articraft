@@ -50,4 +50,5 @@ TOOL = Tool(
     ),
     run,
     mutates=True,
+    supports_parallel=True,
 )

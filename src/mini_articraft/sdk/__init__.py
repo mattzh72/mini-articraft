@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from mini_articraft.errors import SDKError, ValidationError
-from mini_articraft.sdk.joints import Origin
+from mini_articraft.sdk.joints import Frame
 from mini_articraft.sdk.object import ArticulatedObject
 from mini_articraft.sdk.testing import (
     AllowedOverlap,
@@ -17,7 +17,7 @@ __all__ = [
     "ArticulatedObject",
     "CollisionFinding",
     "DistanceFinding",
-    "Origin",
+    "Frame",
     "SDKError",
     "TestContext",
     "TestFailure",

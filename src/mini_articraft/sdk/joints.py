@@ -37,13 +37,13 @@ def coerce_part_name(value: str | object, *, field: str) -> str:
 
 
 @dataclass
-class Origin:
+class Frame:
     xyz: Vec3 = (0.0, 0.0, 0.0)
     rpy: Vec3 = (0.0, 0.0, 0.0)
 
     def __post_init__(self) -> None:
-        self.xyz = as_vec3(self.xyz, field="origin.xyz")
-        self.rpy = as_vec3(self.rpy, field="origin.rpy")
+        self.xyz = as_vec3(self.xyz, field="frame.xyz")
+        self.rpy = as_vec3(self.rpy, field="frame.rpy")
 
 
 @dataclass
@@ -85,7 +85,7 @@ class Joint:
     type: JointType
     parent: str
     child: str
-    origin: Origin = field(default_factory=Origin)
+    frame: Frame = field(default_factory=Frame)
     axis: Vec3 = (0.0, 0.0, 1.0)
     limits: JointLimits | ContinuousLimits | None = None
 
@@ -93,8 +93,8 @@ class Joint:
         self.name = str(self.name).strip()
         if not self.name:
             raise ValidationError("joint name must be non-empty")
-        if not isinstance(self.origin, Origin):
-            raise ValidationError("joint origin must be an Origin")
+        if not isinstance(self.frame, Frame):
+            raise ValidationError("joint frame must be a Frame")
         if not isinstance(self.type, JointType):
             raise ValidationError("joint type must be a JointType")
 

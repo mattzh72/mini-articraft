@@ -3,7 +3,9 @@
 ## Scope
 
 This page defines the exact script contract for `main.py`. Use the other docs
-only when you need the details for a specific API.
+only when you need details for a specific API.
+
+Generated scripts must author a Python SDK object. Compile owns export.
 
 ## Required file
 
@@ -38,7 +40,7 @@ import cadquery as cq
 
 from mini_articraft.sdk import (
     ArticulatedObject,
-    Origin,
+    Frame,
     TestContext,
     TestReport,
     ValidationError,
@@ -51,12 +53,14 @@ Only these names are public from `mini_articraft.sdk`:
 - `ArticulatedObject`
 - `CollisionFinding`
 - `DistanceFinding`
-- `Origin`
+- `Frame`
 - `SDKError`
 - `TestContext`
 - `TestFailure`
 - `TestReport`
 - `ValidationError`
+
+Do not import `Origin`. The SDK uses `Frame`.
 
 Do not import private modules such as `mini_articraft.sdk._collision`.
 
@@ -68,26 +72,28 @@ Do not import low level joint classes or part classes. The helper methods on
 ```python
 import cadquery as cq
 
-from mini_articraft.sdk import ArticulatedObject, Origin, TestContext, TestReport
+from mini_articraft.sdk import ArticulatedObject, Frame, TestContext, TestReport
 
 
 def build_object_model() -> ArticulatedObject:
-    model = ArticulatedObject("hinged_box")
+    model = ArticulatedObject("hinged_box", units="meters")
 
     base = model.part(
         "base",
         cq.Workplane("XY").box(0.24, 0.18, 0.04),
+        color=(0.55, 0.57, 0.60),
     )
     lid = model.part(
         "lid",
         cq.Workplane("XY").box(0.22, 0.16, 0.018),
+        color=(0.20, 0.36, 0.70),
     )
 
     model.revolute(
         "base_to_lid",
         base,
         lid,
-        origin=Origin(xyz=(-0.11, 0.0, 0.04)),
+        frame=Frame(xyz=(-0.11, 0.0, 0.04)),
         axis=(0.0, -1.0, 0.0),
         limits=(0.0, 1.2),
     )
@@ -108,12 +114,23 @@ def run_tests() -> TestReport:
 
 ## Units
 
-CadQuery geometry is unitless. In generated mini-articraft scripts, treat all
-linear dimensions as meters.
+Every `ArticulatedObject` must declare units.
 
-Use radians for `Origin.rpy` and for revolute joint limits.
+Supported units are:
 
-Use the same linear unit as the CadQuery geometry for `Origin.xyz`, prismatic
+- `"meters"`
+- `"centimeters"`
+- `"millimeters"`
+- `"inches"`
+- `"feet"`
+
+CadQuery geometry is unitless. The declared object units say what those numbers
+mean. Use meters for room-scale objects. Use millimeters for small mechanical or
+fabrication-style objects.
+
+Use radians for `Frame.rpy` and for revolute joint limits.
+
+Use the same linear unit as the CadQuery geometry for `Frame.xyz`, prismatic
 limits, mesh distances, and test tolerances.
 
 ## Compile behavior

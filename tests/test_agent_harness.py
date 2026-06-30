@@ -55,7 +55,7 @@ def compile_success_tool() -> Tool:
         record = Record.load(context.run_dir / "record.json")
         record.status = "success"
         record.attempts += 1
-        record.result = "result/model.json"
+        record.result = "result/model.usdz"
         record.save(context.run_dir / "record.json")
         append_conversation(
             context.run_dir / "conversation.jsonl",
@@ -73,7 +73,7 @@ from mini_articraft.sdk import ArticulatedObject, TestContext, TestReport
 
 
 def build_object_model() -> ArticulatedObject:
-    model = ArticulatedObject("box")
+    model = ArticulatedObject("box", units="meters")
     model.part("base", cq.Workplane("XY").box(1, 1, 1))
     return model
 
@@ -106,9 +106,7 @@ def test_agent_writes_compiles_and_returns_final_response(tmp_path) -> None:
     assert result["message"] == "done"
     assert result["compile_report"]["status"] == "success"
     assert tmp_path.joinpath("box", "workspace", "main.py").is_file()
-    assert "<sdk_docs>" in model.calls[0]["messages"][0]["content"]
-    assert "`docs/sdk/common/35_joints.md`" in model.calls[0]["messages"][0]["content"]
-    assert "## docs/sdk/common/40_testing.md" in model.calls[0]["messages"][0]["content"]
+    assert "<sdk_docs>" not in model.calls[0]["messages"][0]["content"]
     assert {tool["name"] for tool in model.calls[0]["tools"]} == {
         "read",
         "edit",

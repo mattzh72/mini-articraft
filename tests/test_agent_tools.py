@@ -249,7 +249,7 @@ from mini_articraft.sdk import ArticulatedObject, TestContext, TestReport
 
 
 def build_object_model() -> ArticulatedObject:
-    model = ArticulatedObject("box")
+    model = ArticulatedObject("box", units="meters")
     model.part("base", cq.Workplane("XY").box(1, 1, 1))
     return model
 

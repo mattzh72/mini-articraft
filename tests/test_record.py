@@ -7,7 +7,7 @@ from mini_articraft.record import Record, append_conversation, read_conversation
 
 def test_record_saves_slim_run_summary(tmp_path) -> None:
     path = tmp_path / "record.json"
-    record = Record(run_id="run_1", status="success", result="result/model.json")
+    record = Record(run_id="run_1", status="success", result="result/model.usdz")
 
     record.save(path)
 
@@ -19,7 +19,7 @@ def test_record_saves_slim_run_summary(tmp_path) -> None:
         "error": "",
         "workspace": "workspace",
         "entrypoint": "workspace/main.py",
-        "result": "result/model.json",
+        "result": "result/model.usdz",
     }
 
     loaded = Record.load(path)

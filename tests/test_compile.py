@@ -24,7 +24,7 @@ from mini_articraft.sdk import ArticulatedObject, TestContext, TestReport
 
 
 def build_object_model() -> ArticulatedObject:
-    model = ArticulatedObject("drawer")
+    model = ArticulatedObject("drawer", units="meters")
     base = model.part("base", cq.Workplane("XY").box(1.0, 1.0, 0.2))
     drawer = model.part("drawer", cq.Workplane("XY").box(0.8, 0.8, 0.2))
     model.fixed("base_to_drawer", base, drawer)
@@ -46,7 +46,8 @@ def run_tests() -> TestReport:
     assert result["status"] == "success"
     assert result["entrypoint"] == str(run_dir / "workspace" / "main.py")
     assert result["manifest"] == str(run_dir / "result" / "model.json")
-    assert set(result["parts"]) == {"base", "drawer"}
+    assert result["usdz"] == str(run_dir / "result" / "model.usdz")
+    assert run_dir.joinpath("result", "model.usdz").is_file()
     assert result["compile_report"]["status"] == "success"
     assert result["compile_report"]["counts"] == {"failures": 0, "warnings": 0, "notes": 0}
     assert "<compile_signals>" in result["compile_report"]["signals_text"]
@@ -62,7 +63,7 @@ def run_tests() -> TestReport:
         "error": "",
         "workspace": "workspace",
         "entrypoint": "workspace/main.py",
-        "result": "result/model.json",
+        "result": "result/model.usdz",
     }
 
     conversation = read_conversation(run_dir / "conversation.jsonl")
@@ -94,7 +95,7 @@ from mini_articraft.sdk import ArticulatedObject
 
 
 def build_object_model():
-    model = ArticulatedObject("helper_module_drawer")
+    model = ArticulatedObject("helper_module_drawer", units="meters")
     model.part("base", cq.Workplane("XY").box(1.0, 1.0, 0.2))
     return model
 """,
@@ -104,7 +105,7 @@ def build_object_model():
     result = env.compile_path(run_dir)
 
     assert result["status"] == "success"
-    assert set(result["parts"]) == {"base"}
+    assert result["usdz"] == str(run_dir / "result" / "model.usdz")
 
 
 def test_create_run_requires_new_simple_run_id(tmp_path) -> None:
@@ -151,7 +152,7 @@ import cadquery as cq
 
 from mini_articraft.sdk import ArticulatedObject
 
-object_model = ArticulatedObject("box")
+object_model = ArticulatedObject("box", units="meters")
 object_model.part("base", cq.Workplane("XY").box(1.0, 1.0, 1.0))
 """,
     )
@@ -172,7 +173,7 @@ import cadquery as cq
 
 from mini_articraft.sdk import ArticulatedObject
 
-object_model = ArticulatedObject("box")
+object_model = ArticulatedObject("box", units="meters")
 object_model.part("base", cq.Workplane("XY").box(1.0, 1.0, 1.0))
 
 
@@ -197,7 +198,7 @@ import cadquery as cq
 
 from mini_articraft.sdk import ArticulatedObject, TestContext, TestReport
 
-object_model = ArticulatedObject("box")
+object_model = ArticulatedObject("box", units="meters")
 object_model.part("base", cq.Workplane("XY").box(1.0, 1.0, 1.0))
 
 
@@ -223,16 +224,16 @@ def test_compile_path_fails_baseline_collision_between_non_adjacent_parts(tmp_pa
         """
 import cadquery as cq
 
-from mini_articraft.sdk import ArticulatedObject, Origin, TestContext, TestReport
+from mini_articraft.sdk import ArticulatedObject, Frame, TestContext, TestReport
 
 
 def build_object_model() -> ArticulatedObject:
-    model = ArticulatedObject("collision_failure")
+    model = ArticulatedObject("collision_failure", units="meters")
     root = model.part("root", cq.Workplane("XY").box(3.0, 3.0, 0.1))
     part_a = model.part("part_a", cq.Workplane("XY").box(1.0, 1.0, 1.0))
     part_b = model.part("part_b", cq.Workplane("XY").box(1.0, 1.0, 1.0))
-    model.fixed("root_to_a", root, part_a, origin=Origin(xyz=(0.0, 0.0, 0.55)))
-    model.fixed("root_to_b", root, part_b, origin=Origin(xyz=(0.0, 0.0, 0.55)))
+    model.fixed("root_to_a", root, part_a, frame=Frame(xyz=(0.0, 0.0, 0.55)))
+    model.fixed("root_to_b", root, part_b, frame=Frame(xyz=(0.0, 0.0, 0.55)))
     return model
 
 
@@ -260,16 +261,16 @@ def test_compile_path_honors_authored_overlap_allowance(tmp_path) -> None:
         """
 import cadquery as cq
 
-from mini_articraft.sdk import ArticulatedObject, Origin, TestContext, TestReport
+from mini_articraft.sdk import ArticulatedObject, Frame, TestContext, TestReport
 
 
 def build_object_model() -> ArticulatedObject:
-    model = ArticulatedObject("allowed_collision")
+    model = ArticulatedObject("allowed_collision", units="meters")
     root = model.part("root", cq.Workplane("XY").box(3.0, 3.0, 0.1))
     shaft = model.part("shaft", cq.Workplane("XY").box(1.0, 1.0, 1.0))
     hub = model.part("hub", cq.Workplane("XY").box(1.0, 1.0, 1.0))
-    model.fixed("root_to_shaft", root, shaft, origin=Origin(xyz=(0.0, 0.0, 0.55)))
-    model.fixed("root_to_hub", root, hub, origin=Origin(xyz=(0.0, 0.0, 0.55)))
+    model.fixed("root_to_shaft", root, shaft, frame=Frame(xyz=(0.0, 0.0, 0.55)))
+    model.fixed("root_to_hub", root, hub, frame=Frame(xyz=(0.0, 0.0, 0.55)))
     return model
 
 

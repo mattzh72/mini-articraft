@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from typing import TypeAlias
 
@@ -8,23 +9,32 @@ import cadquery as cq
 from mini_articraft.errors import ValidationError
 from mini_articraft.sdk.joints import (
     ContinuousLimits,
+    Frame,
     Joint,
     JointLimits,
     JointType,
-    Origin,
     Vec3,
     as_position_limits,
     coerce_part_name,
 )
 
 CadQueryShape: TypeAlias = cq.Workplane | cq.Shape | cq.Assembly
+Color: TypeAlias = tuple[float, float, float, float]
 _CADQUERY_TYPES = (cq.Workplane, cq.Shape, cq.Assembly)
+UNITS_TO_METERS = {
+    "meters": 1.0,
+    "centimeters": 0.01,
+    "millimeters": 0.001,
+    "inches": 0.0254,
+    "feet": 0.3048,
+}
 
 
 @dataclass
 class Part:
     name: str
     shape: CadQueryShape
+    color: Color | None = None
 
     def __post_init__(self) -> None:
         self.name = str(self.name).strip()
@@ -34,6 +44,8 @@ class Part:
             raise ValidationError(
                 f"part {self.name!r} shape must be a CadQuery Workplane, Shape, or Assembly"
             )
+        if self.color is not None:
+            self.color = _as_color(self.color, field=f"part {self.name!r} color")
 
 
 PartRef: TypeAlias = str | Part
@@ -42,6 +54,7 @@ PartRef: TypeAlias = str | Part
 @dataclass
 class ArticulatedObject:
     name: str
+    units: str | None = None
     parts: list[Part] = field(default_factory=list)
     joints: list[Joint] = field(default_factory=list)
 
@@ -49,9 +62,14 @@ class ArticulatedObject:
         self.name = str(self.name).strip()
         if not self.name:
             raise ValidationError("object name must be non-empty")
+        self.units = _normalize_units(self.units)
 
-    def part(self, name: str, shape: CadQueryShape) -> Part:
-        part = Part(name=name, shape=shape)
+    @property
+    def meters_per_unit(self) -> float:
+        return UNITS_TO_METERS[self.units]
+
+    def part(self, name: str, shape: CadQueryShape, *, color: Color | None = None) -> Part:
+        part = Part(name=name, shape=shape, color=color)
         if any(existing.name == part.name for existing in self.parts):
             raise ValidationError(f"duplicate part name: {part.name!r}")
         self.parts.append(part)
@@ -64,7 +82,7 @@ class ArticulatedObject:
         parent: PartRef,
         child: PartRef,
         *,
-        origin: Origin | None = None,
+        frame: Frame | None = None,
         axis: Vec3 = (0.0, 0.0, 1.0),
         limits: JointLimits | ContinuousLimits | None = None,
     ) -> Joint:
@@ -73,7 +91,7 @@ class ArticulatedObject:
             type=joint_type,
             parent=coerce_part_name(parent, field="parent"),
             child=coerce_part_name(child, field="child"),
-            origin=origin or Origin(),
+            frame=frame or Frame(),
             axis=axis,
             limits=limits,
         )
@@ -91,9 +109,9 @@ class ArticulatedObject:
         parent: PartRef,
         child: PartRef,
         *,
-        origin: Origin | None = None,
+        frame: Frame | None = None,
     ) -> Joint:
-        return self._add_joint(name, JointType.FIXED, parent, child, origin=origin)
+        return self._add_joint(name, JointType.FIXED, parent, child, frame=frame)
 
     def revolute(
         self,
@@ -103,14 +121,14 @@ class ArticulatedObject:
         *,
         axis: Vec3 = (0.0, 0.0, 1.0),
         limits: tuple[float, float],
-        origin: Origin | None = None,
+        frame: Frame | None = None,
     ) -> Joint:
         return self._add_joint(
             name,
             JointType.REVOLUTE,
             parent,
             child,
-            origin=origin,
+            frame=frame,
             axis=axis,
             limits=as_position_limits(limits, field=f"revolute joint {name!r} limits"),
         )
@@ -123,14 +141,14 @@ class ArticulatedObject:
         *,
         axis: Vec3 = (1.0, 0.0, 0.0),
         limits: tuple[float, float],
-        origin: Origin | None = None,
+        frame: Frame | None = None,
     ) -> Joint:
         return self._add_joint(
             name,
             JointType.PRISMATIC,
             parent,
             child,
-            origin=origin,
+            frame=frame,
             axis=axis,
             limits=as_position_limits(limits, field=f"prismatic joint {name!r} limits"),
         )
@@ -142,14 +160,14 @@ class ArticulatedObject:
         child: PartRef,
         *,
         axis: Vec3 = (0.0, 0.0, 1.0),
-        origin: Origin | None = None,
+        frame: Frame | None = None,
     ) -> Joint:
         return self._add_joint(
             name,
             JointType.CONTINUOUS,
             parent,
             child,
-            origin=origin,
+            frame=frame,
             axis=axis,
             limits=ContinuousLimits(),
         )
@@ -211,3 +229,30 @@ class ArticulatedObject:
             raise ValidationError(
                 f"object contains unreachable parts: {sorted(part_names - visited)}"
             )
+
+
+def _normalize_units(value: str | None) -> str:
+    if value is None or not str(value).strip():
+        raise ValidationError("ArticulatedObject must declare units")
+    units = str(value).strip().lower()
+    if units not in UNITS_TO_METERS:
+        supported = ", ".join(sorted(UNITS_TO_METERS))
+        raise ValidationError(f"unsupported units {value!r}; expected one of: {supported}")
+    return units
+
+
+def _as_color(value: tuple[float, ...], *, field: str) -> Color:
+    try:
+        raw = tuple(float(component) for component in value)
+    except (TypeError, ValueError) as exc:
+        raise ValidationError(f"{field} must have 3 or 4 numeric values") from exc
+
+    if len(raw) == 3:
+        raw = raw + (1.0,)
+    if len(raw) != 4:
+        raise ValidationError(f"{field} must have 3 or 4 numeric values")
+    if any(not math.isfinite(component) for component in raw):
+        raise ValidationError(f"{field} values must be finite")
+    if any(component < 0.0 or component > 1.0 for component in raw):
+        raise ValidationError(f"{field} values must be between 0.0 and 1.0")
+    return raw
