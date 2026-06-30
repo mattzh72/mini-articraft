@@ -38,9 +38,10 @@ class FakeAgent:
         "message": "done",
     }
 
-    def __init__(self, model: FakeOpenAIModel, env: FakeEnvironment):
+    def __init__(self, model: FakeOpenAIModel, env: FakeEnvironment, **kwargs: Any):
         self.model = model
         self.env = env
+        self.kwargs = kwargs
         self.prompt = ""
         self.instances.append(self)
 
@@ -66,7 +67,7 @@ def test_cli_runs_agent_with_only_core_overrides(monkeypatch, tmp_path: Path) ->
     monkeypatch.setattr(mini, "OpenAIModel", FakeOpenAIModel)
     monkeypatch.setattr(mini, "LocalEnvironment", FakeEnvironment)
     monkeypatch.setattr(mini, "Agent", FakeAgent)
-    monkeypatch.setattr(mini, "get_settings", lambda: Settings(openai_api_key="sk-test"))
+    monkeypatch.setattr(mini, "get_settings", lambda: Settings(openai_api_key="sk-test", max_turns=123))
 
     output_dir = tmp_path / "runs"
     result = CliRunner().invoke(
@@ -88,6 +89,7 @@ def test_cli_runs_agent_with_only_core_overrides(monkeypatch, tmp_path: Path) ->
     assert FakeOpenAIModel.instances[0].settings.openai_reasoning_effort == "low"
     assert FakeOpenAIModel.instances[0].closed is True
     assert FakeEnvironment.instances[0].kwargs == {"output_dir": output_dir}
+    assert FakeAgent.instances[0].kwargs == {"max_turns": 123}
     assert FakeAgent.instances[0].prompt == "make a hinge"
     assert "status: success" in result.output
     assert "run: /tmp/run" in result.output

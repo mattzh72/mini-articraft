@@ -39,7 +39,7 @@ async def _generate(
     model_client = OpenAIModel(settings)
     try:
         env = LocalEnvironment(output_dir=settings.output_dir)
-        return await Agent(model_client, env).run(prompt)
+        return await Agent(model_client, env, max_turns=settings.max_turns).run(prompt)
     finally:
         await model_client.close()
 

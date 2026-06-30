@@ -54,7 +54,7 @@ def test_agent_writes_compiles_and_returns_final_response(tmp_path) -> None:
         ]
     )
     env = LocalEnvironment(output_dir=tmp_path)
-    agent = Agent(model, env, attempts=3)
+    agent = Agent(model, env, max_turns=3)
 
     result = run(agent.run("a box", run_id="box"))
 
@@ -81,7 +81,7 @@ def test_agent_requires_compile_before_final_response(tmp_path) -> None:
         ]
     )
     env = LocalEnvironment(output_dir=tmp_path)
-    agent = Agent(model, env, attempts=4)
+    agent = Agent(model, env, max_turns=4)
 
     result = run(agent.run("a box", run_id="box"))
 

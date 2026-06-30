@@ -14,7 +14,7 @@ from mini_articraft.record import Record, append_conversation
 
 
 class AgentConfig(BaseModel):
-    attempts: int = 3
+    max_turns: int = 200
     output_path: Path | None = None
 
 
@@ -39,7 +39,7 @@ class Agent:
             append_conversation(conversation_path, message)
 
         final_text = ""
-        for _ in range(self.config.attempts):
+        for _ in range(self.config.max_turns):
             response = await self.model.query(self.messages, tools=tools.schemas())
             text = str(response.get("text") or "")
             tool_calls = list(response.get("tool_calls") or [])
@@ -63,7 +63,7 @@ class Agent:
         else:
             record = Record.load(run_dir / "record.json")
             record.status = "error"
-            record.error = "agent hit attempts limit"
+            record.error = "agent hit max turns limit"
             record.save(run_dir / "record.json")
 
         data = Record.load(run_dir / "record.json").to_dict()

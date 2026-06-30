@@ -22,6 +22,7 @@ class Settings(BaseSettings):
         validation_alias="MINI_ARTICRAFT_REASONING_EFFORT",
     )
     openai_api_key: str = Field(validation_alias="OPENAI_API_KEY")
+    max_turns: int = Field(200, validation_alias="MINI_ARTICRAFT_MAX_TURNS")
 
 
 @cache
