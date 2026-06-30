@@ -169,6 +169,10 @@ ENV/
 env.bak/
 venv.bak/
 
+# Generated mini-articraft runs
+runs/*
+!runs/.gitkeep
+
 # Spyder project settings
 .spyderproject
 .spyproject
