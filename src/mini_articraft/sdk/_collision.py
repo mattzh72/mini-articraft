@@ -51,9 +51,24 @@ class DistanceQuery:
 
 
 @dataclass(frozen=True)
+class GeometryConnectivityFinding:
+    part: str
+    connected: int
+    total: int
+    disconnected: tuple[str, ...]
+    contact_tol: float
+
+
+@dataclass(frozen=True)
 class _PartMesh:
     mesh: trimesh.Trimesh
     fcl_model: object
+
+
+@dataclass(frozen=True)
+class _GeometryComponent:
+    name: str
+    shape: cq.Shape
 
 
 @dataclass(frozen=True)
@@ -69,6 +84,7 @@ class MeshCollisionKernel:
         self.model = model
         self.mesh_tolerance = float(mesh_tolerance)
         self._part_mesh_cache: dict[tuple[str, int, float], _PartMesh] = {}
+        self._component_cache: dict[tuple[str, int, float], tuple[_GeometryComponent, ...]] = {}
 
     def part_world_position(
         self,
@@ -207,6 +223,46 @@ class MeshCollisionKernel:
                         found.append(query)
         return found
 
+    def disconnected_geometry_islands(
+        self,
+        *,
+        contact_tol: float,
+    ) -> list[GeometryConnectivityFinding]:
+        findings: list[GeometryConnectivityFinding] = []
+        for part in self.model.parts:
+            components = self._geometry_components(part.name)
+            if len(components) <= 1:
+                continue
+
+            groups, nearest = _component_connectivity(components, contact_tol=contact_tol)
+            largest = max(groups, key=lambda group: (len(group), -min(group)))
+            if len(largest) == len(components):
+                continue
+
+            disconnected: list[str] = []
+            for index, component in enumerate(components):
+                if index in largest:
+                    continue
+                nearest_index, distance = nearest.get(index, (None, None))
+                if nearest_index is None or distance is None:
+                    disconnected.append(component.name)
+                    continue
+                disconnected.append(
+                    f"{component.name} nearest={components[nearest_index].name} "
+                    f"distance={distance:.6g}"
+                )
+
+            findings.append(
+                GeometryConnectivityFinding(
+                    part=part.name,
+                    connected=len(largest),
+                    total=len(components),
+                    disconnected=tuple(disconnected),
+                    contact_tol=contact_tol,
+                )
+            )
+        return findings
+
     def _collision_entry(self, part_name: str, transforms: dict[str, Mat4]) -> _CollisionEntry:
         part_mesh = self._part_mesh(part_name)
         transform = transforms.get(part_name)
@@ -228,6 +284,72 @@ class MeshCollisionKernel:
         cached = _PartMesh(mesh=mesh, fcl_model=bvh)
         self._part_mesh_cache[cache_key] = cached
         return cached
+
+    def _geometry_components(self, part_name: str) -> tuple[_GeometryComponent, ...]:
+        part = self.model.get_part(part_name)
+        cache_key = (part.name, id(part.shape), self.mesh_tolerance)
+        cached = self._component_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        components: list[_GeometryComponent] = []
+        for index, shape in enumerate(_cadquery_components(part.shape), start=1):
+            components.append(
+                _GeometryComponent(
+                    name=f"solid_{index:03d}",
+                    shape=shape,
+                )
+            )
+        cached = tuple(components)
+        self._component_cache[cache_key] = cached
+        return cached
+
+
+def _component_connectivity(
+    components: tuple[_GeometryComponent, ...],
+    *,
+    contact_tol: float,
+) -> tuple[list[set[int]], dict[int, tuple[int, float]]]:
+    adjacency: dict[int, set[int]] = {index: set() for index in range(len(components))}
+    nearest: dict[int, tuple[int, float]] = {}
+    for index, component in enumerate(components):
+        for other_index in range(index + 1, len(components)):
+            other = components[other_index]
+            distance = float(component.shape.distance(other.shape))
+            if distance <= contact_tol:
+                adjacency[index].add(other_index)
+                adjacency[other_index].add(index)
+            _remember_nearest(nearest, index, other_index, distance)
+            _remember_nearest(nearest, other_index, index, distance)
+
+    remaining = set(range(len(components)))
+    groups: list[set[int]] = []
+    while remaining:
+        start = min(remaining)
+        group: set[int] = set()
+        stack = [start]
+        remaining.remove(start)
+        while stack:
+            current = stack.pop()
+            group.add(current)
+            for neighbor in sorted(adjacency[current]):
+                if neighbor not in remaining:
+                    continue
+                remaining.remove(neighbor)
+                stack.append(neighbor)
+        groups.append(group)
+    return groups, nearest
+
+
+def _remember_nearest(
+    nearest: dict[int, tuple[int, float]],
+    index: int,
+    other_index: int,
+    distance: float,
+) -> None:
+    current = nearest.get(index)
+    if current is None or distance < current[1]:
+        nearest[index] = (other_index, distance)
 
 
 def _collide_entries(
@@ -318,6 +440,19 @@ def _cadquery_shape(model: CadQueryShape) -> cq.Shape:
     raise ValidationError(
         "Unsupported CadQuery model type. Expected cadquery.Shape, Workplane, or Assembly."
     )
+
+
+def _cadquery_components(model: CadQueryShape) -> list[cq.Shape]:
+    shape = _cadquery_shape(model)
+    solids_getter = getattr(shape, "Solids", None)
+    if callable(solids_getter):
+        try:
+            solids = [solid for solid in solids_getter() if solid is not None]
+        except Exception:
+            solids = []
+        if solids:
+            return solids
+    return [shape]
 
 
 def _shape_to_mesh(shape: cq.Shape, tolerance: float) -> trimesh.Trimesh:

@@ -7,7 +7,13 @@ from dataclasses import dataclass, field
 from typing import ClassVar, Iterator
 
 from mini_articraft.errors import ValidationError
-from mini_articraft.sdk._collision import CollisionQuery, DistanceQuery, MeshCollisionKernel, Vec3
+from mini_articraft.sdk._collision import (
+    CollisionQuery,
+    DistanceQuery,
+    GeometryConnectivityFinding,
+    MeshCollisionKernel,
+    Vec3,
+)
 from mini_articraft.sdk.joints import Joint, coerce_part_name
 from mini_articraft.sdk.object import ArticulatedObject, PartRef
 
@@ -432,6 +438,30 @@ class TestContext:
             lines.append(f"... ({len(isolated) - 10} more)")
         return self._record(check_name, False, "\n".join(lines))
 
+    def fail_if_part_contains_disconnected_geometry_islands(
+        self,
+        *,
+        contact_tol: float = DEFAULT_CONTACT_TOLERANCE,
+        name: str | None = None,
+    ) -> bool:
+        contact_tol = _non_negative(contact_tol, "contact_tol")
+        check_name = name or (
+            "fail_if_part_contains_disconnected_geometry_islands"
+            f"(contact_tol={contact_tol:.6g})"
+        )
+        findings = self._kernel().disconnected_geometry_islands(contact_tol=contact_tol)
+        if not findings:
+            return self._record(check_name, True)
+
+        lines = [_geometry_connectivity_details(finding) for finding in findings[:10]]
+        if len(findings) > 10:
+            lines.append(f"... ({len(findings) - 10} more)")
+        return self._record(
+            check_name,
+            False,
+            "Disconnected geometry islands detected:\n" + "\n".join(lines),
+        )
+
     def fail_if_parts_collide_in_current_pose(
         self,
         *,
@@ -541,6 +571,14 @@ def _distance_details(query: DistanceQuery) -> str:
     return (
         f"{finding.link_a!r} vs {finding.link_b!r}: distance={finding.distance:.6g} "
         f"collided={finding.collided} nearest_a={finding.nearest_a} nearest_b={finding.nearest_b}"
+    )
+
+
+def _geometry_connectivity_details(finding: GeometryConnectivityFinding) -> str:
+    disconnected = ", ".join(finding.disconnected)
+    return (
+        f"part={finding.part!r} connected={finding.connected}/{finding.total} "
+        f"contact_tol={finding.contact_tol:.6g} disconnected=[{disconnected}]"
     )
 
 

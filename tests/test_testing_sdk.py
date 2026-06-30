@@ -17,6 +17,12 @@ def box(size: float = 1.0) -> cq.Workplane:
     return cq.Workplane("XY").box(size, size, size)
 
 
+def compound_boxes(offset: float) -> cq.Compound:
+    first = cq.Workplane("XY").box(1.0, 1.0, 1.0).val()
+    second = cq.Workplane("XY").box(1.0, 1.0, 1.0).translate((offset, 0.0, 0.0)).val()
+    return cq.Compound.makeCompound([first, second])
+
+
 def test_report_records_checks_warnings_and_allowances() -> None:
     model = ArticulatedObject("report", units="meters")
     model.part("base", box())
@@ -199,3 +205,29 @@ def test_allow_overlap_suppresses_only_baseline_collision() -> None:
     report = ctx.report()
     assert not report.passed
     assert report.failures[0].name == "expect_no_collision(shaft,hub)"
+
+
+def test_fail_if_part_contains_disconnected_geometry_islands_records_failure() -> None:
+    model = ArticulatedObject("disconnected", units="meters")
+    model.part("base", compound_boxes(1.2))
+    ctx = TestContext(model)
+
+    assert not ctx.fail_if_part_contains_disconnected_geometry_islands()
+
+    report = ctx.report()
+    assert not report.passed
+    assert report.failures[0].name == (
+        "fail_if_part_contains_disconnected_geometry_islands(contact_tol=1e-06)"
+    )
+    assert "Disconnected geometry islands detected" in report.failures[0].details
+    assert "part='base' connected=1/2" in report.failures[0].details
+    assert "solid_002 nearest=solid_001 distance=0.2" in report.failures[0].details
+
+
+def test_fail_if_part_contains_disconnected_geometry_islands_allows_contacting_solids() -> None:
+    model = ArticulatedObject("connected", units="meters")
+    model.part("base", compound_boxes(1.0))
+    ctx = TestContext(model)
+
+    assert ctx.fail_if_part_contains_disconnected_geometry_islands()
+    assert ctx.report().passed

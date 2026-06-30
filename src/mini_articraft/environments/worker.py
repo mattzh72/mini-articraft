@@ -133,6 +133,7 @@ def _run_baseline_tests(obj: ArticulatedObject, authored_report: TestReport) -> 
         return _without_allowance_notes(preliminary)
 
     ctx.fail_if_isolated_parts()
+    ctx.fail_if_part_contains_disconnected_geometry_islands()
     ctx.fail_if_parts_collide_in_current_pose()
     return _without_allowance_notes(ctx.report())
 

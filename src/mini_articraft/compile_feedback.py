@@ -177,6 +177,13 @@ def _failure_signal(name: str, details: str) -> CompileSignal:
     spec = FAILURE_SPECS.get(name)
     if spec is None and "isolated" in lower:
         spec = ("isolated_part", "QC_ISOLATED_PART", "Disconnected or isolated parts were found.", "compiler")
+    if spec is None and "disconnected geometry islands" in lower:
+        spec = (
+            "disconnected_geometry",
+            "QC_DISCONNECTED_GEOMETRY",
+            "Disconnected geometry islands were found inside a part.",
+            "compiler",
+        )
     if spec is None and ("collide" in lower or "contacts=" in lower or "collided=true" in lower):
         spec = ("mesh_collision", "QC_MESH_COLLISION", "Mesh collision check found overlapping parts.", "compiler")
     if spec is None and ("distance=" in lower or "contact_tol=" in lower or "min_distance" in lower):
@@ -245,6 +252,7 @@ def _primary_issue(signal: CompileSignal) -> str:
         "single_root_policy": "compiler-owned root policy failed.",
         "model_validity": "compiler-owned model validation failed.",
         "isolated_part": "compiler-owned connectivity checks found isolated parts.",
+        "disconnected_geometry": "compiler-owned geometry checks found floating islands inside a part.",
         "mesh_collision": "compiler-owned mesh collision checks found overlapping parts.",
     }
     return issues.get(signal.kind, signal.summary)
@@ -258,7 +266,7 @@ def _rules(failures: list[CompileSignal], *, has_warnings: bool, repeated: bool)
         rules = ["- Fix the compile/runtime error first; geometry checks are blocked until the script runs cleanly."]
     elif kind in {"single_root_policy", "model_validity"}:
         rules = ["- Fix the model structure first; local geometry tuning is secondary."]
-    elif kind in {"isolated_part", "mesh_collision"}:
+    elif kind in {"isolated_part", "disconnected_geometry", "mesh_collision"}:
         rules = ["- Fix or explicitly justify the reported part relationship before adding more geometry."]
     else:
         rules = ["- Fix the named failing check before adding more geometry or tests."]
@@ -289,6 +297,7 @@ def _failures(signals: list[CompileSignal] | tuple[CompileSignal, ...]) -> list[
         "model_validity": 1,
         "single_root_policy": 1,
         "isolated_part": 2,
+        "disconnected_geometry": 2,
         "mesh_collision": 2,
     }
     return sorted(

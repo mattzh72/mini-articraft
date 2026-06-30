@@ -69,3 +69,27 @@ def test_compile_report_maps_test_failures_warnings_and_allowances() -> None:
     assert report["counts"] == {"failures": 2, "warnings": 1, "notes": 1}
     assert "<warnings>" in report["signals_text"]
     assert "<notes>" in report["signals_text"]
+
+
+def test_compile_report_maps_disconnected_geometry_failure() -> None:
+    test_report = TestReport(
+        passed=False,
+        checks_run=1,
+        checks=("fail_if_part_contains_disconnected_geometry_islands(contact_tol=1e-06)",),
+        failures=(
+            TestFailure(
+                "fail_if_part_contains_disconnected_geometry_islands(contact_tol=1e-06)",
+                "Disconnected geometry islands detected:\n"
+                "part='base' connected=1/2 contact_tol=1e-06 "
+                "disconnected=[solid_002 nearest=solid_001 distance=0.2]",
+            ),
+        ),
+    )
+
+    report = build_compile_report(status="failure", test_report=test_report)
+    signal = report["signal_bundle"]["signals"][0]
+
+    assert signal["kind"] == "disconnected_geometry"
+    assert signal["code"] == "QC_DISCONNECTED_GEOMETRY"
+    assert signal["blocking"] is True
+    assert "floating islands inside a part" in report["signal_bundle"]["summary"]

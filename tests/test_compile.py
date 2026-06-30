@@ -254,6 +254,44 @@ def run_tests() -> TestReport:
     assert "part_b" in result["error"]
 
 
+def test_compile_path_fails_disconnected_geometry_inside_part(tmp_path) -> None:
+    env = LocalEnvironment(output_dir=tmp_path)
+    run_dir = env.create_run("disconnected_geometry")
+    write_main(
+        run_dir,
+        """
+import cadquery as cq
+
+from mini_articraft.sdk import ArticulatedObject, TestContext, TestReport
+
+
+def build_object_model() -> ArticulatedObject:
+    model = ArticulatedObject("disconnected_geometry", units="meters")
+    left = cq.Workplane("XY").box(1.0, 1.0, 1.0).val()
+    right = cq.Workplane("XY").box(1.0, 1.0, 1.0).translate((1.2, 0.0, 0.0)).val()
+    model.part("base", cq.Compound.makeCompound([left, right]))
+    return model
+
+
+object_model = build_object_model()
+
+
+def run_tests() -> TestReport:
+    return TestContext(object_model).report()
+""",
+    )
+
+    result = env.compile_path(run_dir)
+
+    assert result["status"] == "error"
+    assert "fail_if_part_contains_disconnected_geometry_islands" in result["error"]
+    assert "solid_002 nearest=solid_001 distance=0.2" in result["error"]
+    signal = result["compile_report"]["signal_bundle"]["signals"][0]
+    assert signal["kind"] == "disconnected_geometry"
+    assert signal["code"] == "QC_DISCONNECTED_GEOMETRY"
+    assert result["compile_report"]["counts"] == {"failures": 1, "warnings": 0, "notes": 0}
+
+
 def test_compile_path_honors_authored_overlap_allowance(tmp_path) -> None:
     env = LocalEnvironment(output_dir=tmp_path)
     run_dir = env.create_run("allowed_collision")
