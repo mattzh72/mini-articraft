@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from mini_articraft.agent.tools._core import Tool, ToolContext, schema, workspace_path
+from mini_articraft.agent.tools._core import Tool, ToolContext, display_path, schema, workspace_path
 
 
 async def run(context: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
@@ -10,7 +10,7 @@ async def run(context: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
     content = str(args["content"])
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")
-    return {"path": str(path.relative_to(context.workspace)), "bytes": len(content.encode("utf-8"))}
+    return {"path": display_path(context.workspace, path), "bytes": len(content.encode("utf-8"))}
 
 
 TOOL = Tool(

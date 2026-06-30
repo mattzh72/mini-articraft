@@ -93,7 +93,7 @@ def readable_path(workspace: Path, raw: str) -> Path:
 
 def display_path(workspace: Path, path: Path) -> str:
     try:
-        return path.relative_to(workspace).as_posix()
+        return path.resolve().relative_to(workspace.resolve()).as_posix()
     except ValueError:
         docs_root = SDK_DOCS_ROOT.resolve()
         return (WORKSPACE_SDK_DOCS_ROOT / path.resolve().relative_to(docs_root)).as_posix()

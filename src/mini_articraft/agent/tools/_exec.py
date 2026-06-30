@@ -214,9 +214,9 @@ async def _read_stream(
 def _cwd(context: ToolContext, raw: object) -> Path:
     if raw is None or str(raw).strip() == "":
         return context.workspace.resolve()
-    path = scoped_path(context.run_dir, str(raw), "run directory")
+    path = scoped_path(context.workspace, str(raw), "run workspace")
     if not path.is_dir():
-        raise ValueError("cwd must be a directory inside the run directory")
+        raise ValueError("cwd must be a directory inside the run workspace")
     return path
 
 

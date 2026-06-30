@@ -12,10 +12,18 @@ async def run(context: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
     if context.compiled_revision == context.revision and context.compile_result is not None:
         return context.compile_result
     result = await asyncio.to_thread(context.env.compile_path, context.run_dir)
-    context.compile_result = result
+    context.compile_result = _agent_result(result)
     if result["status"] == "success":
         context.compiled_revision = context.revision
-    return result
+    return context.compile_result
+
+
+def _agent_result(result: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: result[key]
+        for key in ("status", "error", "stdout", "stderr", "traceback", "returncode")
+        if key in result
+    }
 
 
 TOOL = Tool(

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from mini_articraft.agent.tools._core import Tool, ToolContext, schema, workspace_path
+from mini_articraft.agent.tools._core import Tool, ToolContext, display_path, schema, workspace_path
 
 
 async def run(context: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
@@ -14,7 +14,7 @@ async def run(context: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
     if count != 1:
         raise ValueError(f"old_text matched {count} times")
     path.write_text(text.replace(old_text, new_text, 1), encoding="utf-8")
-    return {"path": str(path.relative_to(context.workspace)), "replaced": 1}
+    return {"path": display_path(context.workspace, path), "replaced": 1}
 
 
 TOOL = Tool(

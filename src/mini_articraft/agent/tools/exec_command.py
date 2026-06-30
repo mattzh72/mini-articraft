@@ -23,7 +23,7 @@ TOOL = Tool(
             },
             "cwd": {
                 "type": "string",
-                "description": "Working directory for the command. Defaults to the run workspace. Relative paths are resolved against the run directory; absolute paths must stay inside it.",
+                "description": "Working directory for the command. Defaults to the run workspace. Relative paths are resolved against the workspace; absolute paths must stay inside it.",
             },
             "shell": {
                 "type": "string",

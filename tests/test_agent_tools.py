@@ -56,6 +56,23 @@ def test_read_text_with_offset_and_limit(tmp_path) -> None:
     assert result == {"path": "notes.txt", "text": "L2: two"}
 
 
+def test_workspace_tools_handle_default_relative_run_dir(monkeypatch, tmp_path) -> None:
+    monkeypatch.chdir(tmp_path)
+    env = LocalEnvironment()
+    run_dir = env.create_run("relative")
+    ctx = ToolContext(env, run_dir, run_dir / "workspace")
+
+    write_result = run(get("write").run(ctx, {"path": "main.py", "content": "old\n"}))
+    read_result = run(get("read").run(ctx, {"path": "main.py"}))
+    edit_result = run(
+        get("edit").run(ctx, {"path": "main.py", "old_text": "old", "new_text": "new"})
+    )
+
+    assert write_result == {"path": "main.py", "bytes": 4}
+    assert read_result == {"path": "main.py", "text": "L1: old"}
+    assert edit_result == {"path": "main.py", "replaced": 1}
+
+
 def test_read_can_open_symlinked_sdk_docs(tmp_path) -> None:
     ctx = context(tmp_path)
 
@@ -166,7 +183,7 @@ def test_exec_command_reports_timeout(tmp_path) -> None:
 def test_exec_command_rejects_cwd_outside_run_dir(tmp_path) -> None:
     ctx = context(tmp_path)
 
-    with pytest.raises(ValueError, match="run directory"):
+    with pytest.raises(ValueError, match="run workspace"):
         run(get("exec_command").run(ctx, {"command": "pwd", "cwd": str(tmp_path)}))
 
 
@@ -238,4 +255,7 @@ object_model.part("base", cq.Workplane("XY").box(1, 1, 1))
     result = run(get("compile").run(ctx, {}))
 
     assert result["status"] == "success"
+    assert "entrypoint" not in result
+    assert "manifest" not in result
+    assert "parts" not in result
     assert ctx.compiled_revision == ctx.revision
