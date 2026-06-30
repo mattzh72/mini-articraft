@@ -137,7 +137,10 @@ def _joint_schema(stage: Usd.Stage, path: str, joint: Joint):
 
 def _set_joint_frames(schema, joint: Joint, *, rotate_axis: bool = False) -> None:
     axis = _axis_matrix(joint.axis) if rotate_axis else Gf.Matrix4d(1.0)
-    frame = _gf_matrix(_rpy_matrix(joint.frame.rpy)) * axis
+    # Gf.Matrix4d composes in row-vector order, while the SDK transform stack is
+    # column-vector order. Reverse composition so USD's X axis becomes the SDK
+    # joint axis after the joint frame rotation.
+    frame = axis * _gf_matrix(_rpy_matrix(joint.frame.rpy))
     schema.CreateLocalPos0Attr(Gf.Vec3f(*joint.frame.xyz))
     schema.CreateLocalRot0Attr(_quat(frame))
     schema.CreateLocalPos1Attr(Gf.Vec3f(0.0, 0.0, 0.0))

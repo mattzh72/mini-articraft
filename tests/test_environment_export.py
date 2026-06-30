@@ -4,7 +4,7 @@ import json
 import math
 
 import cadquery as cq
-from pxr import Usd, UsdGeom, UsdPhysics, UsdValidation
+from pxr import Gf, Usd, UsdGeom, UsdPhysics, UsdValidation
 
 from mini_articraft.environments.export import export_object
 from mini_articraft.sdk import ArticulatedObject, Frame
@@ -42,6 +42,7 @@ def test_export_object_writes_valid_usdz_and_manifest(tmp_path) -> None:
     assert joint_prim.GetAttribute("mini_articraft:jointType").Get() == "revolute"
     assert tuple(joint_prim.GetAttribute("mini_articraft:axis").Get()) == (0.0, 1.0, 1.0)
     assert joint.GetAxisAttr().Get() == "X"
+    assert _joint_x_axis(joint) == (-0.074758, 0.71704, 0.693012)
     assert math.isclose(joint.GetUpperLimitAttr().Get(), math.degrees(1.57), abs_tol=1e-5)
 
     validators = UsdValidation.ValidationRegistry().GetOrLoadValidatorsByName(
@@ -66,8 +67,15 @@ def _hinge() -> ArticulatedObject:
         "base_to_door",
         base,
         door,
-        frame=Frame(xyz=(0.0, 0.0, 0.2)),
+        frame=Frame(xyz=(0.0, 0.0, 0.2), rpy=(0.0, 0.2, 0.3)),
         axis=(0.0, 1.0, 1.0),
         limits=(0.0, 1.57),
     )
     return obj
+
+
+def _joint_x_axis(joint: UsdPhysics.RevoluteJoint) -> tuple[float, float, float]:
+    matrix = Gf.Matrix4d(1.0)
+    matrix.SetRotate(joint.GetLocalRot0Attr().Get())
+    vector = matrix.TransformDir(Gf.Vec3d(1.0, 0.0, 0.0)).GetNormalized()
+    return tuple(round(float(component), 6) for component in vector)
