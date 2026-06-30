@@ -30,6 +30,7 @@ class AssistantMessage:
     turn: int
     text: str
     tool_calls: list[dict[str, Any]] = field(default_factory=list)
+    token_usage: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -56,6 +57,7 @@ class RunFinished:
     turns: int = 0
     duration: float | None = None
     cost: float = 0.0
+    token_usage: dict[str, int] = field(default_factory=dict)
 
 
 Event = RunStarted | TurnStarted | AssistantMessage | ToolStarted | ToolFinished | RunFinished

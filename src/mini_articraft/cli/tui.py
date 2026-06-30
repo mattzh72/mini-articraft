@@ -28,6 +28,7 @@ EventHandler = Callable[[events.Event], None]
 LiveRun = Callable[[EventHandler], Awaitable[dict[str, Any]]]
 PRIMARY_STYLE = "white"
 SIGNAL_STYLE = "grey70"
+TOKEN_BAR_WIDTH = 24
 
 
 def run_live(generate: LiveRun) -> dict[str, Any]:
@@ -72,6 +73,7 @@ def replay_run(run_dir: Path, *, delay: float = 0.0, console: Console | None = N
                 error=record.error,
                 turns=renderer.turn,
                 cost=record.cost,
+                token_usage=record.token_usage,
             )
         )
     )
@@ -140,8 +142,8 @@ class RunRenderer:
             case events.TurnStarted(turn=turn):
                 self._turn = turn
                 self._activity = "thinking"
-            case events.AssistantMessage(text=text, tool_calls=tool_calls):
-                self._print_assistant(text, tool_calls, print_calls=False)
+            case events.AssistantMessage(text=text, tool_calls=tool_calls, token_usage=usage):
+                self._print_assistant(text, tool_calls, usage, print_calls=False)
             case events.ToolStarted(call_id=call_id, name=name, arguments=arguments):
                 self._names[call_id] = name
                 self._activity = name
@@ -163,6 +165,8 @@ class RunRenderer:
             parts.append(f"{event.duration:.1f}s")
         if event.cost:
             parts.append(f"cost {_format_cost(event.cost)}")
+        if event.token_usage.get("total_tokens"):
+            parts.append(f"tokens {_format_tokens(event.token_usage['total_tokens'])}")
         line = Text(" · ".join(parts), style="bold green" if ok else "bold red")
         if not ok and event.error:
             line.append("\n  " + _clip(event.error, 200), style="red")
@@ -178,7 +182,10 @@ class RunRenderer:
             case "assistant", _:
                 self._turn += 1
                 tool_calls = list(row.get("tool_calls") or [])
-                self._print_assistant(str(row.get("content") or ""), tool_calls, print_calls=True)
+                usage = dict(row.get("token_usage") or {})
+                self._print_assistant(
+                    str(row.get("content") or ""), tool_calls, usage, print_calls=True
+                )
             case "compiler", _:
                 self._print_compile(str(row.get("status") or ""), str(row.get("error") or ""))
             case _, "function_call_output":
@@ -197,7 +204,12 @@ class RunRenderer:
         self._print(text)
 
     def _print_assistant(
-        self, text: str, tool_calls: list[dict[str, Any]], *, print_calls: bool
+        self,
+        text: str,
+        tool_calls: list[dict[str, Any]],
+        token_usage: dict[str, int] | None = None,
+        *,
+        print_calls: bool,
     ) -> None:
         body = text.strip()
         if not body and not tool_calls:
@@ -212,6 +224,9 @@ class RunRenderer:
             for call in tool_calls:
                 self._names[str(call.get("id") or "")] = str(call.get("name") or "")
                 self._print_tool_call(str(call.get("name") or ""), str(call.get("arguments") or ""))
+        token_line = _token_usage_line(token_usage or {})
+        if token_line is not None:
+            self._print(token_line)
 
     def _print_tool_call(self, name: str, arguments: str) -> None:
         line = Text("  → ", style=PRIMARY_STYLE)
@@ -314,6 +329,43 @@ def _clip(text: str, limit: int) -> str:
     return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
+def _token_usage_line(usage: dict[str, int]) -> Text | None:
+    total = int(usage.get("total_tokens") or 0)
+    if total <= 0:
+        return None
+
+    input_tokens = int(usage.get("input_tokens") or 0)
+    cached_tokens = min(input_tokens, int(usage.get("cached_input_tokens") or 0))
+    output_tokens = int(usage.get("output_tokens") or 0)
+    counts = [max(0, input_tokens - cached_tokens), cached_tokens, output_tokens]
+    widths = _bar_widths(counts, TOKEN_BAR_WIDTH)
+
+    line = Text("    tokens ", style="dim")
+    line.append(_format_tokens(total), style=SIGNAL_STYLE)
+    line.append("  ")
+    for width, style in zip(widths, ("blue", "cyan", "green"), strict=True):
+        line.append("█" * width, style=style)
+    line.append(
+        f"  in {_format_tokens(input_tokens)}"
+        f" · cached {_format_tokens(cached_tokens)}"
+        f" · out {_format_tokens(output_tokens)}",
+        style="dim",
+    )
+    return line
+
+
+def _bar_widths(counts: list[int], width: int) -> list[int]:
+    total = sum(counts)
+    if total <= 0:
+        return [0 for _ in counts]
+    widths = [max(1, round(width * count / total)) if count else 0 for count in counts]
+    while sum(widths) > width:
+        widths[widths.index(max(widths))] -= 1
+    while sum(widths) < width:
+        widths[counts.index(max(counts))] += 1
+    return widths
+
+
 def _args_summary(name: str, arguments: str) -> str:
     try:
         args = json.loads(arguments or "{}")
@@ -342,3 +394,11 @@ def _load_output(output: Any) -> dict[str, Any]:
 
 def _format_cost(cost: float) -> str:
     return f"${cost:.6f}".rstrip("0").rstrip(".")
+
+
+def _format_tokens(tokens: int) -> str:
+    if tokens < 1_000:
+        return str(tokens)
+    if tokens < 1_000_000:
+        return f"{tokens / 1_000:.1f}".rstrip("0").rstrip(".") + "k"
+    return f"{tokens / 1_000_000:.1f}".rstrip("0").rstrip(".") + "M"

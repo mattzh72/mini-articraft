@@ -102,10 +102,36 @@ def test_agent_writes_compiles_and_returns_final_response(tmp_path) -> None:
             {
                 "text": "",
                 "cost": 0.25,
+                "token_usage": {
+                    "input_tokens": 100,
+                    "cached_input_tokens": 10,
+                    "output_tokens": 20,
+                    "total_tokens": 120,
+                },
                 "tool_calls": [call("call_1", "write", {"path": "main.py", "content": MODEL_CODE})],
             },
-            {"text": "", "cost": 0.25, "tool_calls": [call("call_2", "compile", {})]},
-            {"text": "done", "cost": 0.5, "tool_calls": []},
+            {
+                "text": "",
+                "cost": 0.25,
+                "token_usage": {
+                    "input_tokens": 200,
+                    "cached_input_tokens": 20,
+                    "output_tokens": 30,
+                    "total_tokens": 230,
+                },
+                "tool_calls": [call("call_2", "compile", {})],
+            },
+            {
+                "text": "done",
+                "cost": 0.5,
+                "token_usage": {
+                    "input_tokens": 300,
+                    "cached_input_tokens": 30,
+                    "output_tokens": 40,
+                    "total_tokens": 340,
+                },
+                "tool_calls": [],
+            },
         ]
     )
     env = LocalEnvironment(output_dir=tmp_path)
@@ -115,10 +141,18 @@ def test_agent_writes_compiles_and_returns_final_response(tmp_path) -> None:
 
     assert result["status"] == "success"
     assert result["cost"] == 1.0
+    assert result["token_usage"] == {
+        "input_tokens": 600,
+        "cached_input_tokens": 60,
+        "output_tokens": 90,
+        "total_tokens": 690,
+    }
     assert result["message"] == "done"
     assert result["compile_report"]["status"] == "success"
     assert tmp_path.joinpath("box", "workspace", "main.py").is_file()
-    assert Record.load(tmp_path / "box" / "record.json").cost == 1.0
+    record = Record.load(tmp_path / "box" / "record.json")
+    assert record.cost == 1.0
+    assert record.token_usage["total_tokens"] == 690
     assert "<sdk_docs>" not in model.calls[0]["messages"][0]["content"]
     first_messages = model.calls[0]["messages"]
     assert [message["role"] for message in first_messages[:3]] == ["system", "user", "user"]

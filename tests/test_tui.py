@@ -62,6 +62,31 @@ def test_renderer_shows_compile_and_errors() -> None:
     assert "read error: file not found" in out
 
 
+def test_renderer_shows_token_usage_bar() -> None:
+    renderer, console = _renderer()
+
+    renderer.handle(events.TurnStarted(1))
+    renderer.handle(
+        events.AssistantMessage(
+            1,
+            "done",
+            [],
+            {
+                "input_tokens": 1_000,
+                "cached_input_tokens": 100,
+                "output_tokens": 250,
+                "total_tokens": 1_250,
+            },
+        )
+    )
+
+    out = _text(console)
+    assert "tokens 1.2k" in out
+    assert "in 1k" in out
+    assert "cached 100" in out
+    assert "out 250" in out
+
+
 def test_renderer_shows_full_compile_signals_without_protocol_tags_or_truncation() -> None:
     renderer, console = _renderer()
     detail_lines = "\n".join(f"  detail line {index}" for index in range(20))
@@ -146,6 +171,7 @@ def test_final_summary_success() -> None:
             turns=3,
             duration=18.4,
             cost=0.012345,
+            token_usage={"total_tokens": 1_250},
         )
     )
     console.print(summary)
@@ -155,6 +181,7 @@ def test_final_summary_success() -> None:
     assert "runs/run-x" in out
     assert "3 turns" in out
     assert "cost $0.012345" in out
+    assert "tokens 1.2k" in out
 
 
 def test_final_summary_error_includes_message() -> None:

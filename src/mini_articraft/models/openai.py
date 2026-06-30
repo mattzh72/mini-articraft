@@ -58,6 +58,7 @@ class OpenAIModel:
         return {
             "text": text,
             "tool_calls": tool_calls,
+            "token_usage": _response_token_usage(response),
             "cost": _response_cost(response),
             "response": response,
         }
@@ -225,26 +226,40 @@ def _response_tool_calls(response: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _response_cost(response: dict[str, Any]) -> float:
-    usage = response.get("usage")
     prices = _prices_for(str(response.get("model") or ""))
-    if not isinstance(usage, dict) or prices is None:
+    usage = _response_token_usage(response)
+    if not usage or prices is None:
         return 0.0
+
+    input_price, cached_price, output_price = prices
+    uncached_tokens = max(0, usage["input_tokens"] - usage["cached_input_tokens"])
+    return round(
+        (
+            uncached_tokens * input_price
+            + usage["cached_input_tokens"] * cached_price
+            + usage["output_tokens"] * output_price
+        )
+        / 1_000_000,
+        8,
+    )
+
+
+def _response_token_usage(response: dict[str, Any]) -> dict[str, int]:
+    usage = response.get("usage")
+    if not isinstance(usage, dict):
+        return {}
 
     details = usage.get("input_tokens_details")
     cached_tokens = _int(details.get("cached_tokens")) if isinstance(details, dict) else 0
     input_tokens = _int(usage.get("input_tokens"))
     output_tokens = _int(usage.get("output_tokens"))
-    input_price, cached_price, output_price = prices
-    uncached_tokens = max(0, input_tokens - cached_tokens)
-    return round(
-        (
-            uncached_tokens * input_price
-            + cached_tokens * cached_price
-            + output_tokens * output_price
-        )
-        / 1_000_000,
-        8,
-    )
+    total_tokens = _int(usage.get("total_tokens")) or input_tokens + output_tokens
+    return {
+        "input_tokens": input_tokens,
+        "cached_input_tokens": cached_tokens,
+        "output_tokens": output_tokens,
+        "total_tokens": total_tokens,
+    }
 
 
 def _prices_for(model: str) -> tuple[float, float, float] | None:

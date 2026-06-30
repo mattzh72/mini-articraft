@@ -72,18 +72,26 @@ class Agent:
         started = time.perf_counter()
         final_text = ""
         cost = 0.0
+        token_usage: dict[str, int] = {}
         turn = 0
         for turn in range(1, self.config.max_turns + 1):
             self._emit(events.TurnStarted(turn))
             response = await self.model.query(self.messages, tools=tools.schemas())
             cost += _cost(response)
-            _save_cost(run_dir, cost)
+            response_usage = _token_usage(response)
+            token_usage = _add_token_usage(token_usage, response_usage)
+            _save_cost(run_dir, cost, token_usage)
             text = str(response.get("text") or "")
             tool_calls = list(response.get("tool_calls") or [])
-            assistant = {"role": "assistant", "content": text, "tool_calls": tool_calls}
+            assistant = {
+                "role": "assistant",
+                "content": text,
+                "tool_calls": tool_calls,
+                "token_usage": response_usage,
+            }
             self.messages.append(assistant)
             append_conversation(conversation_path, assistant)
-            self._emit(events.AssistantMessage(turn, text, tool_calls))
+            self._emit(events.AssistantMessage(turn, text, tool_calls, response_usage))
 
             if not tool_calls:
                 if context.compile_is_fresh and context.compile_result:
@@ -120,6 +128,7 @@ class Agent:
                 turns=turn,
                 duration=round(time.perf_counter() - started, 4),
                 cost=float(data.get("cost") or 0.0),
+                token_usage=dict(data.get("token_usage") or {}),
             )
         )
         return data
@@ -201,9 +210,10 @@ def _supports_parallel(call: dict[str, Any]) -> bool:
         return False
 
 
-def _save_cost(run_dir: Path, cost: float) -> None:
+def _save_cost(run_dir: Path, cost: float, token_usage: dict[str, int]) -> None:
     record = Record.load(run_dir / "record.json")
     record.cost = round(cost, 8)
+    record.token_usage = dict(token_usage)
     record.save(run_dir / "record.json")
 
 
@@ -212,6 +222,18 @@ def _cost(response: dict[str, Any]) -> float:
         return float(response.get("cost") or 0.0)
     except (TypeError, ValueError):
         return 0.0
+
+
+def _token_usage(response: dict[str, Any]) -> dict[str, int]:
+    usage = response.get("token_usage")
+    if not isinstance(usage, dict):
+        return {}
+    return {str(key): int(value) for key, value in usage.items()}
+
+
+def _add_token_usage(left: dict[str, int], right: dict[str, int]) -> dict[str, int]:
+    keys = left.keys() | right.keys()
+    return {key: left.get(key, 0) + right.get(key, 0) for key in keys}
 
 
 def _read_prompt(name: str) -> str:

@@ -21,6 +21,7 @@ def test_record_saves_slim_run_summary(tmp_path) -> None:
         "entrypoint": "workspace/main.py",
         "result": "result/model.usdz",
         "cost": 0.0,
+        "token_usage": {},
     }
 
     loaded = Record.load(path)

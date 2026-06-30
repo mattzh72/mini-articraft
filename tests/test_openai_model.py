@@ -162,6 +162,12 @@ def test_openai_model_returns_estimated_cost(monkeypatch: pytest.MonkeyPatch) ->
     result = run(openai_model().query([{"role": "user", "content": "build"}]))
 
     assert result["cost"] == 0.00515
+    assert result["token_usage"] == {
+        "input_tokens": 1_000,
+        "cached_input_tokens": 100,
+        "output_tokens": 20,
+        "total_tokens": 1_020,
+    }
 
 
 def test_openai_model_sends_function_call_outputs_with_previous_response(
