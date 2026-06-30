@@ -64,6 +64,7 @@ def run_tests() -> TestReport:
         "workspace": "workspace",
         "entrypoint": "workspace/main.py",
         "result": "result/model.usdz",
+        "cost": 0.0,
     }
 
     conversation = read_conversation(run_dir / "conversation.jsonl")

@@ -67,10 +67,13 @@ class Agent:
 
         started = time.perf_counter()
         final_text = ""
+        cost = 0.0
         turn = 0
         for turn in range(1, self.config.max_turns + 1):
             self._emit(events.TurnStarted(turn))
             response = await self.model.query(self.messages, tools=tools.schemas())
+            cost += _cost(response)
+            _save_cost(run_dir, cost)
             text = str(response.get("text") or "")
             tool_calls = list(response.get("tool_calls") or [])
             assistant = {"role": "assistant", "content": text, "tool_calls": tool_calls}
@@ -112,6 +115,7 @@ class Agent:
                 error=str(data.get("error") or ""),
                 turns=turn,
                 duration=round(time.perf_counter() - started, 4),
+                cost=float(data.get("cost") or 0.0),
             )
         )
         return data
@@ -191,6 +195,19 @@ def _supports_parallel(call: dict[str, Any]) -> bool:
         return tools.get(str(call["name"])).supports_parallel
     except (KeyError, ValueError):
         return False
+
+
+def _save_cost(run_dir: Path, cost: float) -> None:
+    record = Record.load(run_dir / "record.json")
+    record.cost = round(cost, 8)
+    record.save(run_dir / "record.json")
+
+
+def _cost(response: dict[str, Any]) -> float:
+    try:
+        return float(response.get("cost") or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def _read_prompt(name: str) -> str:

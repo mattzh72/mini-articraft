@@ -55,6 +55,7 @@ class RunFinished:
     error: str = ""
     turns: int = 0
     duration: float | None = None
+    cost: float = 0.0
 
 
 Event = RunStarted | TurnStarted | AssistantMessage | ToolStarted | ToolFinished | RunFinished

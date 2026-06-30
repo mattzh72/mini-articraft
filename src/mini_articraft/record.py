@@ -15,6 +15,7 @@ class Record:
     workspace: str = "workspace"
     entrypoint: str = "workspace/main.py"
     result: str = ""
+    cost: float = 0.0
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

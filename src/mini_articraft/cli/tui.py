@@ -70,6 +70,7 @@ def replay_run(run_dir: Path, *, delay: float = 0.0, console: Console | None = N
                 result=record.result,
                 error=record.error,
                 turns=renderer.turn,
+                cost=record.cost,
             )
         )
     )
@@ -159,6 +160,8 @@ class RunRenderer:
             parts.append(f"{event.turns} turns")
         if event.duration is not None:
             parts.append(f"{event.duration:.1f}s")
+        if event.cost:
+            parts.append(f"cost {_format_cost(event.cost)}")
         line = Text(" · ".join(parts), style="bold green" if ok else "bold red")
         if not ok and event.error:
             line.append("\n  " + _clip(event.error, 200), style="red")
@@ -308,3 +311,7 @@ def _load_output(output: Any) -> dict[str, Any]:
     except (TypeError, json.JSONDecodeError):
         return {}
     return payload if isinstance(payload, dict) else {}
+
+
+def _format_cost(cost: float) -> str:
+    return f"${cost:.6f}".rstrip("0").rstrip(".")

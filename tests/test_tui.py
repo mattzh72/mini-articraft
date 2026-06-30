@@ -92,7 +92,12 @@ def test_final_summary_success() -> None:
     renderer, console = _renderer()
     summary = renderer.final_summary(
         events.RunFinished(
-            status="success", run="runs/run-x", result="result/model.usdz", turns=3, duration=18.4
+            status="success",
+            run="runs/run-x",
+            result="result/model.usdz",
+            turns=3,
+            duration=18.4,
+            cost=0.012345,
         )
     )
     console.print(summary)
@@ -101,6 +106,7 @@ def test_final_summary_success() -> None:
     assert "success" in out
     assert "runs/run-x" in out
     assert "3 turns" in out
+    assert "cost $0.012345" in out
 
 
 def test_final_summary_error_includes_message() -> None:

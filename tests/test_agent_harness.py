@@ -96,10 +96,11 @@ def test_agent_writes_compiles_and_returns_final_response(tmp_path) -> None:
         [
             {
                 "text": "",
+                "cost": 0.25,
                 "tool_calls": [call("call_1", "write", {"path": "main.py", "content": MODEL_CODE})],
             },
-            {"text": "", "tool_calls": [call("call_2", "compile", {})]},
-            {"text": "done", "tool_calls": []},
+            {"text": "", "cost": 0.25, "tool_calls": [call("call_2", "compile", {})]},
+            {"text": "done", "cost": 0.5, "tool_calls": []},
         ]
     )
     env = LocalEnvironment(output_dir=tmp_path)
@@ -108,9 +109,11 @@ def test_agent_writes_compiles_and_returns_final_response(tmp_path) -> None:
     result = run(agent.run("a box", run_id="box"))
 
     assert result["status"] == "success"
+    assert result["cost"] == 1.0
     assert result["message"] == "done"
     assert result["compile_report"]["status"] == "success"
     assert tmp_path.joinpath("box", "workspace", "main.py").is_file()
+    assert Record.load(tmp_path / "box" / "record.json").cost == 1.0
     assert "<sdk_docs>" not in model.calls[0]["messages"][0]["content"]
     assert {tool["name"] for tool in model.calls[0]["tools"]} == {
         "read",

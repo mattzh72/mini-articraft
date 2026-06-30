@@ -17,16 +17,19 @@ def run(awaitable):
 def response_event(
     text: str,
     *,
+    model: str = "gpt-5.5",
     response_id: str = "resp_1",
     status: str = "completed",
     incomplete_details: dict[str, object] | None = None,
     output: list[dict[str, object]] | None = None,
+    usage: dict[str, object] | None = None,
 ) -> dict[str, object]:
-    return {
+    response = {
         "type": f"response.{status}",
         "response": {
             "id": response_id,
             "status": status,
+            "model": model,
             "incomplete_details": incomplete_details,
             "output": output
             if output is not None
@@ -38,6 +41,9 @@ def response_event(
             ],
         },
     }
+    if usage is not None:
+        response["response"]["usage"] = usage
+    return response
 
 
 class FakeWebSocket:
@@ -136,6 +142,26 @@ def test_openai_model_sends_tools_and_returns_function_calls(
     ]
     assert socket.sent[0]["tools"] == [tool]
     assert socket.sent[0]["parallel_tool_calls"] is True
+
+
+def test_openai_model_returns_estimated_cost(monkeypatch: pytest.MonkeyPatch) -> None:
+    socket = FakeWebSocket(
+        [
+            response_event(
+                "result",
+                usage={
+                    "input_tokens": 1_000,
+                    "input_tokens_details": {"cached_tokens": 100},
+                    "output_tokens": 20,
+                },
+            )
+        ]
+    )
+    patch_websocket(monkeypatch, socket)
+
+    result = run(openai_model().query([{"role": "user", "content": "build"}]))
+
+    assert result["cost"] == 0.00515
 
 
 def test_openai_model_sends_function_call_outputs_with_previous_response(
