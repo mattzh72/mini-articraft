@@ -71,7 +71,7 @@ class OpenAIModel:
             request["previous_response_id"] = previous_response_id
         if tools:
             request["tools"] = tools
-            request["parallel_tool_calls"] = False
+            request["parallel_tool_calls"] = True
         instructions = _instructions(messages)
         if instructions:
             request["instructions"] = instructions

@@ -28,6 +28,7 @@ class Tool:
     schema: dict[str, Any]
     run: Callable[[ToolContext, dict[str, Any]], Awaitable[dict[str, Any]]]
     mutates: bool = False
+    supports_parallel: bool = False
 
 
 def schema(

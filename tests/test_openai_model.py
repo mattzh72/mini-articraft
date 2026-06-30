@@ -135,7 +135,7 @@ def test_openai_model_sends_tools_and_returns_function_calls(
         }
     ]
     assert socket.sent[0]["tools"] == [tool]
-    assert socket.sent[0]["parallel_tool_calls"] is False
+    assert socket.sent[0]["parallel_tool_calls"] is True
 
 
 def test_openai_model_sends_function_call_outputs_with_previous_response(

@@ -5,10 +5,12 @@ import json
 from datetime import datetime
 from typing import Any
 
+import mini_articraft.agent.tools as agent_tools
 from mini_articraft.agent import Agent, events
 from mini_articraft.agent.harness import PROMPT_SLUG_MAX_LENGTH, _prompt_slug, _run_id_for_prompt
+from mini_articraft.agent.tools import Tool
 from mini_articraft.environments.local import LocalEnvironment
-from mini_articraft.record import read_conversation
+from mini_articraft.record import Record, append_conversation, read_conversation
 
 
 def run(awaitable):
@@ -35,6 +37,33 @@ class FakeModel:
 
 def call(call_id: str, name: str, args: dict[str, Any]) -> dict[str, Any]:
     return {"id": call_id, "name": name, "arguments": json.dumps(args)}
+
+
+def fake_schema(name: str) -> dict[str, Any]:
+    return {
+        "type": "function",
+        "name": name,
+        "description": name,
+        "parameters": {"type": "object", "properties": {}, "required": []},
+    }
+
+
+def compile_success_tool() -> Tool:
+    async def run_compile(context, args):
+        context.compile_result = {"status": "success"}
+        context.compiled_revision = context.revision
+        record = Record.load(context.run_dir / "record.json")
+        record.status = "success"
+        record.attempts += 1
+        record.result = "result/model.json"
+        record.save(context.run_dir / "record.json")
+        append_conversation(
+            context.run_dir / "conversation.jsonl",
+            {"role": "compiler", "status": "success", "error": ""},
+        )
+        return context.compile_result
+
+    return Tool("compile", fake_schema("compile"), run_compile)
 
 
 MODEL_CODE = """
@@ -145,6 +174,96 @@ def test_agent_emits_run_events(tmp_path) -> None:
     assert isinstance(run_finished, events.RunFinished)
     assert run_finished.status == "success"
     assert run_finished.turns == 3
+
+
+def test_agent_runs_parallel_safe_tools_concurrently(monkeypatch, tmp_path) -> None:
+    active = 0
+    max_active = 0
+
+    async def run_read(context, args):
+        nonlocal active, max_active
+        active += 1
+        max_active = max(max_active, active)
+        await asyncio.sleep(0.05)
+        active -= 1
+        return {"path": args["path"]}
+
+    monkeypatch.setattr(
+        agent_tools,
+        "TOOLS",
+        {
+            "read": Tool("read", fake_schema("read"), run_read, supports_parallel=True),
+            "compile": compile_success_tool(),
+        },
+    )
+    model = FakeModel(
+        [
+            {
+                "text": "",
+                "tool_calls": [
+                    call("call_1", "read", {"path": "a.py"}),
+                    call("call_2", "read", {"path": "b.py"}),
+                ],
+            },
+            {"text": "", "tool_calls": [call("call_3", "compile", {})]},
+            {"text": "done", "tool_calls": []},
+        ]
+    )
+    env = LocalEnvironment(output_dir=tmp_path)
+    agent = Agent(model, env, max_turns=3)
+
+    result = run(agent.run("a box", run_id="box"))
+
+    assert result["status"] == "success"
+    assert max_active == 2
+    outputs = [
+        event
+        for event in read_conversation(tmp_path / "box" / "conversation.jsonl")
+        if event.get("type") == "function_call_output"
+    ]
+    assert [event["call_id"] for event in outputs[:2]] == ["call_1", "call_2"]
+
+
+def test_agent_serializes_non_parallel_tools(monkeypatch, tmp_path) -> None:
+    active = 0
+    max_active = 0
+
+    async def run_write(context, args):
+        nonlocal active, max_active
+        active += 1
+        max_active = max(max_active, active)
+        await asyncio.sleep(0.05)
+        active -= 1
+        return {"path": args["path"], "bytes": 1}
+
+    monkeypatch.setattr(
+        agent_tools,
+        "TOOLS",
+        {
+            "write": Tool("write", fake_schema("write"), run_write, mutates=True),
+            "compile": compile_success_tool(),
+        },
+    )
+    model = FakeModel(
+        [
+            {
+                "text": "",
+                "tool_calls": [
+                    call("call_1", "write", {"path": "a.py"}),
+                    call("call_2", "write", {"path": "b.py"}),
+                ],
+            },
+            {"text": "", "tool_calls": [call("call_3", "compile", {})]},
+            {"text": "done", "tool_calls": []},
+        ]
+    )
+    env = LocalEnvironment(output_dir=tmp_path)
+    agent = Agent(model, env, max_turns=3)
+
+    result = run(agent.run("a box", run_id="box"))
+
+    assert result["status"] == "success"
+    assert max_active == 1
 
 
 def test_default_run_id_uses_datetime_and_clipped_prompt() -> None:

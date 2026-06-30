@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 import time
@@ -88,24 +89,7 @@ class Agent:
                 append_conversation(conversation_path, reminder)
                 continue
 
-            for call in tool_calls:
-                self._emit(
-                    events.ToolStarted(
-                        str(call["id"]), str(call["name"]), str(call.get("arguments") or "{}")
-                    )
-                )
-                tool_started = time.perf_counter()
-                item = await self._run_tool(context, call)
-                self.messages.append(item)
-                append_conversation(conversation_path, item)
-                self._emit(
-                    events.ToolFinished(
-                        str(call["id"]),
-                        str(call["name"]),
-                        json.loads(item["output"]),
-                        round(time.perf_counter() - tool_started, 4),
-                    )
-                )
+            await self._run_tool_calls(context, tool_calls, conversation_path)
         else:
             record = Record.load(run_dir / "record.json")
             record.status = "error"
@@ -129,6 +113,55 @@ class Agent:
         )
         return data
 
+    async def _run_tool_calls(
+        self,
+        context: ToolContext,
+        tool_calls: list[dict[str, Any]],
+        conversation_path: Path,
+    ) -> None:
+        batch: list[dict[str, Any]] = []
+        for call in tool_calls:
+            if _supports_parallel(call):
+                batch.append(call)
+                continue
+
+            await self._run_tool_batch(context, batch, conversation_path)
+            batch = []
+            await self._run_tool_batch(context, [call], conversation_path)
+
+        await self._run_tool_batch(context, batch, conversation_path)
+
+    async def _run_tool_batch(
+        self,
+        context: ToolContext,
+        tool_calls: list[dict[str, Any]],
+        conversation_path: Path,
+    ) -> None:
+        if not tool_calls:
+            return
+
+        started = []
+        for call in tool_calls:
+            self._emit(
+                events.ToolStarted(
+                    str(call["id"]), str(call["name"]), str(call.get("arguments") or "{}")
+                )
+            )
+            started.append(time.perf_counter())
+
+        items = await asyncio.gather(*(self._run_tool(context, call) for call in tool_calls))
+        for call, item, tool_started in zip(tool_calls, items, started, strict=True):
+            self.messages.append(item)
+            append_conversation(conversation_path, item)
+            self._emit(
+                events.ToolFinished(
+                    str(call["id"]),
+                    str(call["name"]),
+                    json.loads(item["output"]),
+                    round(time.perf_counter() - tool_started, 4),
+                )
+            )
+
     async def _run_tool(self, context: ToolContext, call: dict[str, Any]) -> dict[str, Any]:
         name = str(call["name"])
         call_id = str(call["id"])
@@ -148,6 +181,13 @@ def _arguments(call: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise ValueError("tool arguments must be a JSON object")
     return payload
+
+
+def _supports_parallel(call: dict[str, Any]) -> bool:
+    try:
+        return tools.get(str(call["name"])).supports_parallel
+    except (KeyError, ValueError):
+        return False
 
 
 def _read_prompt(name: str) -> str:

@@ -13,6 +13,14 @@ Success means the run compiles and the object reads clearly as the requested thi
 - Give a short final response only after the latest code has compiled.
 </workflow>
 
+<tools>
+- You may issue multiple independent `read` calls in the same turn. The runtime can run those reads in parallel and will return their outputs in the order you requested them.
+- Do not rely on parallel ordering for tools that change state. `write`, `edit`, `exec_command`, `write_stdin`, and `compile` are serialized against other tool calls.
+- Keep dependent steps in order. For example, write or edit files first, then compile in a later call after those changes have completed.
+- Use `read` before `edit` when you need exact current text. Use `write` for whole-file replacement and `edit` for one exact replacement in an existing file.
+- Use `exec_command` and `write_stdin` only for debugging or inspection that the built-in `compile` tool does not cover.
+</tools>
+
 <mini_sdk_contract>
 - `main.py` must define `object_model` as a `mini_articraft.sdk.ArticulatedObject`.
 - Use `cadquery` directly for geometry.
