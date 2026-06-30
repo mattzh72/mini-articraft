@@ -178,12 +178,14 @@ def test_openai_model_loads_dotenv(tmp_path, monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.chdir(tmp_path)
     get_settings.cache_clear()
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("MINI_ARTICRAFT_OUTPUT_DIR", raising=False)
     monkeypatch.delenv("MINI_ARTICRAFT_MODEL", raising=False)
     monkeypatch.delenv("MINI_ARTICRAFT_REASONING_EFFORT", raising=False)
     tmp_path.joinpath(".env").write_text(
         "\n".join(
             [
                 "OPENAI_API_KEY=sk-test",
+                "MINI_ARTICRAFT_OUTPUT_DIR=custom-runs",
                 "MINI_ARTICRAFT_MODEL=gpt-test",
                 "MINI_ARTICRAFT_REASONING_EFFORT=low",
             ]
@@ -192,8 +194,10 @@ def test_openai_model_loads_dotenv(tmp_path, monkeypatch: pytest.MonkeyPatch) ->
     socket = FakeWebSocket([response_event("result")])
     patch_websocket(monkeypatch, socket)
 
-    run(OpenAIModel().query([{"role": "user", "content": "hello"}]))
+    model = OpenAIModel()
+    run(model.query([{"role": "user", "content": "hello"}]))
 
+    assert model.config.output_dir.as_posix() == "custom-runs"
     assert socket.sent[0]["model"] == "gpt-test"
     assert socket.sent[0]["reasoning"] == {"effort": "low"}
     assert socket.sent[0]["max_output_tokens"] == 128_000

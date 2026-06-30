@@ -14,7 +14,8 @@ class Model(Protocol):
 
 
 class Environment(Protocol):
-    def compile(self, code: str, *, name: str = "object") -> dict[str, Any]: ...
+    def create_run(self, run_id: str) -> Path: ...
+    def compile_path(self, run_dir: Path | str) -> dict[str, Any]: ...
 
 
 class Agent(Protocol):

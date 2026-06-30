@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from functools import cache
+from pathlib import Path
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -14,6 +15,7 @@ class Settings(BaseSettings):
         populate_by_name=True,
     )
 
+    output_dir: Path = Field(Path("runs"), validation_alias="MINI_ARTICRAFT_OUTPUT_DIR")
     openai_model: str = Field("gpt-5.5", validation_alias="MINI_ARTICRAFT_MODEL")
     openai_reasoning_effort: str = Field(
         "high",
