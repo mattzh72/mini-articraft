@@ -44,7 +44,7 @@ where = ["src"]
 include = ["mini_articraft*"]
 
 [tool.setuptools.package-data]
-mini_articraft = ["prompts/*.md", "config/*.yaml"]
+mini_articraft = ["prompts/*.md"]
 
 [tool.ruff]
 line-length = 100

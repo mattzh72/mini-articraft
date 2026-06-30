@@ -1,8 +1,0 @@
-agent:
-  attempts: 3
-environment:
-  output_dir: runs
-  timeout_seconds: 30
-model:
-  model_name: gpt-5.5
-  reasoning_effort: high
