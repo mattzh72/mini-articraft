@@ -8,6 +8,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from mini_articraft import package_dir
 from mini_articraft.record import Record, append_conversation
 
 
@@ -28,6 +29,7 @@ class LocalEnvironment:
 
         (run_dir / "workspace").mkdir(parents=True)
         (run_dir / "result").mkdir()
+        _link_sdk_docs(run_dir / "workspace")
         (run_dir / "conversation.jsonl").touch()
         Record(run_id=run_id).save(run_dir / "record.json")
         return run_dir
@@ -125,6 +127,12 @@ def _validate_run_id(run_id: str) -> str:
 
 def _project_root() -> Path:
     return Path(__file__).resolve().parents[3]
+
+
+def _link_sdk_docs(workspace: Path) -> None:
+    docs_dir = workspace / "docs"
+    docs_dir.mkdir()
+    docs_dir.joinpath("sdk").symlink_to(package_dir / "sdk" / "docs", target_is_directory=True)
 
 
 def _timeout_text(value: str | bytes | None) -> str:

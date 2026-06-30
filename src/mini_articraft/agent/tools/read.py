@@ -4,19 +4,20 @@ import base64
 import mimetypes
 from typing import Any
 
-from mini_articraft.agent.tools._core import Tool, ToolContext, schema, workspace_path
+from mini_articraft.agent.tools._core import Tool, ToolContext, display_path, readable_path, schema
 
 MAX_IMAGE_BYTES = 256_000
 
 
 async def run(context: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
-    path = workspace_path(context.workspace, str(args["path"]))
+    path = readable_path(context.workspace, str(args["path"]))
     data = path.read_bytes()
+    path_label = display_path(context.workspace, path)
     mime_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
     if mime_type.startswith("image/"):
         chunk = data[:MAX_IMAGE_BYTES]
         return {
-            "path": str(path.relative_to(context.workspace)),
+            "path": path_label,
             "mime_type": mime_type,
             "bytes": len(data),
             "truncated": len(data) > len(chunk),
@@ -33,7 +34,7 @@ async def run(context: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
     lines = data.decode("utf-8", errors="replace").splitlines()
     selected = lines[offset - 1 :] if limit is None else lines[offset - 1 : offset - 1 + int(limit)]
     return {
-        "path": str(path.relative_to(context.workspace)),
+        "path": path_label,
         "text": "\n".join(f"L{i}: {line}" for i, line in enumerate(selected, start=offset)),
     }
 
@@ -42,7 +43,7 @@ TOOL = Tool(
     "read",
     schema(
         "read",
-        "Read a file from the run workspace. Text files return line-numbered text with optional offset and limit; images return MIME type, byte size, and capped base64.",
+        "Read a file from the run workspace or read-only SDK docs under docs/sdk. Text files return line-numbered text with optional offset and limit; images return MIME type, byte size, and capped base64.",
         {
             "path": {
                 "type": "string",

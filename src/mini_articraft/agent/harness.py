@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 import mini_articraft.agent.tools as tools
 from mini_articraft import Environment, Model, package_dir
+from mini_articraft.agent.sdk_docs import render_sdk_quickstart_context
 from mini_articraft.agent.tools import ToolContext
 from mini_articraft.record import Record, append_conversation
 
@@ -32,7 +33,13 @@ class Agent:
         conversation_path = run_dir / "conversation.jsonl"
 
         self.messages = [
-            {"role": "system", "content": _read_prompt("system.md")},
+            {
+                "role": "system",
+                "content": _read_prompt("system.md")
+                + "\n\n<sdk_docs>\n"
+                + render_sdk_quickstart_context()
+                + "\n</sdk_docs>",
+            },
             {"role": "user", "content": _read_prompt("task.md").replace("{{ prompt }}", prompt)},
         ]
         for message in self.messages:

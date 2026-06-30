@@ -56,6 +56,20 @@ def test_read_text_with_offset_and_limit(tmp_path) -> None:
     assert result == {"path": "notes.txt", "text": "L2: two"}
 
 
+def test_read_can_open_symlinked_sdk_docs(tmp_path) -> None:
+    ctx = context(tmp_path)
+
+    result = run(
+        get("read").run(
+            ctx,
+            {"path": "docs/sdk/common/20_core_types.md", "offset": 1, "limit": 1},
+        )
+    )
+
+    assert result["path"] == "docs/sdk/common/20_core_types.md"
+    assert result["text"] == "L1: ---"
+
+
 def test_read_image_returns_metadata_and_base64(tmp_path) -> None:
     ctx = context(tmp_path)
     ctx.workspace.joinpath("image.png").write_bytes(b"\x89PNG\r\n")
@@ -87,6 +101,22 @@ def test_edit_fails_when_text_is_not_unique(tmp_path) -> None:
         run(get("edit").run(ctx, {"path": "main.py", "old_text": "x", "new_text": "y"}))
 
 
+def test_edit_rejects_symlinked_sdk_docs(tmp_path) -> None:
+    ctx = context(tmp_path)
+
+    with pytest.raises(ValueError, match="inside"):
+        run(
+            get("edit").run(
+                ctx,
+                {
+                    "path": "docs/sdk/common/20_core_types.md",
+                    "old_text": "Core Types",
+                    "new_text": "Core Values",
+                },
+            )
+        )
+
+
 def test_write_creates_parent_dirs(tmp_path) -> None:
     ctx = context(tmp_path)
 
@@ -94,6 +124,21 @@ def test_write_creates_parent_dirs(tmp_path) -> None:
 
     assert result == {"path": "parts/main.py", "bytes": 1}
     assert ctx.workspace.joinpath("parts", "main.py").read_text(encoding="utf-8") == "x"
+
+
+def test_write_rejects_symlinked_sdk_docs(tmp_path) -> None:
+    ctx = context(tmp_path)
+
+    with pytest.raises(ValueError, match="inside"):
+        run(get("write").run(ctx, {"path": "docs/sdk/common/new.md", "content": "x"}))
+
+
+def test_create_run_links_sdk_docs(tmp_path) -> None:
+    ctx = context(tmp_path)
+
+    link = ctx.workspace / "docs" / "sdk"
+    assert link.is_symlink()
+    assert link.joinpath("common", "00_quickstart.md").is_file()
 
 
 def test_exec_command_reports_output_and_return_code(tmp_path) -> None:

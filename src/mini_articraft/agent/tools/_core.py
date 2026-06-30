@@ -6,6 +6,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from mini_articraft import package_dir
+
+SDK_DOCS_ROOT = package_dir / "sdk" / "docs"
+WORKSPACE_SDK_DOCS_ROOT = Path("docs") / "sdk"
+
 
 @dataclass
 class ToolContext:
@@ -61,6 +66,37 @@ def scoped_path(base: Path, raw: str, label: str) -> Path:
 
 def workspace_path(workspace: Path, raw: str) -> Path:
     return scoped_path(workspace, raw, "run workspace")
+
+
+def readable_path(workspace: Path, raw: str) -> Path:
+    try:
+        return workspace_path(workspace, raw)
+    except ValueError as workspace_error:
+        target = Path(raw)
+        if target.is_absolute():
+            raise workspace_error from None
+
+        parts = target.parts
+        if len(parts) < 2 or parts[:2] != WORKSPACE_SDK_DOCS_ROOT.parts:
+            raise workspace_error from None
+        if any(part in {"", ".", ".."} for part in parts):
+            raise workspace_error from None
+
+        docs_root = SDK_DOCS_ROOT.resolve()
+        docs_target = docs_root.joinpath(*parts[2:]).resolve()
+        try:
+            docs_target.relative_to(docs_root)
+        except ValueError:
+            raise workspace_error from None
+        return docs_target
+
+
+def display_path(workspace: Path, path: Path) -> str:
+    try:
+        return path.relative_to(workspace).as_posix()
+    except ValueError:
+        docs_root = SDK_DOCS_ROOT.resolve()
+        return (WORKSPACE_SDK_DOCS_ROOT / path.resolve().relative_to(docs_root)).as_posix()
 
 
 def result_item(call_id: str, payload: dict[str, Any]) -> dict[str, Any]:

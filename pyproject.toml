@@ -44,7 +44,7 @@ where = ["src"]
 include = ["mini_articraft*"]
 
 [tool.setuptools.package-data]
-mini_articraft = ["prompts/*.md"]
+mini_articraft = ["prompts/*.md", "sdk/docs/common/*.md", "sdk/docs/cadquery/*.md"]
 
 [tool.ruff]
 line-length = 100
