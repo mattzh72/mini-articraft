@@ -148,7 +148,12 @@ def render_compile_signals(
         _add_section(parts, "notes", "Notes (informational):", notes)
     rules = _rules(failures, has_warnings=bool(warnings), repeated=repeated)
     if rules:
-        parts += ["", "<response_rules>", "Suggested next steps:\n" + "\n".join(rules), "</response_rules>"]
+        parts += [
+            "",
+            "<response_rules>",
+            "Suggested next steps:\n" + "\n".join(rules),
+            "</response_rules>",
+        ]
     parts.append("</compile_signals>")
     return "\n".join(parts)
 
@@ -163,12 +168,22 @@ def _bundle(status: Status, error: str, report: dict[str, Any] | None) -> Compil
 
 def _signals_from_report(report: dict[str, Any]) -> list[CompileSignal]:
     signals = [
-        CompileSignal("warning", "test_warning", "TEST_WARNING", str(w).splitlines()[0], str(w), source="tests")
+        CompileSignal(
+            "warning",
+            "test_warning",
+            "TEST_WARNING",
+            str(w).splitlines()[0],
+            str(w),
+            source="tests",
+        )
         for w in report.get("warnings", [])
         if str(w).strip()
     ]
     signals += [_allowance_signal(str(a)) for a in report.get("allowances", []) if str(a).strip()]
-    signals += [_failure_signal(str(f["name"]), str(f.get("details") or "")) for f in report.get("failures", [])]
+    signals += [
+        _failure_signal(str(f["name"]), str(f.get("details") or ""))
+        for f in report.get("failures", [])
+    ]
     return signals
 
 
@@ -176,7 +191,12 @@ def _failure_signal(name: str, details: str) -> CompileSignal:
     lower = f"{name}\n{details}".lower()
     spec = FAILURE_SPECS.get(name)
     if spec is None and "isolated" in lower:
-        spec = ("isolated_part", "QC_ISOLATED_PART", "Disconnected or isolated parts were found.", "compiler")
+        spec = (
+            "isolated_part",
+            "QC_ISOLATED_PART",
+            "Disconnected or isolated parts were found.",
+            "compiler",
+        )
     if spec is None and "disconnected geometry islands" in lower:
         spec = (
             "disconnected_geometry",
@@ -185,9 +205,21 @@ def _failure_signal(name: str, details: str) -> CompileSignal:
             "compiler",
         )
     if spec is None and ("collide" in lower or "contacts=" in lower or "collided=true" in lower):
-        spec = ("mesh_collision", "QC_MESH_COLLISION", "Mesh collision check found overlapping parts.", "compiler")
-    if spec is None and ("distance=" in lower or "contact_tol=" in lower or "min_distance" in lower):
-        spec = ("distance_or_contact", "TEST_DISTANCE_OR_CONTACT", "Distance or contact check failed.", "tests")
+        spec = (
+            "mesh_collision",
+            "QC_MESH_COLLISION",
+            "Mesh collision check found overlapping parts.",
+            "compiler",
+        )
+    if spec is None and (
+        "distance=" in lower or "contact_tol=" in lower or "min_distance" in lower
+    ):
+        spec = (
+            "distance_or_contact",
+            "TEST_DISTANCE_OR_CONTACT",
+            "Distance or contact check failed.",
+            "tests",
+        )
     kind, code, summary, source = spec or (
         "test_failure",
         "TEST_FAILURE",
@@ -199,7 +231,11 @@ def _failure_signal(name: str, details: str) -> CompileSignal:
 
 def _allowance_signal(text: str) -> CompileSignal:
     if text.startswith("allow_overlap("):
-        kind, code, summary = "allowed_overlap", "NOTE_ALLOWED_OVERLAP", "Overlap allowance declared."
+        kind, code, summary = (
+            "allowed_overlap",
+            "NOTE_ALLOWED_OVERLAP",
+            "Overlap allowance declared.",
+        )
     elif text.startswith("allow_isolated_part("):
         kind, code, summary = (
             "allowed_isolated_part",
@@ -232,7 +268,9 @@ def _runtime_signal(error: str) -> CompileSignal:
             text,
             True,
         )
-    return CompileSignal("failure", "compile_runtime", "COMPILE_RUNTIME_FAILURE", text, blocking=True)
+    return CompileSignal(
+        "failure", "compile_runtime", "COMPILE_RUNTIME_FAILURE", text, blocking=True
+    )
 
 
 def _summary(status: Status, signals: list[CompileSignal]) -> str:
@@ -260,18 +298,26 @@ def _primary_issue(signal: CompileSignal) -> str:
 
 def _rules(failures: list[CompileSignal], *, has_warnings: bool, repeated: bool) -> list[str]:
     if not failures:
-        return ["- Warnings are not blocking, but they are design evidence."] if has_warnings else []
+        return (
+            ["- Warnings are not blocking, but they are design evidence."] if has_warnings else []
+        )
     kind = failures[0].kind
     if kind in {"compile_runtime", "missing_run_tests", "invalid_run_tests_report"}:
-        rules = ["- Fix the compile/runtime error first; geometry checks are blocked until the script runs cleanly."]
+        rules = [
+            "- Fix the compile/runtime error first; geometry checks are blocked until the script runs cleanly."
+        ]
     elif kind in {"single_root_policy", "model_validity"}:
         rules = ["- Fix the model structure first; local geometry tuning is secondary."]
     elif kind in {"isolated_part", "disconnected_geometry", "mesh_collision"}:
-        rules = ["- Fix or explicitly justify the reported part relationship before adding more geometry."]
+        rules = [
+            "- Fix or explicitly justify the reported part relationship before adding more geometry."
+        ]
     else:
         rules = ["- Fix the named failing check before adding more geometry or tests."]
     if repeated:
-        rules.append("- This failure repeated; inspect the reported signal details before another small tweak.")
+        rules.append(
+            "- This failure repeated; inspect the reported signal details before another small tweak."
+        )
     if has_warnings:
         rules.append("- Warnings are not blocking, but they are design evidence.")
     return rules
@@ -285,7 +331,9 @@ def _add_section(parts: list[str], tag: str, title: str, signals: list[CompileSi
 def _signal_line(signal: CompileSignal) -> str:
     line = f"- {signal.severity.upper()} [{signal.kind}] {signal.summary}"
     if signal.details:
-        line += "\n" + "\n".join(f"  {part}" if part else "" for part in signal.details.splitlines())
+        line += "\n" + "\n".join(
+            f"  {part}" if part else "" for part in signal.details.splitlines()
+        )
     return line
 
 
@@ -307,11 +355,14 @@ def _failures(signals: list[CompileSignal] | tuple[CompileSignal, ...]) -> list[
 
 
 def _counts(signals: list[CompileSignal] | tuple[CompileSignal, ...]) -> dict[str, int]:
-    return {name: sum(1 for s in signals if s.severity == severity) for name, severity in (
-        ("failures", "failure"),
-        ("warnings", "warning"),
-        ("notes", "note"),
-    )}
+    return {
+        name: sum(1 for s in signals if s.severity == severity)
+        for name, severity in (
+            ("failures", "failure"),
+            ("warnings", "warning"),
+            ("notes", "note"),
+        )
+    }
 
 
 def _bundle_from_dict(value: dict[str, Any]) -> CompileSignalBundle:

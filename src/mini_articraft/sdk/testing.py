@@ -243,9 +243,13 @@ class TestContext:
         link_b_name = _part_name(link_b, field="link_b")
         check_name = name or f"expect_distance({link_a_name},{link_b_name})"
         min_distance = _non_negative(min_distance, "min_distance")
-        max_distance_value = None if max_distance is None else _non_negative(
-            max_distance,
-            "max_distance",
+        max_distance_value = (
+            None
+            if max_distance is None
+            else _non_negative(
+                max_distance,
+                "max_distance",
+            )
         )
         if max_distance_value is not None and max_distance_value < min_distance:
             return self._record(check_name, False, "max_distance must be >= min_distance")
@@ -279,9 +283,13 @@ class TestContext:
         negative_values = self._axis_values(negative_name, axis_key)
         gap = float(positive_values.min() - negative_values.max())
         if min_gap is None:
-            max_penetration_value = 0.0 if max_penetration is None else _non_negative(
-                max_penetration,
-                "max_penetration",
+            max_penetration_value = (
+                0.0
+                if max_penetration is None
+                else _non_negative(
+                    max_penetration,
+                    "max_penetration",
+                )
             )
             min_gap_value = -max_penetration_value
         else:
@@ -344,7 +352,9 @@ class TestContext:
         link_a_name = _part_name(link_a, field="link_a")
         link_b_name = _part_name(link_b, field="link_b")
         axis_names = _axis_names(axes)
-        check_name = name or f"expect_overlap({link_a_name},{link_b_name},axes={''.join(axis_names)})"
+        check_name = (
+            name or f"expect_overlap({link_a_name},{link_b_name},axes={''.join(axis_names)})"
+        )
         min_overlap = _non_negative(min_overlap, "min_overlap")
         ok = True
         details: list[str] = []
@@ -446,8 +456,7 @@ class TestContext:
     ) -> bool:
         contact_tol = _non_negative(contact_tol, "contact_tol")
         check_name = name or (
-            "fail_if_part_contains_disconnected_geometry_islands"
-            f"(contact_tol={contact_tol:.6g})"
+            f"fail_if_part_contains_disconnected_geometry_islands(contact_tol={contact_tol:.6g})"
         )
         findings = self._kernel().disconnected_geometry_islands(contact_tol=contact_tol)
         if not findings:
