@@ -12,6 +12,7 @@ from dataclasses import asdict, replace
 from pathlib import Path
 from typing import Any
 
+from mini_articraft.compile_feedback import build_compile_report_from_payload
 from mini_articraft.environments.export import export_object
 from mini_articraft.sdk import ArticulatedObject, TestContext, TestFailure, TestReport
 
@@ -95,6 +96,7 @@ def _compile_workspace(workspace: Path, export_dir: Path) -> dict[str, Any]:
 
     payload["stdout"] = captured_stdout.getvalue()
     payload["stderr"] = captured_stderr.getvalue()
+    payload["compile_report"] = build_compile_report_from_payload(payload)
     return payload
 
 
@@ -256,6 +258,7 @@ def main(argv: list[str] | None = None) -> int:
             "error": "Usage: mini-articraft-compile-run <run_dir>",
             "traceback": "",
         }
+        payload["compile_report"] = build_compile_report_from_payload(payload)
         print(json.dumps(payload))
         return 2
 

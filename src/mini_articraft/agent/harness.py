@@ -99,6 +99,11 @@ class Agent:
         data = Record.load(run_dir / "record.json").to_dict()
         data["message"] = final_text
         data["run"] = str(run_dir)
+        if context.compile_result and isinstance(
+            context.compile_result.get("compile_report"),
+            dict,
+        ):
+            data["compile_report"] = context.compile_result["compile_report"]
         if self.config.output_path:
             Record.load(run_dir / "record.json").save(self.config.output_path)
         self._emit(

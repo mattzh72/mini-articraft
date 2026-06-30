@@ -9,6 +9,7 @@ from typing import Any
 from pydantic import BaseModel
 
 from mini_articraft import package_dir
+from mini_articraft.compile_feedback import build_compile_report_from_payload
 from mini_articraft.record import Record, append_conversation
 
 
@@ -96,6 +97,7 @@ class LocalEnvironment:
         payload.setdefault("error", "")
         payload.setdefault("traceback", "")
         payload["returncode"] = completed.returncode
+        payload["compile_report"] = build_compile_report_from_payload(payload)
         return _with_paths(run_dir, payload)
 
     def _record_compile(self, run_dir: Path, result: dict[str, Any]) -> None:
@@ -162,17 +164,16 @@ def _error_result(
     stderr: str = "",
     returncode: int | None = None,
 ) -> dict[str, Any]:
-    return _with_paths(
-        run_dir,
-        {
-            "status": "error",
-            "manifest": "",
-            "parts": {},
-            "test_report": None,
-            "stdout": stdout,
-            "stderr": stderr,
-            "error": error,
-            "traceback": "",
-            "returncode": returncode,
-        },
-    )
+    payload = {
+        "status": "error",
+        "manifest": "",
+        "parts": {},
+        "test_report": None,
+        "stdout": stdout,
+        "stderr": stderr,
+        "error": error,
+        "traceback": "",
+        "returncode": returncode,
+    }
+    payload["compile_report"] = build_compile_report_from_payload(payload)
+    return _with_paths(run_dir, payload)

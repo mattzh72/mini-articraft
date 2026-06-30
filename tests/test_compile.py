@@ -47,6 +47,9 @@ def run_tests() -> TestReport:
     assert result["entrypoint"] == str(run_dir / "workspace" / "main.py")
     assert result["manifest"] == str(run_dir / "result" / "model.json")
     assert set(result["parts"]) == {"base", "drawer"}
+    assert result["compile_report"]["status"] == "success"
+    assert result["compile_report"]["counts"] == {"failures": 0, "warnings": 0, "notes": 0}
+    assert "<compile_signals>" in result["compile_report"]["signals_text"]
 
     manifest = json.loads(run_dir.joinpath("result", "model.json").read_text())
     assert manifest["name"] == "drawer"
@@ -123,6 +126,7 @@ def test_compile_path_requires_workspace_main_py(tmp_path) -> None:
 
     assert result["status"] == "error"
     assert result["error"] == "workspace/main.py is required"
+    assert result["compile_report"]["status"] == "failure"
 
 
 def test_compile_path_reports_missing_object_model(tmp_path) -> None:
@@ -297,3 +301,4 @@ def test_compile_path_reports_timeout(tmp_path) -> None:
 
     assert result["status"] == "error"
     assert "timed out" in result["error"]
+    assert result["compile_report"]["status"] == "failure"

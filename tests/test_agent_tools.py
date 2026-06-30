@@ -8,6 +8,7 @@ import sys
 import pytest
 
 from mini_articraft.agent.tools import ToolContext, get, schemas
+from mini_articraft.compile_feedback import build_compile_report_from_payload
 from mini_articraft.environments.local import LocalEnvironment
 
 
@@ -268,4 +269,49 @@ def run_tests() -> TestReport:
     assert "entrypoint" not in result
     assert "manifest" not in result
     assert "parts" not in result
+    assert result["compile_report"]["status"] == "success"
+    assert "<compile_signals>" in result["compile_report"]["signals_text"]
     assert ctx.compile_is_fresh is True
+
+
+def test_compile_tool_escalates_repeated_failures(tmp_path) -> None:
+    ctx = ToolContext(FakeCompileEnv("error", "error", "error"), tmp_path, tmp_path)
+
+    first = run(get("compile").run(ctx, {}))
+    second = run(get("compile").run(ctx, {}))
+    third = run(get("compile").run(ctx, {}))
+
+    assert "matches the previous compile attempt" not in first["compile_report"]["signals_text"]
+    assert "matches the previous compile attempt" in second["compile_report"]["signals_text"]
+    assert "This is compile failure 3 in a row." in third["compile_report"]["signals_text"]
+    assert ctx.compile_is_fresh is False
+
+
+def test_compile_tool_resets_failure_streak_on_success(tmp_path) -> None:
+    ctx = ToolContext(FakeCompileEnv("error", "success"), tmp_path, tmp_path)
+
+    run(get("compile").run(ctx, {}))
+    result = run(get("compile").run(ctx, {}))
+
+    assert result["status"] == "success"
+    assert ctx.last_compile_failure_signature is None
+    assert ctx.consecutive_compile_failures == 0
+
+
+class FakeCompileEnv:
+    def __init__(self, *statuses: str) -> None:
+        self.statuses = list(statuses)
+
+    def compile_path(self, _run_dir):
+        status = self.statuses.pop(0)
+        payload = {
+            "status": status,
+            "error": "ValueError: bad loft" if status == "error" else "",
+            "stdout": "",
+            "stderr": "",
+            "traceback": "",
+            "returncode": 1 if status == "error" else 0,
+            "test_report": None,
+        }
+        payload["compile_report"] = build_compile_report_from_payload(payload)
+        return payload

@@ -19,6 +19,8 @@ class ToolContext:
     workspace: Path
     compile_result: dict[str, Any] | None = None
     compile_is_fresh: bool = False
+    last_compile_failure_signature: str | None = None
+    consecutive_compile_failures: int = 0
 
 
 @dataclass(frozen=True)

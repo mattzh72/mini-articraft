@@ -104,6 +104,7 @@ def test_agent_writes_compiles_and_returns_final_response(tmp_path) -> None:
 
     assert result["status"] == "success"
     assert result["message"] == "done"
+    assert result["compile_report"]["status"] == "success"
     assert tmp_path.joinpath("box", "workspace", "main.py").is_file()
     assert "<sdk_docs>" in model.calls[0]["messages"][0]["content"]
     assert "`docs/sdk/common/35_joints.md`" in model.calls[0]["messages"][0]["content"]
