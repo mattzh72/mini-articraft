@@ -27,6 +27,7 @@ from mini_articraft.record import Record, read_conversation
 EventHandler = Callable[[events.Event], None]
 LiveRun = Callable[[EventHandler], Awaitable[dict[str, Any]]]
 PRIMARY_STYLE = "white"
+SIGNAL_STYLE = "grey70"
 
 
 def run_live(generate: LiveRun) -> dict[str, Any]:
@@ -232,6 +233,7 @@ class RunRenderer:
                 self._print(_indented(f"✓ {result.get('path', '')}", "green"))
             case "compile":
                 self._print_compile(str(result.get("status") or ""), str(result.get("error") or ""))
+                self._print_compile_signals(result.get("compile_report"))
                 self._print_output(result.get("stderr"))
             case "exec_command" | "write_stdin":
                 self._print(_indented(self._exec_summary(result), self._exec_style(result)))
@@ -246,6 +248,17 @@ class RunRenderer:
         else:
             detail = f": {_clip(error, 200)}" if error else ""
             self._print(_indented(f"✗ compile error{detail}", "red"))
+
+    def _print_compile_signals(self, compile_report: Any) -> None:
+        if not isinstance(compile_report, dict):
+            return
+        signals_text = str(compile_report.get("signals_text") or "")
+        lines = _compile_signal_lines(signals_text)
+        if not lines:
+            return
+        self._print(_indented("compile signals", SIGNAL_STYLE, depth=6))
+        for line in lines:
+            self._print(_indented(line, SIGNAL_STYLE, depth=8))
 
     def _print_output(self, output: Any) -> None:
         text = str(output or "")
@@ -280,6 +293,20 @@ class RunRenderer:
 
 def _indented(text: str, style: str, *, depth: int = 4) -> Text:
     return Text(" " * depth + text, style=style)
+
+
+def _compile_signal_lines(signals_text: str) -> list[str]:
+    lines: list[str] = []
+    for raw_line in str(signals_text or "").splitlines():
+        stripped = raw_line.strip()
+        if stripped.startswith("<") and stripped.endswith(">"):
+            continue
+        lines.append(raw_line)
+    while lines and not lines[0].strip():
+        lines.pop(0)
+    while lines and not lines[-1].strip():
+        lines.pop()
+    return lines
 
 
 def _clip(text: str, limit: int) -> str:

@@ -62,6 +62,54 @@ def test_renderer_shows_compile_and_errors() -> None:
     assert "read error: file not found" in out
 
 
+def test_renderer_shows_full_compile_signals_without_protocol_tags_or_truncation() -> None:
+    renderer, console = _renderer()
+    detail_lines = "\n".join(f"  detail line {index}" for index in range(20))
+    signals_text = (
+        "<compile_signals>\n"
+        "<summary>\n"
+        "status=failure failures=1 warnings=0 notes=0\n"
+        "Primary issue: compiler-owned geometry checks found floating islands inside a part.\n"
+        "</summary>\n"
+        "\n"
+        "<failures>\n"
+        "Failures (blocking):\n"
+        "- FAILURE [disconnected_geometry] Disconnected geometry islands were found inside a part.\n"
+        f"{detail_lines}\n"
+        "</failures>\n"
+        "\n"
+        "<response_rules>\n"
+        "Suggested next steps:\n"
+        "- Fix or explicitly justify the reported part relationship before adding more geometry.\n"
+        "</response_rules>\n"
+        "</compile_signals>"
+    )
+
+    renderer.handle(
+        events.ToolFinished(
+            "c1",
+            "compile",
+            {
+                "result": {
+                    "status": "error",
+                    "error": "SDK tests failed",
+                    "compile_report": {"signals_text": signals_text},
+                }
+            },
+            0.1,
+        )
+    )
+
+    out = _text(console)
+    assert "compile signals" in out
+    assert "status=failure failures=1 warnings=0 notes=0" in out
+    assert "Failures (blocking):" in out
+    assert "detail line 19" in out
+    assert "Suggested next steps:" in out
+    assert "<compile_signals>" not in out
+    assert "… (truncated)" not in out
+
+
 def test_renderer_truncates_long_output() -> None:
     renderer, console = _renderer()
     stdout = "\n".join(f"line {i}" for i in range(20))
