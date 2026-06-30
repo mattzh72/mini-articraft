@@ -23,7 +23,7 @@ def compile_run(run_dir: Path) -> dict[str, Any]:
     pending_result_dir = run_dir / ".result_pending"
 
     payload = _compile_workspace(workspace, pending_result_dir)
-    if payload["status"] == "success":
+    if Path(str(payload.get("usdz") or "")).is_file():
         _replace_tree(pending_result_dir, result_dir)
         payload["manifest"] = str(result_dir / "model.json")
         payload["usdz"] = str(result_dir / "model.usdz")
@@ -62,15 +62,19 @@ def _compile_workspace(workspace: Path, export_dir: Path) -> dict[str, Any]:
             authored_report = _run_required_tests(globals_dict)
             baseline_report = _run_baseline_tests(object_model, authored_report)
             test_report = _merge_test_reports(authored_report, baseline_report)
-            _raise_for_failed_test_report(test_report)
+            payload["test_report"] = _serialize_test_report(test_report)
             result = export_object(object_model, export_dir)
+            payload.update(
+                {
+                    "manifest": str(result.manifest),
+                    "usdz": str(result.usdz),
+                }
+            )
+            _raise_for_failed_test_report(test_report)
 
         payload.update(
             {
                 "status": "success",
-                "manifest": str(result.manifest),
-                "usdz": str(result.usdz),
-                "test_report": _serialize_test_report(test_report),
             }
         )
     except BaseException as exc:
@@ -82,7 +86,7 @@ def _compile_workspace(workspace: Path, export_dir: Path) -> dict[str, Any]:
                 "traceback": traceback.format_exc(),
                 "test_report": _serialize_test_report(test_report)
                 if isinstance(test_report, TestReport)
-                else None,
+                else payload.get("test_report"),
             }
         )
     finally:

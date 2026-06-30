@@ -253,6 +253,8 @@ def run_tests() -> TestReport:
     assert "fail_if_parts_collide_in_current_pose" in result["error"]
     assert "part_a" in result["error"]
     assert "part_b" in result["error"]
+    assert result["usdz"] == str(run_dir / "result" / "model.usdz")
+    assert run_dir.joinpath("result", "model.usdz").is_file()
 
 
 def test_compile_path_fails_disconnected_geometry_inside_part(tmp_path) -> None:
