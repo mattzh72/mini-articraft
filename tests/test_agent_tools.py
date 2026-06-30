@@ -84,7 +84,7 @@ def test_read_can_open_symlinked_sdk_docs(tmp_path) -> None:
     )
 
     assert result["path"] == "docs/sdk/common/20_core_types.md"
-    assert result["text"] == "L1: ---"
+    assert result["text"] == "L1: # Core types"
 
 
 def test_read_image_returns_metadata_and_base64(tmp_path) -> None:
@@ -244,10 +244,20 @@ def test_compile_tool_compiles_workspace(tmp_path) -> None:
         """
 import cadquery as cq
 
-from mini_articraft.sdk import ArticulatedObject
+from mini_articraft.sdk import ArticulatedObject, TestContext, TestReport
 
-object_model = ArticulatedObject("box")
-object_model.part("base", cq.Workplane("XY").box(1, 1, 1))
+
+def build_object_model() -> ArticulatedObject:
+    model = ArticulatedObject("box")
+    model.part("base", cq.Workplane("XY").box(1, 1, 1))
+    return model
+
+
+object_model = build_object_model()
+
+
+def run_tests() -> TestReport:
+    return TestContext(object_model).report()
 """,
         encoding="utf-8",
     )
@@ -258,4 +268,4 @@ object_model.part("base", cq.Workplane("XY").box(1, 1, 1))
     assert "entrypoint" not in result
     assert "manifest" not in result
     assert "parts" not in result
-    assert ctx.compiled_revision == ctx.revision
+    assert ctx.compile_is_fresh is True

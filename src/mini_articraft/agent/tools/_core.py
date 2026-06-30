@@ -17,9 +17,8 @@ class ToolContext:
     env: Any
     run_dir: Path
     workspace: Path
-    revision: int = 0
-    compiled_revision: int = -1
     compile_result: dict[str, Any] | None = None
+    compile_is_fresh: bool = False
 
 
 @dataclass(frozen=True)

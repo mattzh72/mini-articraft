@@ -1,67 +1,68 @@
----
-name: sdk-joints
-description: Read this before authoring fixed, revolute, continuous, or prismatic joints, especially when choosing origins, axes, tuple limits, and positive motion.
----
-
 # Joints
 
-## Purpose
+## Scope
 
-Use joints to describe how parts are connected. A joint records the parent part,
-the child part, the joint frame, the motion axis, and any motion range.
+Joints define the part graph and the relative motion between parent and child
+parts.
 
-## Import
+Use the joint helper methods on `ArticulatedObject`. Do not create joint objects
+directly.
 
-```python
-from mini_articraft.sdk import Origin
+## Joint frame
+
+Every joint has:
+
+- A parent part.
+- A child part.
+- An `Origin` that places the joint frame in the parent part frame.
+- An `axis` expressed in the joint frame.
+- A motion value read from `ctx.pose(...)` during tests.
+
+The child part frame is placed by this transform order:
+
+```text
+parent world transform
+then joint origin
+then joint motion
 ```
 
-## Recommended Surface
+At pose value `0.0`, the joint motion is the identity transform.
 
-- `model.fixed(...)`
-- `model.revolute(...)`
-- `model.continuous(...)`
-- `model.prismatic(...)`
-- `Origin(...)`
+Author the child geometry so the child local origin is correct at pose value
+`0.0`.
 
-Do not import low-level joint classes. Use the named helpers.
+## `Origin`
 
-## Joint Frame
+```python
+Origin(
+    xyz=(0.0, 0.0, 0.0),
+    rpy=(0.0, 0.0, 0.0),
+)
+```
 
-Each joint has an `origin` and an `axis`.
+`xyz` translates from the parent part frame to the joint frame.
 
-- `origin` places the joint frame in the parent part frame.
-- `axis` is expressed in the joint frame.
-- The default axis is `(0.0, 0.0, 1.0)` for revolute and continuous joints.
-- The default axis is `(1.0, 0.0, 0.0)` for prismatic joints.
+`rpy` rotates from the parent part frame to the joint frame. The order is roll,
+pitch, then yaw. Values are radians.
 
-Author the child geometry so its local frame makes sense at `q=0`. For a hinge,
-this usually means the child part frame sits on the hinge line. For a slide,
-this usually means the child part frame sits at the seated position.
-
-## Fixed Joints
-
-Use a fixed joint when two parts do not move relative to each other but should
-remain separate parts.
+## Fixed joint
 
 ```python
 model.fixed(
-    "base_to_cover",
-    base,
-    cover,
-    origin=Origin(xyz=(0.0, 0.0, 0.08)),
+    "parent_to_child",
+    parent,
+    child,
+    origin=Origin(xyz=(0.0, 0.0, 0.04)),
 )
 ```
 
 Rules:
 
-- fixed joints do not use `axis`
-- fixed joints do not use `limits`
-- fixed joints still count as graph edges during validation
+- No `axis` argument is accepted.
+- No `limits` argument is accepted.
+- The child stays fixed at `origin` relative to the parent.
 
-## Revolute Joints
-
-Use a revolute joint for bounded rotation.
+## Revolute joint
 
 ```python
 model.revolute(
@@ -76,148 +77,75 @@ model.revolute(
 
 Rules:
 
-- revolute joints require `limits=(lower, upper)`
-- lower and upper are radians
-- the axis must be a non-zero 3-vector
-- positive motion follows the right-hand rule around `axis`
+- `limits` is required.
+- `limits` is `(lower, upper)` in radians.
+- `axis` must contain three numeric values.
+- `axis` must not be `(0.0, 0.0, 0.0)`.
+- Positive motion follows the right hand rule around `axis`.
 
-### Example: Lid That Opens Upward
+Use `ctx.pose(body_to_lid=value)` to test a rotated pose.
 
-```python
-# Closed lid geometry extends along local +X from the hinge line.
-# Using -Y makes positive q lift the free edge toward +Z.
-model.revolute(
-    "body_to_lid",
-    body,
-    lid,
-    origin=Origin(xyz=(-0.09, 0.0, 0.05)),
-    axis=(0.0, -1.0, 0.0),
-    limits=(0.0, 1.2),
-)
-```
-
-### Example: Mirrored Lid With The Same Positive Direction
-
-```python
-# If the closed panel extends along local -X from the hinge line instead,
-# flip the axis sign so positive q still opens upward.
-model.revolute(
-    "body_to_mirrored_lid",
-    body,
-    mirrored_lid,
-    origin=Origin(xyz=(0.09, 0.0, 0.05)),
-    axis=(0.0, 1.0, 0.0),
-    limits=(0.0, 1.2),
-)
-```
-
-## Continuous Joints
-
-Use a continuous joint for unbounded rotation.
+## Continuous joint
 
 ```python
 model.continuous(
-    "frame_to_rotor",
-    frame,
-    rotor,
-    origin=Origin(xyz=(0.0, 0.0, 0.04)),
+    "knob_axis",
+    body,
+    knob,
+    origin=Origin(xyz=(0.0, 0.0, 0.03)),
     axis=(0.0, 0.0, 1.0),
 )
 ```
 
 Rules:
 
-- continuous joints do not take limits
-- the axis must be a non-zero 3-vector
-- positive motion follows the right-hand rule around `axis`
+- No `limits` argument is accepted.
+- `axis` must contain three numeric values.
+- `axis` must not be `(0.0, 0.0, 0.0)`.
+- Positive motion follows the right hand rule around `axis`.
 
-Use this for wheels, fan rotors, free-spinning knobs, pulleys, and shafts.
+Use a continuous joint only when any rotation angle is valid.
 
-## Prismatic Joints
-
-Use a prismatic joint for bounded translation.
+## Prismatic joint
 
 ```python
 model.prismatic(
-    "cabinet_to_drawer",
-    cabinet,
+    "case_to_drawer",
+    case,
     drawer,
-    origin=Origin(xyz=(0.0, 0.0, 0.10)),
+    origin=Origin(xyz=(0.0, 0.0, 0.0)),
     axis=(1.0, 0.0, 0.0),
-    limits=(0.0, 0.28),
+    limits=(0.0, 0.18),
 )
 ```
 
 Rules:
 
-- prismatic joints require `limits=(lower, upper)`
-- lower and upper are distances in the same unit as the CadQuery geometry
-- the axis must be a non-zero 3-vector
-- positive motion translates the child along `+axis`
+- `limits` is required.
+- `limits` is `(lower, upper)` in the same unit as the geometry.
+- `axis` must contain three numeric values.
+- `axis` must not be `(0.0, 0.0, 0.0)`.
+- Positive motion translates the child in the `axis` direction.
 
-### Example: Drawer That Extends Outward
+Use `ctx.pose(case_to_drawer=value)` to test an extended pose.
 
-```python
-model.prismatic(
-    "cabinet_to_drawer",
-    cabinet,
-    drawer,
-    origin=Origin(xyz=(0.0, 0.0, 0.12)),
-    axis=(1.0, 0.0, 0.0),
-    limits=(0.0, 0.28),
-)
-```
+## Limits
 
-### Retained Insertion For Slides
+For revolute and prismatic joints, `lower` must be less than or equal to
+`upper`.
 
-For sleeves, telescoping poles, nested rails, and similar slide assemblies,
-size the moving member for the fully extended pose. If one part slides out of
-another, model the sliding member with enough hidden length that it still
-remains engaged at the upper limit.
+Use `0.0` for the closed, seated, or rest pose when possible. This makes tests
+and export easier to read.
 
-Use this rule:
+## Naming
 
-```text
-sliding member length >= visible exposed length at max extension + minimum retained insertion
-```
+Use names that state the relationship.
 
-In practice:
-
-- put the prismatic `origin` at the sleeve entry, socket lip, or seating plane
-- choose `limits.upper` as the usable travel after preserving retained insertion
-- let the child geometry extend past the joint frame in the hidden direction if
-  that is what the real mechanism needs
+Prefer this form:
 
 ```python
-outer_sleeve = model.part("outer_sleeve", cq.Workplane("XY").box(0.06, 0.06, 0.24))
-inner_mast = model.part("inner_mast", cq.Workplane("XY").box(0.04, 0.04, 0.62))
-
-model.prismatic(
-    "sleeve_to_mast",
-    outer_sleeve,
-    inner_mast,
-    origin=Origin(xyz=(0.0, 0.0, 0.24)),
-    axis=(0.0, 0.0, 1.0),
-    limits=(0.0, 0.26),
-)
+model.revolute("base_to_lid", base, lid, ...)
 ```
 
-## Validation Rules
-
-Use these rules when calling a joint helper:
-
-- revolute and prismatic joints require `limits=(lower, upper)`
-- continuous joints do not take limits
-- fixed joints do not take limits
-- parent and child must name different parts
-- each child part can have only one parent joint
-- joint names must be unique
-- moving joint axes must be non-zero
-
-If a joint moves in the wrong direction, negate the axis. Keep the lower and
-upper bounds as the semantic range of the motion.
-
-## See Also
-
-- `30_articulated_object.md` for the object graph rules.
-- `20_core_types.md` for the public authoring surface.
+Avoid names that only state the motion type, such as `"hinge1"`, unless the part
+names already make the relationship clear.

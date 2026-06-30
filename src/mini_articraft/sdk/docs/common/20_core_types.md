@@ -1,74 +1,84 @@
----
-name: sdk-core-types
-description: Read this when you need the strict mini-articraft authoring imports, units, Origin constructor, part handles, joint handles, and limit tuple rules.
----
+# Core types
 
-# Core Types
+## Scope
 
-## Purpose
+This page documents the public names exported by `mini_articraft.sdk` and the
+data values returned by the public methods.
 
-This page documents the public authoring surface for mini-articraft scripts.
-The public SDK is intentionally small.
+## Public exports
 
-## Import
+`mini_articraft.sdk` exports these names:
 
 ```python
-from mini_articraft.sdk import ArticulatedObject, Origin, ValidationError
+from mini_articraft.sdk import (
+    AllowedOverlap,
+    ArticulatedObject,
+    CollisionFinding,
+    DistanceFinding,
+    Origin,
+    SDKError,
+    TestContext,
+    TestFailure,
+    TestReport,
+    ValidationError,
+)
 ```
 
-Use CadQuery directly for geometry.
+Do not import from modules below `mini_articraft.sdk`. Those modules are
+implementation details.
 
-```python
-import cadquery as cq
-```
-
-## Public Surface
-
-- `ArticulatedObject(...)`
-- `Origin(...)`
-- `model.part(...)`
-- `model.fixed(...)`
-- `model.revolute(...)`
-- `model.prismatic(...)`
-- `model.continuous(...)`
-- `model.get_part(...)`
-- `model.validate()`
-- `ValidationError`
-
-Do not import export helpers, low-level joint classes, or low-level part
-classes from the SDK. The compile worker handles export after `object_model` is
-defined.
-
-## Units
-
-CadQuery is unitless. In mini-articraft, use meters when possible.
-
-- `Origin.xyz` uses the same distance unit as the CadQuery geometry.
-- `Origin.rpy` is `(roll, pitch, yaw)` in radians.
-- Revolute joint limits are radians.
-- Prismatic joint limits use the same distance unit as the CadQuery geometry.
-- Continuous joints have no lower or upper position bounds.
-
-## Model
-
-### `ArticulatedObject`
+## `ArticulatedObject`
 
 ```python
 ArticulatedObject(name: str)
 ```
 
-Create one object model per script.
+Creates an empty object model.
 
-```python
-model = ArticulatedObject("drawer_box")
-```
+The model owns:
 
-The model owns parts and joints. Register geometry with `model.part(...)`, then
-connect parts with named joint helpers.
+- `name`, which is a non-empty string.
+- `parts`, which is a list of registered part handles.
+- `joints`, which is a list of registered joint handles.
 
-## Transforms
+Add parts with `model.part(...)`.
 
-### `Origin`
+Add joints with `model.fixed(...)`, `model.revolute(...)`,
+`model.continuous(...)`, and `model.prismatic(...)`.
+
+## Part handles
+
+`model.part(...)` returns a part handle.
+
+A part handle has these public fields:
+
+- `name`, which is the part name.
+- `shape`, which is the CadQuery `Workplane`, `Shape`, or `Assembly` used for the part.
+
+You may pass a part handle anywhere a method accepts `str | part_handle`.
+
+Use the part name string in tests when that is clearer.
+
+## Joint handles
+
+Each joint helper returns a joint handle.
+
+A joint handle has these public fields:
+
+- `name`
+- `type`
+- `parent`
+- `child`
+- `origin`
+- `axis`
+- `limits`
+
+Generated scripts should pass joint handles to `ctx.pose(...)` only when useful.
+String joint names are preferred in simple code.
+
+Do not construct joint handles directly.
+
+## `Origin`
 
 ```python
 Origin(
@@ -77,81 +87,111 @@ Origin(
 )
 ```
 
-- `xyz`: translation from the parent part frame to the joint frame.
-- `rpy`: rotation from the parent part frame to the joint frame.
-- Both fields must contain exactly 3 numeric values.
+`Origin` defines the joint frame in the parent part frame.
 
-Use `Origin()` when the joint frame is already at the parent part origin.
+`xyz` is translation.
 
-## Part Handles
+`rpy` is rotation as roll, pitch, and yaw in radians.
 
-### `model.part(...)`
+Both fields must contain exactly three numeric values.
+
+Use `Origin()` when the joint frame is at the parent part origin with no
+rotation.
+
+## Test dataclasses
+
+### `TestFailure`
 
 ```python
-model.part(
-    name: str,
-    shape: cadquery.Workplane | cadquery.Shape | cadquery.Assembly,
+TestFailure(name: str, details: str)
+```
+
+Records one failed check.
+
+### `AllowedOverlap`
+
+```python
+AllowedOverlap(
+    link_a: str,
+    link_b: str,
+    reason: str,
+    elem_a: str | None = None,
+    elem_b: str | None = None,
 )
 ```
 
-This registers a CadQuery shape as a named part and returns a part handle. Use
-that handle when adding joints.
+Records one intentional overlap allowance.
+
+In the current mini SDK, `elem_a` and `elem_b` are stored in the report but are
+not enforced. A matching allowance suppresses the whole part pair in the
+baseline collision check.
+
+### `CollisionFinding`
 
 ```python
-base = model.part("base", cq.Workplane("XY").box(0.3, 0.2, 0.05))
-lid = model.part("lid", cq.Workplane("XY").box(0.28, 0.18, 0.02))
-```
-
-Part names must be unique and non-empty.
-
-## Joint Handles
-
-Joint helpers return joint handles. Most scripts do not need to inspect them.
-
-```python
-hinge = model.revolute(
-    "base_to_lid",
-    base,
-    lid,
-    origin=Origin(xyz=(-0.14, 0.0, 0.04)),
-    axis=(0.0, -1.0, 0.0),
-    limits=(0.0, 1.2),
+CollisionFinding(
+    link_a: str,
+    link_b: str,
+    contacts: int,
+    max_depth: float | None = None,
+    normal: tuple[float, float, float] | None = None,
+    position: tuple[float, float, float] | None = None,
 )
 ```
 
-Use the named helpers for all joints.
+Represents collision details reported by FCL when they are available.
 
-## Limit Tuples
-
-Use a `(lower, upper)` tuple for bounded motion.
+### `DistanceFinding`
 
 ```python
-model.revolute("base_to_lid", base, lid, limits=(0.0, 1.2))
-model.prismatic("case_to_drawer", case, drawer, limits=(0.0, 0.28))
+DistanceFinding(
+    link_a: str,
+    link_b: str,
+    distance: float,
+    nearest_a: tuple[float, float, float] | None = None,
+    nearest_b: tuple[float, float, float] | None = None,
+    collided: bool = False,
+)
 ```
 
-The SDK records default effort and velocity values internally. The agent should
-choose the motion range, not effort or velocity.
+Represents a mesh distance result.
 
-Continuous joints are unbounded, so they do not take limits.
+### `TestReport`
 
 ```python
-model.continuous("fork_to_wheel", fork, wheel, axis=(0.0, 1.0, 0.0))
+TestReport(
+    passed: bool,
+    checks_run: int,
+    checks: tuple[str, ...],
+    failures: tuple[TestFailure, ...],
+    warnings: tuple[str, ...] = (),
+    allowances: tuple[str, ...] = (),
+    allowed_isolated_parts: tuple[str, ...] = (),
+    allowed_overlaps: tuple[AllowedOverlap, ...] = (),
+)
 ```
+
+`run_tests()` must return this type.
+
+Use `ctx.report()` to create it.
+
+Do not hand build a report unless a test specifically needs to return a known
+fixed report.
 
 ## Errors
 
-The SDK raises `ValidationError` for authoring mistakes such as missing parts,
-duplicate names, bad vectors, invalid limits, and disconnected joint graphs.
+`ValidationError` is raised when a model definition, joint definition, pose, or
+test argument is invalid.
 
-```python
-try:
-    model.validate()
-except ValidationError as exc:
-    print(exc)
-```
+`SDKError` is the base SDK error type.
 
-## See Also
+Generated scripts do not need to catch these errors. Compile reports them.
 
-- `30_articulated_object.md` for model construction and validation.
-- `35_joints.md` for joint authoring patterns.
+## Units
+
+Use meters for linear dimensions in generated scripts.
+
+Use radians for rotations.
+
+Use the same unit for CadQuery geometry, `Origin.xyz`, prismatic motion, mesh
+distance checks, and contact tolerances.

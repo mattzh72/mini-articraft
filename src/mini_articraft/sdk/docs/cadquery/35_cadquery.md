@@ -1,8 +1,3 @@
----
-name: cadquery-overview
-description: Read this when you need to understand how mini-articraft uses CadQuery shapes directly as parts, and how that differs from the larger Articraft SDK.
----
-
 # CadQuery in mini-articraft
 
 ## Purpose

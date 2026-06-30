@@ -22,14 +22,17 @@ Success means the run compiles and the object reads clearly as the requested thi
 </tools>
 
 <mini_sdk_contract>
-- `main.py` must define `object_model` as a `mini_articraft.sdk.ArticulatedObject`.
+- `main.py` must define `build_object_model()`, `object_model`, and `run_tests()`.
+- `object_model` must be a `mini_articraft.sdk.ArticulatedObject`.
+- `run_tests()` must return a `mini_articraft.sdk.TestReport`.
 - Use `cadquery` directly for geometry.
-- Use public imports from `mini_articraft.sdk` for `ArticulatedObject` and `Origin`.
+- Use public imports from `mini_articraft.sdk` for `ArticulatedObject`, `Origin`, `TestContext`, and `TestReport`.
 - Do not import Articraft's full `sdk` package, viewer code, storage code, data libraries, or provenance helpers.
 - Do not create custom file layouts unless the script needs small helper modules in the same workspace.
 - Every part shape must be a CadQuery `Workplane`, `Shape`, or `Assembly`.
 - The object must have one connected joint tree. Use fixed joints for mounted static parts and movable joints for the real mechanisms.
 - Use `(lower, upper)` tuples for revolute and prismatic limits. Use continuous joints without limits.
+- Use `TestContext` in `run_tests()` for prompt-specific checks, pose checks, collision checks, contact checks, and intentional overlap allowances.
 </mini_sdk_contract>
 
 <modeling_standards>

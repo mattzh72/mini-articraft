@@ -1,75 +1,65 @@
----
-name: sdk-articulated-object
-description: Read this when you need to create an ArticulatedObject, add CadQuery parts, connect them with named joints, look up parts, or understand validation.
----
-
 # ArticulatedObject
 
-## Purpose
+## Scope
 
-`ArticulatedObject` is the authored assembly. Use it to register CadQuery parts,
-connect them with named joints, and validate the part graph.
+`ArticulatedObject` is the object model that `main.py` must export as
+`object_model`.
 
-## Import
+Use it to register CadQuery parts and connect those parts with joints.
+
+## Constructor
 
 ```python
-from mini_articraft.sdk import ArticulatedObject, Origin
+model = ArticulatedObject(name: str)
 ```
 
-## Recommended Surface
+`name` must be a non-empty string.
 
-- `ArticulatedObject(...)`
-- `model.part(...)`
-- `model.fixed(...)`
-- `model.revolute(...)`
-- `model.continuous(...)`
-- `model.prismatic(...)`
-- `model.get_part(...)`
-- `model.validate()`
+Create one `ArticulatedObject` per generated script.
 
-The compile worker handles export after the script defines `object_model`.
-
-## Construction
+## `model.part(...)`
 
 ```python
-ArticulatedObject(name: str)
-```
-
-For normal code, start with an empty model and add parts through helper calls.
-
-```python
-model = ArticulatedObject("drawer_box")
-```
-
-## Parts
-
-### `model.part(...)`
-
-```python
-model.part(
+part = model.part(
     name: str,
-    shape: cadquery.Workplane | cadquery.Shape | cadquery.Assembly,
+    shape: cq.Workplane | cq.Shape | cq.Assembly,
 )
 ```
 
-- Creates a named part and returns a part handle.
+Creates a named part and returns a part handle.
+
+Rules:
+
+- `name` must be a non-empty string.
+- `name` must be unique within the model.
 - `shape` must be a CadQuery `Workplane`, `Shape`, or `Assembly`.
-- Part names must be unique and non-empty.
+- A part is the unit used by joints, export, and collision tests.
+
+Example:
 
 ```python
-case = model.part("case", cq.Workplane("XY").box(0.4, 0.3, 0.12))
-drawer = model.part("drawer", cq.Workplane("XY").box(0.34, 0.26, 0.08))
+base = model.part("base", cq.Workplane("XY").box(0.3, 0.2, 0.04))
+lid = model.part("lid", cq.Workplane("XY").box(0.28, 0.18, 0.018))
 ```
 
-## Named Joint Helpers
+## Part references
 
-Use the named joint helpers. They keep the authoring surface small and avoid
-manual joint type selection.
+Methods that accept a part reference accept either:
 
-### `model.fixed(...)`
+- The part name as `str`.
+- The part handle returned by `model.part(...)`.
+
+Both forms are valid:
 
 ```python
-model.fixed(
+model.fixed("base_to_foot", "base", "foot")
+model.fixed("base_to_lid_stop", base, lid_stop)
+```
+
+## Fixed joints
+
+```python
+joint = model.fixed(
     name: str,
     parent: str | part_handle,
     child: str | part_handle,
@@ -78,17 +68,14 @@ model.fixed(
 )
 ```
 
-Use a fixed joint for mounted parts that should stay separate in the object
-graph.
+Use `fixed` when the child part does not move relative to the parent part.
+
+Fixed joints still connect the part graph.
+
+## Revolute joints
 
 ```python
-model.fixed("base_to_panel", base, front_panel)
-```
-
-### `model.revolute(...)`
-
-```python
-model.revolute(
+joint = model.revolute(
     name: str,
     parent: str | part_handle,
     child: str | part_handle,
@@ -99,24 +86,14 @@ model.revolute(
 )
 ```
 
-Use a revolute joint for a bounded hinge or pivot. `limits` is `(lower, upper)`
-in radians.
+Use `revolute` for bounded rotation.
+
+`limits` is required and is `(lower, upper)` in radians.
+
+## Continuous joints
 
 ```python
-model.revolute(
-    "body_to_lid",
-    body,
-    lid,
-    origin=Origin(xyz=(-0.11, 0.0, 0.05)),
-    axis=(0.0, -1.0, 0.0),
-    limits=(0.0, 1.2),
-)
-```
-
-### `model.continuous(...)`
-
-```python
-model.continuous(
+joint = model.continuous(
     name: str,
     parent: str | part_handle,
     child: str | part_handle,
@@ -126,22 +103,14 @@ model.continuous(
 )
 ```
 
-Use a continuous joint for unbounded rotation. Continuous joints do not take
-limits.
+Use `continuous` for unbounded rotation.
+
+Continuous joints do not take position limits.
+
+## Prismatic joints
 
 ```python
-model.continuous(
-    "fork_to_wheel",
-    fork,
-    wheel,
-    axis=(0.0, 1.0, 0.0),
-)
-```
-
-### `model.prismatic(...)`
-
-```python
-model.prismatic(
+joint = model.prismatic(
     name: str,
     parent: str | part_handle,
     child: str | part_handle,
@@ -152,74 +121,54 @@ model.prismatic(
 )
 ```
 
-Use a prismatic joint for a drawer, slide, telescoping stage, plunger, or any
-part that moves in a straight line. `limits` is `(lower, upper)` in the same
-unit as the CadQuery geometry.
+Use `prismatic` for bounded translation.
+
+`limits` is required and is `(lower, upper)` in the same unit as the geometry.
+
+## `model.get_part(...)`
 
 ```python
-model.prismatic(
-    "cabinet_to_drawer",
-    cabinet,
-    drawer,
-    origin=Origin(xyz=(0.0, 0.0, 0.06)),
-    axis=(1.0, 0.0, 0.0),
-    limits=(0.0, 0.28),
-)
+part = model.get_part(part: str | part_handle)
 ```
 
-## Frame And Direction Conventions
+Returns the matching part handle.
 
-Joints use a URDF-style joint frame:
+Raises `ValidationError` when the part does not exist.
 
-1. `origin` places the joint frame relative to the parent part frame.
-2. `axis` is written in the joint frame.
-3. At `q=0`, the child part frame is coincident with the joint frame.
-4. Positive revolute and continuous motion follows the right-hand rule around
-   `axis`.
-5. Positive prismatic motion translates the child along `+axis`.
-
-If increasing the joint value moves the child in the wrong direction, negate
-`axis`. Keep `limits` as the semantic motion range.
-
-## Lookup Helpers
-
-### `model.get_part(...)`
+## `model.validate()`
 
 ```python
-model.get_part(part: str | part_handle)
+model.validate()
 ```
 
-Returns the named part. Raises `ValidationError` if it does not exist.
+Validates the part and joint graph.
 
-```python
-lid = model.get_part("lid")
-```
+Validation requires:
 
-## Validation
+- At least one part.
+- Unique part names.
+- Unique joint names.
+- Every joint parent and child must exist.
+- A joint cannot connect a part to itself.
+- A child part cannot have more than one parent joint.
+- A model with more than one part must have exactly one root part.
+- Every part must be reachable from the root.
+- Revolute, continuous, and prismatic axes must be non-zero.
+- Revolute and prismatic joints must have valid lower and upper limits.
 
-### `model.validate()`
+Compile runs validation through the baseline tests.
 
-```python
-model.validate() -> None
-```
+Generated scripts may call `model.validate()` in helper code when early failure
+is useful.
 
-Validation includes:
+## Graph rules
 
-- at least one part exists
-- part names are unique
-- joint names are unique
-- each joint references existing parent and child parts
-- each child part has at most one parent joint
-- each moving joint has a non-zero axis
-- each bounded moving joint has a `(lower, upper)` tuple
-- fixed joints do not use limits
-- a model with more than one part has exactly one root part
-- every part is reachable from the root part
+The part graph is a tree rooted at one part.
 
-This means the object graph is a tree. Use fixed joints for separate static
-pieces that should remain part of the same assembly.
+Every non-root part should be the child of exactly one joint.
 
-## See Also
+Use fixed joints for parts that are permanently attached but should remain
+separate for export or testing.
 
-- `20_core_types.md` for the public authoring surface.
-- `35_joints.md` for joint frames, axes, and limits.
+Do not leave decorative or support parts unconnected unless `run_tests()` calls
+`ctx.allow_isolated_part(...)` with a reason.

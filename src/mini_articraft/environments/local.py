@@ -168,6 +168,7 @@ def _error_result(
             "status": "error",
             "manifest": "",
             "parts": {},
+            "test_report": None,
             "stdout": stdout,
             "stderr": stderr,
             "error": error,

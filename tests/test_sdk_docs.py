@@ -1,22 +1,25 @@
 from __future__ import annotations
 
-from mini_articraft.agent.sdk_docs import load_sdk_docs, render_sdk_quickstart_context
+from mini_articraft.agent.sdk_docs import SDK_DOCS_ROOT, render_sdk_context
 
 
-def test_sdk_docs_all_have_frontmatter_and_unique_names() -> None:
-    docs = load_sdk_docs()
+def test_render_sdk_context_preloads_quickstart_and_testing() -> None:
+    text = render_sdk_context()
 
-    assert docs
-    assert len({doc.name for doc in docs}) == len(docs)
-    assert all(doc.description for doc in docs)
-    assert all(doc.workspace_path.as_posix().startswith("docs/sdk/") for doc in docs)
+    assert text.startswith("## docs/sdk/common/00_quickstart.md")
+    assert "# SDK quickstart" in text
+    assert "## docs/sdk/common/40_testing.md" in text
+    assert "# Testing" in text
+    assert not text.removeprefix("## docs/sdk/common/00_quickstart.md\n\n").startswith("---")
+    assert "description:" not in text
 
 
-def test_render_sdk_quickstart_context_includes_inventory_without_frontmatter() -> None:
-    text = render_sdk_quickstart_context()
+def test_quickstart_router_lists_every_sdk_doc() -> None:
+    quickstart = (SDK_DOCS_ROOT / "common" / "00_quickstart.md").read_text(encoding="utf-8")
+    doc_paths = sorted(
+        f"docs/sdk/{path.relative_to(SDK_DOCS_ROOT).as_posix()}"
+        for path in SDK_DOCS_ROOT.rglob("*.md")
+    )
 
-    assert text.startswith("# SDK Quickstart")
-    assert "## Reference Inventory" in text
-    assert "`docs/sdk/common/35_joints.md`" in text
-    assert "`docs/sdk/cadquery/35_cadquery.md`" in text
-    assert "name: sdk-quickstart" not in text
+    for doc_path in doc_paths:
+        assert f"`{doc_path}`" in quickstart

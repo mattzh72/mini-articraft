@@ -1,8 +1,3 @@
----
-name: cadquery-primer
-description: Read this when you need the CadQuery mental model, including topology, Workplane versus Shape objects, selectors, and assemblies.
----
-
 # Overview 
 
 Before talking about CadQuery, it makes sense to talk a little about 3D CAD topology. CadQuery is based upon the OpenCascade kernel, which uses Boundary Representations (BREP) for objects. This just means that objects are defined by their enclosing surfaces.

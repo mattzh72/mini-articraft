@@ -51,7 +51,7 @@ def fake_schema(name: str) -> dict[str, Any]:
 def compile_success_tool() -> Tool:
     async def run_compile(context, args):
         context.compile_result = {"status": "success"}
-        context.compiled_revision = context.revision
+        context.compile_is_fresh = True
         record = Record.load(context.run_dir / "record.json")
         record.status = "success"
         record.attempts += 1
@@ -69,10 +69,20 @@ def compile_success_tool() -> Tool:
 MODEL_CODE = """
 import cadquery as cq
 
-from mini_articraft.sdk import ArticulatedObject
+from mini_articraft.sdk import ArticulatedObject, TestContext, TestReport
 
-object_model = ArticulatedObject("box")
-object_model.part("base", cq.Workplane("XY").box(1, 1, 1))
+
+def build_object_model() -> ArticulatedObject:
+    model = ArticulatedObject("box")
+    model.part("base", cq.Workplane("XY").box(1, 1, 1))
+    return model
+
+
+object_model = build_object_model()
+
+
+def run_tests() -> TestReport:
+    return TestContext(object_model).report()
 """
 
 
@@ -97,6 +107,7 @@ def test_agent_writes_compiles_and_returns_final_response(tmp_path) -> None:
     assert tmp_path.joinpath("box", "workspace", "main.py").is_file()
     assert "<sdk_docs>" in model.calls[0]["messages"][0]["content"]
     assert "`docs/sdk/common/35_joints.md`" in model.calls[0]["messages"][0]["content"]
+    assert "## docs/sdk/common/40_testing.md" in model.calls[0]["messages"][0]["content"]
     assert {tool["name"] for tool in model.calls[0]["tools"]} == {
         "read",
         "edit",
@@ -133,6 +144,52 @@ def test_agent_requires_compile_before_final_response(tmp_path) -> None:
     conversation = read_conversation(tmp_path / "box" / "conversation.jsonl")
     assert any(
         event.get("content") == "Run compile before the final response." for event in conversation
+    )
+
+
+def test_agent_requires_compile_after_any_post_compile_tool_call(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    async def run_write(context, args):
+        context.workspace.joinpath(args["path"]).write_text(args["content"], encoding="utf-8")
+        return {"path": args["path"], "bytes": len(args["content"])}
+
+    async def run_read(context, args):
+        return {"path": args["path"], "text": "L1: ok"}
+
+    monkeypatch.setattr(
+        agent_tools,
+        "TOOLS",
+        {
+            "write": Tool("write", fake_schema("write"), run_write, mutates=True),
+            "read": Tool("read", fake_schema("read"), run_read, supports_parallel=True),
+            "compile": compile_success_tool(),
+        },
+    )
+    model = FakeModel(
+        [
+            {
+                "text": "",
+                "tool_calls": [call("call_1", "write", {"path": "main.py", "content": "x"})],
+            },
+            {"text": "", "tool_calls": [call("call_2", "compile", {})]},
+            {"text": "", "tool_calls": [call("call_3", "read", {"path": "main.py"})]},
+            {"text": "done too early", "tool_calls": []},
+            {"text": "", "tool_calls": [call("call_4", "compile", {})]},
+            {"text": "done", "tool_calls": []},
+        ]
+    )
+    env = LocalEnvironment(output_dir=tmp_path)
+    agent = Agent(model, env, max_turns=6)
+
+    result = run(agent.run("a box", run_id="box"))
+
+    assert result["status"] == "success"
+    assert result["message"] == "done"
+    assert any(
+        message.get("content") == "Run compile before the final response."
+        for message in model.calls[4]["messages"]
     )
 
 

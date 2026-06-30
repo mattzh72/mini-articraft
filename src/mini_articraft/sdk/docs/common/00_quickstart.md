@@ -1,98 +1,86 @@
----
-name: sdk-quickstart
-description: Start here for every mini-articraft SDK script. Covers the script contract, imports, default workflow, and the generated reference inventory.
----
+# SDK quickstart
 
-# SDK Quickstart
+## Scope
 
-## Purpose
+This page defines the exact script contract for `main.py`. Use the other docs
+only when you need the details for a specific API.
 
-Use this page to start a new mini-articraft SDK script. It defines the script
-contract, the import pattern, and one minimal example.
+## Required file
 
-The agent is responsible for authoring the object model. The compile worker is
-responsible for validation, part export, and the output manifest.
+Write one file named `main.py` in the run workspace.
 
-## Script Contract
+The file must import public SDK names from `mini_articraft.sdk`.
 
-Every generated script should define:
+The file may import CadQuery as `cadquery` or as `cq`.
 
-- `object_model` as a `mini_articraft.sdk.ArticulatedObject`
-
-For normal authoring, use a small builder function and assign its result:
+The file must define these top level names:
 
 ```python
-def build_object_model() -> ArticulatedObject:
-    ...
-
-
+def build_object_model() -> ArticulatedObject: ...
 object_model = build_object_model()
+def run_tests() -> TestReport: ...
 ```
 
-The local compile worker loads `workspace/main.py`, checks that `object_model`
-is an `ArticulatedObject`, validates it, and writes the result files.
+`object_model` must be an `ArticulatedObject`.
 
-## Import Contract
+`run_tests()` must return a `TestReport`.
 
-Authoring helpers are exposed as top-level public imports from
-`mini_articraft.sdk`.
+The compile worker runs `run_tests()` before export. Compile fails when
+`run_tests()` is missing, when it returns another type, or when the returned
+report has blocking failures.
 
-```python
-# Correct
-from mini_articraft.sdk import ArticulatedObject, Origin
+## Public imports
 
-# Wrong
-from mini_articraft.sdk.object import ArticulatedObject
-from sdk import ArticulatedObject
-```
-
-Use `cadquery` directly for geometry.
-
-```python
-import cadquery as cq
-```
-
-## Reference Inventory
-
-The agent inserts the current reference inventory here at run time. It lists
-every SDK doc path and its description from frontmatter.
-
-Use `read(path="docs/sdk/...")` to open detailed docs only when they are needed.
-Read a selected page fully before relying on it.
-
-## Recommended Imports
+Use this import form in generated scripts:
 
 ```python
 import cadquery as cq
 
-from mini_articraft.sdk import ArticulatedObject, Origin
+from mini_articraft.sdk import (
+    ArticulatedObject,
+    Origin,
+    TestContext,
+    TestReport,
+    ValidationError,
+)
 ```
 
-## Minimal Example
+Only these names are public from `mini_articraft.sdk`:
+
+- `AllowedOverlap`
+- `ArticulatedObject`
+- `CollisionFinding`
+- `DistanceFinding`
+- `Origin`
+- `SDKError`
+- `TestContext`
+- `TestFailure`
+- `TestReport`
+- `ValidationError`
+
+Do not import private modules such as `mini_articraft.sdk._collision`.
+
+Do not import low level joint classes or part classes. The helper methods on
+`ArticulatedObject` create the required objects.
+
+## Minimal valid script
 
 ```python
 import cadquery as cq
 
-from mini_articraft.sdk import ArticulatedObject, Origin
+from mini_articraft.sdk import ArticulatedObject, Origin, TestContext, TestReport
 
 
 def build_object_model() -> ArticulatedObject:
-    model = ArticulatedObject("example_box_lid")
+    model = ArticulatedObject("hinged_box")
 
     base = model.part(
         "base",
-        cq.Workplane("XY")
-        .box(0.24, 0.18, 0.04)
-        .edges("|Z")
-        .fillet(0.008),
+        cq.Workplane("XY").box(0.24, 0.18, 0.04),
     )
-
     lid = model.part(
         "lid",
-        cq.Workplane("XY")
-        .box(0.22, 0.16, 0.018)
-        .edges("|Z")
-        .fillet(0.006),
+        cq.Workplane("XY").box(0.22, 0.16, 0.018),
     )
 
     model.revolute(
@@ -108,35 +96,57 @@ def build_object_model() -> ArticulatedObject:
 
 
 object_model = build_object_model()
+
+
+def run_tests() -> TestReport:
+    ctx = TestContext(object_model)
+    ctx.expect_contact("base", "lid")
+    with ctx.pose(base_to_lid=0.9):
+        ctx.expect_no_collision("base", "lid")
+    return ctx.report()
 ```
 
-This example uses a hinge-line frame for the lid. The lid geometry is authored
-as its own CadQuery shape, and the joint records how that part should move
-relative to the base.
+## Units
 
-## Recommended Workflow
+CadQuery geometry is unitless. In generated mini-articraft scripts, treat all
+linear dimensions as meters.
 
-1. Choose the object identity, real-world scale, root part, moving parts, and
-   visible geometry.
-2. Build each part as a CadQuery `Workplane`, `Shape`, or `Assembly`.
-3. Register each part with `model.part(...)`.
-4. Add fixed joints for mounted static parts.
-5. Add revolute, prismatic, or continuous joints for moving parts.
-6. Call `model.validate()` while debugging, or let the compile worker validate
-   the object.
+Use radians for `Origin.rpy` and for revolute joint limits.
 
-## Authoring Notes
+Use the same linear unit as the CadQuery geometry for `Origin.xyz`, prismatic
+limits, mesh distances, and test tolerances.
 
-- Keep the part graph as one tree with exactly one root part.
-- Give each separate part a clear support relationship through a joint.
-- Use semantic names such as `base`, `lid`, `drawer`, `wheel_0`, and
-  `base_to_lid`.
-- Use CadQuery operations for visible shape detail. Do not add extra SDK
-  layers for geometry that CadQuery can express directly.
-- Use meters for distances when possible, and keep prismatic limits in the same
-  unit as the CadQuery geometry.
-- Use `(lower, upper)` tuples for revolute and prismatic limits.
-- Use `model.continuous(...)` without limits for unbounded rotation.
-- Read `docs/sdk/common/35_joints.md` before adding non-fixed joints.
-- Read the relevant `docs/sdk/cadquery/...` page before using detailed CadQuery
-  patterns.
+## Compile behavior
+
+Compile performs these steps:
+
+1. Run `main.py`.
+2. Read `object_model`.
+3. Run `run_tests()`.
+4. Run baseline SDK checks.
+5. Export the object only when all blocking tests pass.
+
+The baseline checks validate the model, require one root part, check for
+isolated parts, and check current pose part collisions.
+
+Authored allowances from `run_tests()` carry into the baseline pass.
+
+## Docs router
+
+Common docs:
+
+- `docs/sdk/common/00_quickstart.md` documents the script contract, public imports, units, compile behavior, and this router.
+- `docs/sdk/common/20_core_types.md` documents exported SDK names, returned handles, dataclass fields, units, and errors.
+- `docs/sdk/common/30_articulated_object.md` documents `ArticulatedObject`, parts, joint helpers, lookup, validation, and graph rules.
+- `docs/sdk/common/35_joints.md` documents joint frames, fixed joints, revolute joints, continuous joints, prismatic joints, axes, and limits.
+- `docs/sdk/common/40_testing.md` documents `TestReport`, `TestContext`, authored checks, baseline checks, mesh collision, distance checks, poses, and allowances.
+
+CadQuery docs:
+
+- `docs/sdk/cadquery/35_cadquery.md` documents how mini-articraft accepts CadQuery geometry and what CadQuery objects may be registered as parts.
+- `docs/sdk/cadquery/36_cadquery_primer.md` documents the CadQuery object types that are useful in mini-articraft scripts.
+- `docs/sdk/cadquery/37_cadquery_workplane.md` documents the approved `cq.Workplane` patterns for generated scripts.
+- `docs/sdk/cadquery/38_cadquery_sketch.md` documents the approved `cq.Sketch` patterns for generated scripts.
+- `docs/sdk/cadquery/39_cadquery_assembly.md` documents how to use `cq.Assembly` as geometry inside one mini-articraft part.
+- `docs/sdk/cadquery/39b_cadquery_free_function.md` documents when to avoid CadQuery free function APIs in generated scripts.
+- `docs/sdk/cadquery/39c_cadquery_api_ref.md` lists the CadQuery calls that generated scripts should prefer.

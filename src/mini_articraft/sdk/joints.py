@@ -79,7 +79,7 @@ def as_position_limits(value: tuple[float, float], *, field: str) -> JointLimits
     return JointLimits(lower=lower, upper=upper)
 
 
-@dataclass
+@dataclass(eq=False)
 class Joint:
     name: str
     type: JointType

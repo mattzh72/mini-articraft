@@ -9,19 +9,26 @@ from mini_articraft.agent.tools._core import Tool, ToolContext, schema
 async def run(context: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
     if args:
         raise ValueError("compile does not take arguments")
-    if context.compiled_revision == context.revision and context.compile_result is not None:
+    if context.compile_is_fresh and context.compile_result is not None:
         return context.compile_result
     result = await asyncio.to_thread(context.env.compile_path, context.run_dir)
     context.compile_result = _agent_result(result)
-    if result["status"] == "success":
-        context.compiled_revision = context.revision
+    context.compile_is_fresh = result["status"] == "success"
     return context.compile_result
 
 
 def _agent_result(result: dict[str, Any]) -> dict[str, Any]:
     return {
         key: result[key]
-        for key in ("status", "error", "stdout", "stderr", "traceback", "returncode")
+        for key in (
+            "status",
+            "error",
+            "stdout",
+            "stderr",
+            "traceback",
+            "returncode",
+            "test_report",
+        )
         if key in result
     }
 

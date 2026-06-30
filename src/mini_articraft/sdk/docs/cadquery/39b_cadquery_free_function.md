@@ -1,8 +1,3 @@
----
-name: cadquery-free-functions
-description: Read this when you need CadQuery free functions and lower-level constructors for curves, wires, faces, solids, compounds, and imported geometry.
----
-
 # Free Function API
 
 For situations when more freedom in crafting individual objects is required, a free function API is provided. This API has no hidden state, but may result in more verbose code. One can still use selectors as methods, but all other operations are implemented as free functions. Placement of objects and creation of patterns can be achieved using the various overloads of the `moved` method.

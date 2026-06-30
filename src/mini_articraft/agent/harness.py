@@ -14,7 +14,7 @@ from pydantic import BaseModel
 import mini_articraft.agent.tools as tools
 from mini_articraft import Environment, Model, package_dir
 from mini_articraft.agent import events
-from mini_articraft.agent.sdk_docs import render_sdk_quickstart_context
+from mini_articraft.agent.sdk_docs import render_sdk_context
 from mini_articraft.agent.tools import ToolContext
 from mini_articraft.record import Record, append_conversation
 
@@ -56,7 +56,7 @@ class Agent:
                 "role": "system",
                 "content": _read_prompt("system.md")
                 + "\n\n<sdk_docs>\n"
-                + render_sdk_quickstart_context()
+                + render_sdk_context()
                 + "\n</sdk_docs>",
             },
             {"role": "user", "content": _read_prompt("task.md").replace("{{ prompt }}", prompt)},
@@ -81,7 +81,7 @@ class Agent:
             self._emit(events.AssistantMessage(turn, text, tool_calls))
 
             if not tool_calls:
-                if context.compiled_revision == context.revision and context.compile_result:
+                if context.compile_is_fresh and context.compile_result:
                     final_text = text
                     break
                 reminder = {"role": "user", "content": "Run compile before the final response."}
@@ -166,10 +166,10 @@ class Agent:
         name = str(call["name"])
         call_id = str(call["id"])
         try:
+            if name != "compile":
+                context.compile_is_fresh = False
             tool = tools.get(name)
             payload = {"result": await tool.run(context, _arguments(call))}
-            if tool.mutates:
-                context.revision += 1
         except Exception as exc:
             payload = {"error": str(exc)}
         return tools.result_item(call_id, payload)

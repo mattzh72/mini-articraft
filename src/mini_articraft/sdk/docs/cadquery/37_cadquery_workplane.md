@@ -1,8 +1,3 @@
----
-name: cadquery-workplane
-description: Read this when you need CadQuery Workplane modeling patterns such as sketches, extrusion, selection, holes, offsets, mirroring, splitting, and fillets.
----
-
 # Workplane — CadQuery Documentation
 
 ## Overview

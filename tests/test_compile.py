@@ -20,12 +20,24 @@ def test_compile_path_compiles_existing_run_directory(tmp_path) -> None:
         """
 import cadquery as cq
 
-from mini_articraft.sdk import ArticulatedObject
+from mini_articraft.sdk import ArticulatedObject, TestContext, TestReport
 
-object_model = ArticulatedObject("drawer")
-base = object_model.part("base", cq.Workplane("XY").box(1.0, 1.0, 0.2))
-drawer = object_model.part("drawer", cq.Workplane("XY").box(0.8, 0.8, 0.2))
-object_model.fixed("base_to_drawer", base, drawer)
+
+def build_object_model() -> ArticulatedObject:
+    model = ArticulatedObject("drawer")
+    base = model.part("base", cq.Workplane("XY").box(1.0, 1.0, 0.2))
+    drawer = model.part("drawer", cq.Workplane("XY").box(0.8, 0.8, 0.2))
+    model.fixed("base_to_drawer", base, drawer)
+    return model
+
+
+object_model = build_object_model()
+
+
+def run_tests() -> TestReport:
+    ctx = TestContext(object_model)
+    ctx.expect_contact("base", "drawer")
+    return ctx.report()
 """,
     )
 
@@ -61,9 +73,14 @@ def test_compile_path_supports_workspace_modules(tmp_path) -> None:
     write_main(
         run_dir,
         """
+from mini_articraft.sdk import TestContext, TestReport
 from parts.drawer import build_object_model
 
 object_model = build_object_model()
+
+
+def run_tests() -> TestReport:
+    return TestContext(object_model).report()
 """,
     )
     run_dir.joinpath("workspace", "parts", "drawer.py").write_text(
@@ -118,6 +135,157 @@ def test_compile_path_reports_missing_object_model(tmp_path) -> None:
     assert result["status"] == "error"
     assert "object_model" in result["error"]
     assert "ArticulatedObject" in result["error"]
+
+
+def test_compile_path_requires_run_tests(tmp_path) -> None:
+    env = LocalEnvironment(output_dir=tmp_path)
+    run_dir = env.create_run("missing_tests")
+    write_main(
+        run_dir,
+        """
+import cadquery as cq
+
+from mini_articraft.sdk import ArticulatedObject
+
+object_model = ArticulatedObject("box")
+object_model.part("base", cq.Workplane("XY").box(1.0, 1.0, 1.0))
+""",
+    )
+
+    result = env.compile_path(run_dir)
+
+    assert result["status"] == "error"
+    assert "run_tests" in result["error"]
+
+
+def test_compile_path_requires_run_tests_report(tmp_path) -> None:
+    env = LocalEnvironment(output_dir=tmp_path)
+    run_dir = env.create_run("bad_tests")
+    write_main(
+        run_dir,
+        """
+import cadquery as cq
+
+from mini_articraft.sdk import ArticulatedObject
+
+object_model = ArticulatedObject("box")
+object_model.part("base", cq.Workplane("XY").box(1.0, 1.0, 1.0))
+
+
+def run_tests():
+    return None
+""",
+    )
+
+    result = env.compile_path(run_dir)
+
+    assert result["status"] == "error"
+    assert "TestReport" in result["error"]
+
+
+def test_compile_path_fails_authored_test_failure(tmp_path) -> None:
+    env = LocalEnvironment(output_dir=tmp_path)
+    run_dir = env.create_run("authored_failure")
+    write_main(
+        run_dir,
+        """
+import cadquery as cq
+
+from mini_articraft.sdk import ArticulatedObject, TestContext, TestReport
+
+object_model = ArticulatedObject("box")
+object_model.part("base", cq.Workplane("XY").box(1.0, 1.0, 1.0))
+
+
+def run_tests() -> TestReport:
+    ctx = TestContext(object_model)
+    ctx.fail("prompt-specific check", "missing feature")
+    return ctx.report()
+""",
+    )
+
+    result = env.compile_path(run_dir)
+
+    assert result["status"] == "error"
+    assert "prompt-specific check" in result["error"]
+    assert result["test_report"]["failures"][0]["name"] == "prompt-specific check"
+
+
+def test_compile_path_fails_baseline_collision_between_non_adjacent_parts(tmp_path) -> None:
+    env = LocalEnvironment(output_dir=tmp_path)
+    run_dir = env.create_run("collision_failure")
+    write_main(
+        run_dir,
+        """
+import cadquery as cq
+
+from mini_articraft.sdk import ArticulatedObject, Origin, TestContext, TestReport
+
+
+def build_object_model() -> ArticulatedObject:
+    model = ArticulatedObject("collision_failure")
+    root = model.part("root", cq.Workplane("XY").box(3.0, 3.0, 0.1))
+    part_a = model.part("part_a", cq.Workplane("XY").box(1.0, 1.0, 1.0))
+    part_b = model.part("part_b", cq.Workplane("XY").box(1.0, 1.0, 1.0))
+    model.fixed("root_to_a", root, part_a, origin=Origin(xyz=(0.0, 0.0, 0.55)))
+    model.fixed("root_to_b", root, part_b, origin=Origin(xyz=(0.0, 0.0, 0.55)))
+    return model
+
+
+object_model = build_object_model()
+
+
+def run_tests() -> TestReport:
+    return TestContext(object_model).report()
+""",
+    )
+
+    result = env.compile_path(run_dir)
+
+    assert result["status"] == "error"
+    assert "fail_if_parts_collide_in_current_pose" in result["error"]
+    assert "part_a" in result["error"]
+    assert "part_b" in result["error"]
+
+
+def test_compile_path_honors_authored_overlap_allowance(tmp_path) -> None:
+    env = LocalEnvironment(output_dir=tmp_path)
+    run_dir = env.create_run("allowed_collision")
+    write_main(
+        run_dir,
+        """
+import cadquery as cq
+
+from mini_articraft.sdk import ArticulatedObject, Origin, TestContext, TestReport
+
+
+def build_object_model() -> ArticulatedObject:
+    model = ArticulatedObject("allowed_collision")
+    root = model.part("root", cq.Workplane("XY").box(3.0, 3.0, 0.1))
+    shaft = model.part("shaft", cq.Workplane("XY").box(1.0, 1.0, 1.0))
+    hub = model.part("hub", cq.Workplane("XY").box(1.0, 1.0, 1.0))
+    model.fixed("root_to_shaft", root, shaft, origin=Origin(xyz=(0.0, 0.0, 0.55)))
+    model.fixed("root_to_hub", root, hub, origin=Origin(xyz=(0.0, 0.0, 0.55)))
+    return model
+
+
+object_model = build_object_model()
+
+
+def run_tests() -> TestReport:
+    ctx = TestContext(object_model)
+    ctx.allow_overlap("shaft", "hub", reason="shaft is intentionally captured in the hub")
+    ctx.expect_collision("shaft", "hub")
+    return ctx.report()
+""",
+    )
+
+    result = env.compile_path(run_dir)
+
+    assert result["status"] == "success"
+    assert result["test_report"]["allowances"] == [
+        "allow_overlap('hub', 'shaft'): shaft is intentionally captured in the hub"
+    ]
 
 
 def test_compile_path_reports_timeout(tmp_path) -> None:

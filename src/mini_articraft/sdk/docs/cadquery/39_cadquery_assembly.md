@@ -1,8 +1,3 @@
----
-name: cadquery-assembly
-description: Read this when you need CadQuery Assembly usage, locations, constraints, colors, nested components, or assembly export behavior.
----
-
 # Assembly Tutorial
 
 The purpose of this section is to demonstrate how to use the assembly and constraints functionality to build a realistic model. It will be a enclosure door assembly made out of 20x20 v-slot profiles.
