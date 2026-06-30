@@ -72,6 +72,18 @@ Use `from __future__ import annotations` in Python modules. Use explicit type
 hints for public functions and helpers. Keep dataclasses and Pydantic models
 small. Prefer plain functions and simple classes over new frameworks.
 
+Write code in the mini-articraft style: small, direct, and easy to fork. Favor
+clear data shapes, compact helpers, and obvious control flow over defensive
+frameworks, plugin systems, policy objects, registries, and broad fallback
+machinery. Extensible should mean that a reader can understand the core idea and
+edit it by hand, not that the repo grows a configurable abstraction layer.
+
+When porting an Articraft idea, keep the useful behavior and drop the ceremony.
+Prefer one readable module with a few plain dataclasses and functions over a
+large subsystem split across many files. Avoid over-engineering for inputs this
+repo does not produce. Keep tests focused on behavior and avoid repeating the
+same assertions at every integration layer.
+
 Ruff is configured with a line length of 100, Python 3.11 syntax, import
 sorting, and double quotes.
 
