@@ -1,8 +1,6 @@
 ---
 name: cadquery-assembly
 description: Read this when you need CadQuery Assembly usage, locations, constraints, colors, nested components, or assembly export behavior.
-metadata:
-  short-description: CadQuery assemblies, locations, and constraints.
 ---
 
 # Assembly Tutorial

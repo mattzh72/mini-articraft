@@ -1,8 +1,6 @@
 ---
 name: sdk-joints
-description: Read this before authoring fixed, revolute, continuous, or prismatic joints, especially when choosing origins, axes, limits, and positive motion.
-metadata:
-  short-description: Joint frames, axes, limits, and examples.
+description: Read this before authoring fixed, revolute, continuous, or prismatic joints, especially when choosing origins, axes, tuple limits, and positive motion.
 ---
 
 # Joints
@@ -10,13 +8,12 @@ metadata:
 ## Purpose
 
 Use joints to describe how parts are connected. A joint records the parent part,
-the child part, the joint frame, the motion axis, and any required motion
-limits.
+the child part, the joint frame, the motion axis, and any motion range.
 
 ## Import
 
 ```python
-from mini_articraft.sdk import ContinuousLimits, JointLimits, JointType, Origin
+from mini_articraft.sdk import Origin
 ```
 
 ## Recommended Surface
@@ -25,9 +22,9 @@ from mini_articraft.sdk import ContinuousLimits, JointLimits, JointType, Origin
 - `model.revolute(...)`
 - `model.continuous(...)`
 - `model.prismatic(...)`
-- `JointLimits(...)`
-- `ContinuousLimits(...)`
 - `Origin(...)`
+
+Do not import low-level joint classes. Use the named helpers.
 
 ## Joint Frame
 
@@ -59,7 +56,7 @@ model.fixed(
 Rules:
 
 - fixed joints do not use `axis`
-- fixed joints must not use `limits`
+- fixed joints do not use `limits`
 - fixed joints still count as graph edges during validation
 
 ## Revolute Joints
@@ -73,16 +70,15 @@ model.revolute(
     lid,
     origin=Origin(xyz=(-0.11, 0.0, 0.05)),
     axis=(0.0, -1.0, 0.0),
-    limits=JointLimits(lower=0.0, upper=1.2, effort=5.0, velocity=3.0),
+    limits=(0.0, 1.2),
 )
 ```
 
 Rules:
 
-- revolute joints require `JointLimits`
-- a `(lower, upper)` pair is accepted and converted to `JointLimits`
-- the axis must be a non-zero 3-vector
+- revolute joints require `limits=(lower, upper)`
 - lower and upper are radians
+- the axis must be a non-zero 3-vector
 - positive motion follows the right-hand rule around `axis`
 
 ### Example: Lid That Opens Upward
@@ -126,14 +122,12 @@ model.continuous(
     rotor,
     origin=Origin(xyz=(0.0, 0.0, 0.04)),
     axis=(0.0, 0.0, 1.0),
-    limits=ContinuousLimits(effort=2.0, velocity=30.0),
 )
 ```
 
 Rules:
 
-- continuous joints require `ContinuousLimits`
-- continuous joints must not use lower or upper bounds
+- continuous joints do not take limits
 - the axis must be a non-zero 3-vector
 - positive motion follows the right-hand rule around `axis`
 
@@ -150,16 +144,15 @@ model.prismatic(
     drawer,
     origin=Origin(xyz=(0.0, 0.0, 0.10)),
     axis=(1.0, 0.0, 0.0),
-    limits=JointLimits(lower=0.0, upper=0.28, effort=40.0, velocity=0.25),
+    limits=(0.0, 0.28),
 )
 ```
 
 Rules:
 
-- prismatic joints require `JointLimits`
-- a `(lower, upper)` pair is accepted and converted to `JointLimits`
-- the axis must be a non-zero 3-vector
+- prismatic joints require `limits=(lower, upper)`
 - lower and upper are distances in the same unit as the CadQuery geometry
+- the axis must be a non-zero 3-vector
 - positive motion translates the child along `+axis`
 
 ### Example: Drawer That Extends Outward
@@ -205,7 +198,7 @@ model.prismatic(
     inner_mast,
     origin=Origin(xyz=(0.0, 0.0, 0.24)),
     axis=(0.0, 0.0, 1.0),
-    limits=JointLimits(lower=0.0, upper=0.26, effort=80.0, velocity=0.20),
+    limits=(0.0, 0.26),
 )
 ```
 
@@ -213,13 +206,13 @@ model.prismatic(
 
 Use these rules when calling a joint helper:
 
-- `REVOLUTE` and `PRISMATIC` require `JointLimits`.
-- `CONTINUOUS` requires `ContinuousLimits`.
-- `FIXED` must not use limits.
-- `parent` and `child` must name different parts.
-- each child part can have only one parent joint.
-- joint names must be unique.
-- moving joint axes must be non-zero.
+- revolute and prismatic joints require `limits=(lower, upper)`
+- continuous joints do not take limits
+- fixed joints do not take limits
+- parent and child must name different parts
+- each child part can have only one parent joint
+- joint names must be unique
+- moving joint axes must be non-zero
 
 If a joint moves in the wrong direction, negate the axis. Keep the lower and
 upper bounds as the semantic range of the motion.
@@ -227,4 +220,4 @@ upper bounds as the semantic range of the motion.
 ## See Also
 
 - `30_articulated_object.md` for the object graph rules.
-- `20_core_types.md` for the exact constructor signatures.
+- `20_core_types.md` for the public authoring surface.

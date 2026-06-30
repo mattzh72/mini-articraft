@@ -1,8 +1,6 @@
 ---
 name: cadquery-overview
 description: Read this when you need to understand how mini-articraft uses CadQuery shapes directly as parts, and how that differs from the larger Articraft SDK.
-metadata:
-  short-description: Mini-articraft CadQuery authoring overview.
 ---
 
 # CadQuery in mini-articraft
@@ -26,12 +24,6 @@ import cadquery as cq
 from mini_articraft.sdk import ArticulatedObject, Origin
 ```
 
-Add limits when the object needs movable joints:
-
-```python
-from mini_articraft.sdk import ContinuousLimits, JointLimits
-```
-
 ## Recommended Surface
 
 - `cq.Workplane(...)`
@@ -42,7 +34,6 @@ from mini_articraft.sdk import ContinuousLimits, JointLimits
 - `model.revolute(...)`
 - `model.continuous(...)`
 - `model.prismatic(...)`
-- `export_object(...)`
 
 mini-articraft does not use `mesh_from_cadquery(...)`, `Visual`, `Mesh`,
 `ArticulationType`, or `MotionLimits`. Those names belong to the larger
@@ -178,4 +169,3 @@ object_model = build_object_model()
 - `docs/sdk/common/00_quickstart.md` for the overall script contract.
 - `docs/sdk/common/30_articulated_object.md` for part and joint helpers.
 - `docs/sdk/common/35_joints.md` for joint frames, axes, and limits.
-- `docs/sdk/common/40_export.md` for CadQuery export behavior.

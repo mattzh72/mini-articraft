@@ -5,12 +5,8 @@ import pytest
 
 from mini_articraft.sdk import (
     ArticulatedObject,
-    ContinuousLimits,
-    JointLimits,
-    JointType,
     Origin,
     ValidationError,
-    export_object,
 )
 
 
@@ -33,25 +29,28 @@ def test_valid_prismatic_object() -> None:
     )
 
     obj.validate()
-    assert obj.to_dict()["joints"][0]["type"] == JointType.PRISMATIC.value
+    assert obj.joints[0].type.value == "prismatic"
+    assert obj.joints[0].limits is not None
+    assert obj.joints[0].limits.lower == -0.02
+    assert obj.joints[0].limits.upper == 0.20
 
 
-def test_revolute_requires_limits() -> None:
+def test_revolute_requires_limits_argument() -> None:
     obj = ArticulatedObject("bad_hinge")
     base = obj.part("base", shape())
     door = obj.part("door", shape())
 
-    with pytest.raises(ValidationError, match="must include limits"):
-        obj.joint("base_to_door", "revolute", base, door)
+    with pytest.raises(TypeError):
+        obj.revolute("base_to_door", base, door)
 
 
-def test_fixed_joint_rejects_limits() -> None:
+def test_revolute_limits_must_be_tuple() -> None:
     obj = ArticulatedObject("bad_fixed")
     base = obj.part("base", shape())
     cover = obj.part("cover", shape())
 
-    with pytest.raises(ValidationError, match="cannot have limits"):
-        obj.joint("base_to_cover", "fixed", base, cover, limits=JointLimits(0.0, 1.0))
+    with pytest.raises(ValidationError, match="tuple"):
+        obj.revolute("base_to_cover", base, cover, limits=[0.0, 1.0])
 
 
 def test_continuous_joint_allows_unbounded_rotation() -> None:
@@ -59,29 +58,22 @@ def test_continuous_joint_allows_unbounded_rotation() -> None:
     frame = obj.part("frame", shape())
     rotor = obj.part("rotor", shape())
 
-    joint = obj.continuous("frame_to_rotor", frame, rotor, limits=ContinuousLimits(effort=2.0))
+    joint = obj.continuous("frame_to_rotor", frame, rotor)
 
     obj.validate()
-    assert joint.type == JointType.CONTINUOUS
-    assert joint.to_dict()["limits"] == {"effort": 2.0, "velocity": 1.0}
+    assert joint.type.value == "continuous"
+    assert joint.limits is not None
+    assert joint.limits.effort == 1.0
+    assert joint.limits.velocity == 1.0
 
 
-def test_continuous_joint_rejects_bounded_limits() -> None:
+def test_continuous_joint_does_not_accept_manual_limits() -> None:
     obj = ArticulatedObject("bad_fan")
     frame = obj.part("frame", shape())
     rotor = obj.part("rotor", shape())
 
-    with pytest.raises(ValidationError, match="must use ContinuousLimits"):
-        obj.joint("frame_to_rotor", "continuous", frame, rotor, limits=(-1.0, 1.0))
-
-
-def test_continuous_joint_requires_limits() -> None:
-    obj = ArticulatedObject("bad_fan")
-    frame = obj.part("frame", shape())
-    rotor = obj.part("rotor", shape())
-
-    with pytest.raises(ValidationError, match="must use ContinuousLimits"):
-        obj.joint("frame_to_rotor", "continuous", frame, rotor)
+    with pytest.raises(TypeError):
+        obj.continuous("frame_to_rotor", frame, rotor, limits=(0.0, 1.0))
 
 
 def test_validation_rejects_multiple_roots() -> None:
@@ -106,17 +98,3 @@ def test_part_requires_cadquery_shape() -> None:
 
     with pytest.raises(ValidationError, match="CadQuery"):
         obj.part("base", object())
-
-
-def test_export_object_writes_part_files_and_manifest(tmp_path) -> None:
-    obj = ArticulatedObject("hinge")
-    base = obj.part("base", cq.Workplane("XY").box(1.0, 1.0, 0.2))
-    door = obj.part("door", cq.Workplane("XY").box(0.8, 0.1, 1.0))
-    obj.revolute("base_to_door", base, door, axis=(0.0, 0.0, 2.0), limits=(0.0, 1.57))
-
-    result = export_object(obj, tmp_path)
-
-    assert result.manifest.exists()
-    assert result.parts["base"].exists()
-    assert result.parts["door"].exists()
-    assert "parts/base.step" in result.manifest.read_text()

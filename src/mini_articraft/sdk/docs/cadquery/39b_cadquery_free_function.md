@@ -1,8 +1,6 @@
 ---
 name: cadquery-free-functions
 description: Read this when you need CadQuery free functions and lower-level constructors for curves, wires, faces, solids, compounds, and imported geometry.
-metadata:
-  short-description: CadQuery free functions and constructors.
 ---
 
 # Free Function API

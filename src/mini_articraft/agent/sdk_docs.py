@@ -17,7 +17,6 @@ QUICKSTART_RELATIVE_PATH = Path("common") / "00_quickstart.md"
 class SDKDoc:
     name: str
     description: str
-    short_description: str | None
     relative_path: Path
     path: Path
     body: str
@@ -36,7 +35,6 @@ def load_sdk_docs() -> list[SDKDoc]:
             SDKDoc(
                 name=_required_str(metadata, "name", path),
                 description=_required_str(metadata, "description", path),
-                short_description=_short_description(metadata, path),
                 relative_path=relative_path,
                 path=path,
                 body=body,
@@ -83,22 +81,6 @@ def _required_str(metadata: dict[str, Any], field: str, path: Path) -> str:
     value = metadata.get(field)
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{path} frontmatter field {field!r} must be a non-empty string")
-    return " ".join(value.split())
-
-
-def _short_description(metadata: dict[str, Any], path: Path) -> str | None:
-    nested = metadata.get("metadata", {})
-    if nested is None:
-        return None
-    if not isinstance(nested, dict):
-        raise ValueError(f"{path} frontmatter field 'metadata' must be a mapping")
-    value = nested.get("short-description")
-    if value is None:
-        return None
-    if not isinstance(value, str) or not value.strip():
-        raise ValueError(
-            f"{path} frontmatter field 'metadata.short-description' must be a non-empty string"
-        )
     return " ".join(value.split())
 
 

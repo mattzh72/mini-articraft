@@ -1,8 +1,6 @@
 ---
 name: sdk-quickstart
 description: Start here for every mini-articraft SDK script. Covers the script contract, imports, default workflow, and the generated reference inventory.
-metadata:
-  short-description: Script contract, imports, and workflow.
 ---
 
 # SDK Quickstart
@@ -12,7 +10,8 @@ metadata:
 Use this page to start a new mini-articraft SDK script. It defines the script
 contract, the import pattern, and one minimal example.
 
-Detailed APIs live in the other files in `docs/sdk/common/`.
+The agent is responsible for authoring the object model. The compile worker is
+responsible for validation, part export, and the output manifest.
 
 ## Script Contract
 
@@ -31,8 +30,7 @@ object_model = build_object_model()
 ```
 
 The local compile worker loads `workspace/main.py`, checks that `object_model`
-is an `ArticulatedObject`, validates it, and writes exported part files plus a
-JSON manifest.
+is an `ArticulatedObject`, validates it, and writes the result files.
 
 ## Import Contract
 
@@ -41,7 +39,7 @@ Authoring helpers are exposed as top-level public imports from
 
 ```python
 # Correct
-from mini_articraft.sdk import ArticulatedObject, JointLimits, Origin
+from mini_articraft.sdk import ArticulatedObject, Origin
 
 # Wrong
 from mini_articraft.sdk.object import ArticulatedObject
@@ -67,13 +65,7 @@ Read a selected page fully before relying on it.
 ```python
 import cadquery as cq
 
-from mini_articraft.sdk import (
-    ArticulatedObject,
-    ContinuousLimits,
-    JointLimits,
-    Origin,
-    export_object,
-)
+from mini_articraft.sdk import ArticulatedObject, Origin
 ```
 
 ## Minimal Example
@@ -132,8 +124,6 @@ relative to the base.
 5. Add revolute, prismatic, or continuous joints for moving parts.
 6. Call `model.validate()` while debugging, or let the compile worker validate
    the object.
-7. Export with `export_object(...)` only in standalone scripts. The compile
-   worker calls it for normal runs.
 
 ## Authoring Notes
 
@@ -145,6 +135,8 @@ relative to the base.
   layers for geometry that CadQuery can express directly.
 - Use meters for distances when possible, and keep prismatic limits in the same
   unit as the CadQuery geometry.
+- Use `(lower, upper)` tuples for revolute and prismatic limits.
+- Use `model.continuous(...)` without limits for unbounded rotation.
 - Read `docs/sdk/common/35_joints.md` before adding non-fixed joints.
 - Read the relevant `docs/sdk/cadquery/...` page before using detailed CadQuery
   patterns.

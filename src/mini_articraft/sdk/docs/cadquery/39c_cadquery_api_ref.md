@@ -1,8 +1,6 @@
 ---
 name: cadquery-api-ref
 description: Read this when you need a compact CadQuery API reference for common Workplane, Sketch, Shape, Assembly, selector, vector, and export calls.
-metadata:
-  short-description: Compact CadQuery API reference.
 ---
 
 # CadQuery API Reference

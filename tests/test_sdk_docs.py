@@ -20,4 +20,3 @@ def test_render_sdk_quickstart_context_includes_inventory_without_frontmatter() 
     assert "`docs/sdk/common/35_joints.md`" in text
     assert "`docs/sdk/cadquery/35_cadquery.md`" in text
     assert "name: sdk-quickstart" not in text
-    assert "metadata:" not in text

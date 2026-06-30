@@ -25,13 +25,6 @@ def as_vec3(value: Sequence[float], *, field: str) -> Vec3:
         raise ValidationError(f"{field} must have 3 numeric values") from exc
 
 
-def coerce_joint_type(value: JointType | str) -> JointType:
-    try:
-        return value if isinstance(value, JointType) else JointType(str(value))
-    except ValueError as exc:
-        raise ValidationError(f"unknown joint type: {value}") from exc
-
-
 def coerce_part_name(value: str | object, *, field: str) -> str:
     name = value if isinstance(value, str) else getattr(value, "name", None)
     if not isinstance(name, str):
@@ -68,14 +61,6 @@ class JointLimits:
         if self.lower > self.upper:
             raise ValidationError("joint limit lower value cannot exceed upper value")
 
-    def to_dict(self) -> dict[str, float]:
-        return {
-            "lower": self.lower,
-            "upper": self.upper,
-            "effort": self.effort,
-            "velocity": self.velocity,
-        }
-
 
 @dataclass
 class ContinuousLimits:
@@ -86,30 +71,18 @@ class ContinuousLimits:
         self.effort = _positive(self.effort, "continuous joint effort")
         self.velocity = _positive(self.velocity, "continuous joint velocity")
 
-    def to_dict(self) -> dict[str, float]:
-        return {"effort": self.effort, "velocity": self.velocity}
 
-
-LimitsLike: TypeAlias = JointLimits | ContinuousLimits | Sequence[float]
-
-
-def coerce_limits(value: LimitsLike | None) -> JointLimits | ContinuousLimits | None:
-    if value is None or isinstance(value, (JointLimits, ContinuousLimits)):
-        return value
-    if isinstance(value, (str, bytes)) or not isinstance(value, Sequence):
-        raise ValidationError("limits must be JointLimits or a (lower, upper) pair")
-
-    try:
-        lower, upper = value
-    except ValueError as exc:
-        raise ValidationError("limits must be a (lower, upper) pair") from exc
+def as_position_limits(value: tuple[float, float], *, field: str) -> JointLimits:
+    if not isinstance(value, tuple) or len(value) != 2:
+        raise ValidationError(f"{field} must be a (lower, upper) tuple")
+    lower, upper = value
     return JointLimits(lower=lower, upper=upper)
 
 
 @dataclass
 class Joint:
     name: str
-    type: JointType | str
+    type: JointType
     parent: str
     child: str
     origin: Origin = field(default_factory=Origin)
@@ -122,12 +95,12 @@ class Joint:
             raise ValidationError("joint name must be non-empty")
         if not isinstance(self.origin, Origin):
             raise ValidationError("joint origin must be an Origin")
+        if not isinstance(self.type, JointType):
+            raise ValidationError("joint type must be a JointType")
 
-        self.type = coerce_joint_type(self.type)
         self.parent = coerce_part_name(self.parent, field="parent")
         self.child = coerce_part_name(self.child, field="child")
         self.axis = as_vec3(self.axis, field="joint.axis")
-        self.limits = coerce_limits(self.limits)
 
     def validate(self) -> None:
         if self.parent == self.child:
@@ -145,17 +118,6 @@ class Joint:
             return
         if not isinstance(self.limits, JointLimits):
             raise ValidationError(f"joint {self.name!r} must include limits")
-
-    def to_dict(self) -> dict[str, object]:
-        return {
-            "name": self.name,
-            "type": self.type.value,
-            "parent": self.parent,
-            "child": self.child,
-            "origin": {"xyz": self.origin.xyz, "rpy": self.origin.rpy},
-            "axis": self.axis,
-            "limits": None if self.limits is None else self.limits.to_dict(),
-        }
 
 
 def _positive(value: object, field: str) -> float:

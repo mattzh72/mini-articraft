@@ -11,7 +11,8 @@ import traceback
 from pathlib import Path
 from typing import Any
 
-from mini_articraft.sdk import ArticulatedObject, export_object
+from mini_articraft.environments.export import export_object
+from mini_articraft.sdk import ArticulatedObject
 
 
 def compile_run(run_dir: Path) -> dict[str, Any]:

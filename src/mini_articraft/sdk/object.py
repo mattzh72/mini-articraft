@@ -9,10 +9,11 @@ from mini_articraft.errors import ValidationError
 from mini_articraft.sdk.joints import (
     ContinuousLimits,
     Joint,
+    JointLimits,
     JointType,
-    LimitsLike,
     Origin,
     Vec3,
+    as_position_limits,
     coerce_part_name,
 )
 
@@ -56,16 +57,16 @@ class ArticulatedObject:
         self.parts.append(part)
         return part
 
-    def joint(
+    def _add_joint(
         self,
         name: str,
-        joint_type: JointType | str,
+        joint_type: JointType,
         parent: PartRef,
         child: PartRef,
         *,
         origin: Origin | None = None,
         axis: Vec3 = (0.0, 0.0, 1.0),
-        limits: LimitsLike | None = None,
+        limits: JointLimits | ContinuousLimits | None = None,
     ) -> Joint:
         joint = Joint(
             name=name,
@@ -92,7 +93,7 @@ class ArticulatedObject:
         *,
         origin: Origin | None = None,
     ) -> Joint:
-        return self.joint(name, JointType.FIXED, parent, child, origin=origin)
+        return self._add_joint(name, JointType.FIXED, parent, child, origin=origin)
 
     def revolute(
         self,
@@ -101,17 +102,17 @@ class ArticulatedObject:
         child: PartRef,
         *,
         axis: Vec3 = (0.0, 0.0, 1.0),
-        limits: LimitsLike,
+        limits: tuple[float, float],
         origin: Origin | None = None,
     ) -> Joint:
-        return self.joint(
+        return self._add_joint(
             name,
             JointType.REVOLUTE,
             parent,
             child,
             origin=origin,
             axis=axis,
-            limits=limits,
+            limits=as_position_limits(limits, field=f"revolute joint {name!r} limits"),
         )
 
     def prismatic(
@@ -121,17 +122,17 @@ class ArticulatedObject:
         child: PartRef,
         *,
         axis: Vec3 = (1.0, 0.0, 0.0),
-        limits: LimitsLike,
+        limits: tuple[float, float],
         origin: Origin | None = None,
     ) -> Joint:
-        return self.joint(
+        return self._add_joint(
             name,
             JointType.PRISMATIC,
             parent,
             child,
             origin=origin,
             axis=axis,
-            limits=limits,
+            limits=as_position_limits(limits, field=f"prismatic joint {name!r} limits"),
         )
 
     def continuous(
@@ -141,17 +142,16 @@ class ArticulatedObject:
         child: PartRef,
         *,
         axis: Vec3 = (0.0, 0.0, 1.0),
-        limits: ContinuousLimits,
         origin: Origin | None = None,
     ) -> Joint:
-        return self.joint(
+        return self._add_joint(
             name,
             JointType.CONTINUOUS,
             parent,
             child,
             origin=origin,
             axis=axis,
-            limits=limits,
+            limits=ContinuousLimits(),
         )
 
     def get_part(self, part: PartRef) -> Part:
@@ -211,12 +211,3 @@ class ArticulatedObject:
             raise ValidationError(
                 f"object contains unreachable parts: {sorted(part_names - visited)}"
             )
-
-    def to_dict(self) -> dict[str, object]:
-        return {
-            "name": self.name,
-            "parts": [
-                {"name": part.name, "shape_type": type(part.shape).__name__} for part in self.parts
-            ],
-            "joints": [joint.to_dict() for joint in self.joints],
-        }

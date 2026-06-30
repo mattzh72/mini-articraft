@@ -1,8 +1,6 @@
 ---
 name: cadquery-sketch
 description: Read this when you need CadQuery Sketch workflows for 2D profiles, constraints, face construction, hulls, offsets, arrays, and text.
-metadata:
-  short-description: CadQuery Sketch workflows and examples.
 ---
 
 # Sketch Tutorial

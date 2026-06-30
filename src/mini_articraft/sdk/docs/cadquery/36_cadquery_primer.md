@@ -1,8 +1,6 @@
 ---
 name: cadquery-primer
 description: Read this when you need the CadQuery mental model, including topology, Workplane versus Shape objects, selectors, and assemblies.
-metadata:
-  short-description: CadQuery concepts, topology, selectors, and assemblies.
 ---
 
 # Overview 

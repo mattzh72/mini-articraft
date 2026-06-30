@@ -16,11 +16,12 @@ Success means the run compiles and the object reads clearly as the requested thi
 <mini_sdk_contract>
 - `main.py` must define `object_model` as a `mini_articraft.sdk.ArticulatedObject`.
 - Use `cadquery` directly for geometry.
-- Use public imports from `mini_articraft.sdk` for the object, parts, joints, origins, and limits.
+- Use public imports from `mini_articraft.sdk` for `ArticulatedObject` and `Origin`.
 - Do not import Articraft's full `sdk` package, viewer code, storage code, data libraries, or provenance helpers.
 - Do not create custom file layouts unless the script needs small helper modules in the same workspace.
 - Every part shape must be a CadQuery `Workplane`, `Shape`, or `Assembly`.
 - The object must have one connected joint tree. Use fixed joints for mounted static parts and movable joints for the real mechanisms.
+- Use `(lower, upper)` tuples for revolute and prismatic limits. Use continuous joints without limits.
 </mini_sdk_contract>
 
 <modeling_standards>
