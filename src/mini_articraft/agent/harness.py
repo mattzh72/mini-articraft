@@ -256,7 +256,8 @@ def _read_sdk_quickstart() -> str:
     return (
         "<sdk_quickstart>\n"
         "This SDK quickstart is preloaded for the run. Use it as the first "
-        "reference, then read only the routed docs needed for the current object.\n\n"
+        "reference, then read the routed docs and local build123d examples needed "
+        "for the current object.\n\n"
         f"{quickstart.rstrip()}\n"
         "</sdk_quickstart>"
     )

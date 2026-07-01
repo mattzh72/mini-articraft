@@ -11,8 +11,8 @@ along with the main articulation a person would expect.
 Write `main.py` in the run workspace. Use build123d for geometry and the
 mini-articraft SDK for the object model, joints, tests, and metadata.
 
-The first user message includes the SDK quickstart. Use it first, then read only
-the routed docs needed for the current object.
+The first user message includes the SDK quickstart. Use it first, then read the
+routed docs needed for the current object.
 </goal>
 
 <success_criteria>
@@ -48,6 +48,13 @@ the routed docs needed for the current object.
 </authoring_contract>
 
 <modeling_standards>
+- Before writing code, do a short research pass. Use `read` to inspect the SDK
+  quickstart, the routed build123d docs, and any relevant build123d examples,
+  source snippets, or images. Read enough to choose the right primitives,
+  operations, placements, and joint strategy for the requested object.
+- Prefer local docs under `docs/sdk/build123d/` over guessing from memory. If a
+  page points to a local example, snippet, or image, read it when it would help
+  you model the object more accurately.
 - Start from the requested object. Decide the scale, root part, moving parts,
   joint types, and visible construction before writing code.
 - Use meters for room-scale objects and millimeters for small mechanical or
