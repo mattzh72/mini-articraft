@@ -17,8 +17,6 @@ def test_record_saves_slim_run_summary(tmp_path) -> None:
         "status": "success",
         "attempts": 0,
         "error": "",
-        "workspace": "workspace",
-        "entrypoint": "workspace/main.py",
         "result": "result/model.usdz",
         "cost": 0.0,
         "token_usage": {},

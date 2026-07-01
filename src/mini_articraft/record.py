@@ -12,8 +12,6 @@ class Record:
     status: str = "created"
     attempts: int = 0
     error: str = ""
-    workspace: str = "workspace"
-    entrypoint: str = "workspace/main.py"
     result: str = ""
     cost: float = 0.0
     token_usage: dict[str, int] = field(default_factory=dict)

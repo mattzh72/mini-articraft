@@ -61,8 +61,6 @@ def run_tests() -> TestReport:
         "status": "success",
         "attempts": 1,
         "error": "",
-        "workspace": "workspace",
-        "entrypoint": "workspace/main.py",
         "result": "result/model.usdz",
         "cost": 0.0,
         "token_usage": {},
