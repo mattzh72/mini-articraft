@@ -1,0 +1,235 @@
+# BuildLine
+
+Source:
+
+- https://build123d.readthedocs.io/en/latest/_sources/build_line.rst.txt
+
+Use this page for the `BuildLine` context manager for constructing one-dimensional curves and wire geometry.
+BuildLine is a python context manager that is used to create one dimensional
+objects - objects with the property of length but not area - that are typically
+used as part of a BuildSketch sketch or a BuildPart path.
+
+The complete API for BuildLine is located at the end of this section.
+
+## Basic Functionality
+
+The following is a simple BuildLine example:
+
+Code reference: `docs/sdk/build123d/snippets/objects_1d.py`.
+
+Include options:
+- `:language: build123d`
+- `:start-after: [Ex. 1]`
+- `:end-before: [Ex. 1]`
+
+The `with` statement creates the `BuildLine` context manager with the
+identifier `example_1`. The objects and operations that are within the
+scope (i.e. indented) of this context will contribute towards the object
+being created by the context manager.  For `BuildLine`, this object is
+`line` and it's referenced as `example_1.line`.
+
+The first object in this example is a `Line` object which is used to create
+a straight line from coordinates (0,0) to (2,0) on the default XY plane.
+The second object is a `ThreePointArc` that starts and ends at the two
+ends of the line.
+
+Image file: `docs/sdk/build123d/assets/buildline_example_1.svg`.
+
+## Constraints
+
+Building with constraints enables the designer to capture design intent and
+add a high degree of robustness to their designs.  The following sections
+describe creating positional and tangential constraints as well as using
+object attributes to enable this type of design.
+
+## @ `position_at` Operator
+
+In the previous example, the `ThreePointArc` started and ended at the
+two ends of the `Line` but this was done by referring to the same
+point `(0,0)` and `(2,0)`.  This can be improved upon by specifying
+constraints that lock the arc to those two end points, as follows:
+
+Code reference: `docs/sdk/build123d/snippets/objects_1d.py`.
+
+Include options:
+- `:language: build123d`
+- `:start-after: [Ex. 2]`
+- `:end-before: [Ex. 2]`
+
+Here instance variables `l1` and `l2` are assigned to the two BuildLine
+objects and the `ThreePointArc` references the beginning of the straight
+line with `l1 @ 0` and the end with `l1 @ 1`.  The `@` operator takes
+a float (or integer) parameter between 0 and 1 and determines a position
+at this fractional position along the line's length.
+
+This example can be improved on further by calculating the mid-point
+of the arc as follows:
+
+Code reference: `docs/sdk/build123d/snippets/objects_1d.py`.
+
+Include options:
+- `:language: build123d`
+- `:start-after: [Ex. 3]`
+- `:end-before: [Ex. 3]`
+
+Here `l1 @ 0.5` finds the center of `l1` while `l1 @ 0.5 + (0, 1)` does
+a vector addition to generate the point `(1,1)`.
+
+To make the design even more parametric, the height of the arc can be calculated
+from `l1` as follows:
+
+Code reference: `docs/sdk/build123d/snippets/objects_1d.py`.
+
+Include options:
+- `:language: build123d`
+- `:start-after: [Ex. 4]`
+- `:end-before: [Ex. 4]`
+
+The arc height is now calculated as `(0, l1.length / 2)` by using the `length`
+property of `Edge` and `Wire` shapes.  At this point the `ThreePointArc` is
+fully parametric and able to generate the same shape for any horizontal line.
+
+## % `tangent_at` Operator
+
+The other operator that is commonly used within BuildLine is `%` the tangent at
+operator. Here is another example:
+
+Code reference: `docs/sdk/build123d/snippets/objects_1d.py`.
+
+Include options:
+- `:language: build123d`
+- `:start-after: [Ex. 5]`
+- `:end-before: [Ex. 5]`
+
+which generates (note that the circles show line junctions):
+
+Image file: `docs/sdk/build123d/assets/buildline_example_5.svg`.
+
+The `JernArc` has the following parameters:
+
+* `start=l2 @ 1` - start the arc at the end of line `l2`,
+* `tangent=l2 % 1` - the tangent of the arc at the start point is equal to the `l2`\'s,
+  tangent at its end (shown as a dashed line)
+* `radius=0.5` - the radius of the arc, and
+* `arc_size=90` the angular size of the arc.
+
+The final line starts at the end of `l3` and ends at a point calculated from the length
+of `l2` and the radius of arc `l3`.
+
+Building with constraints as shown here will ensure that your designs both fully represent
+design intent and are robust to design changes.
+
+## BuildLine to BuildSketch
+
+As mentioned previously, one of the two primary reasons to create BuildLine objects is to
+use them in BuildSketch.  When a BuildLine context manager exits and is within the scope of a
+BuildSketch context manager it will transfer the generated line to BuildSketch. The BuildSketch
+`make_face` or `make_hull`  operations are then used
+to transform the line (specifically a list of Edges) into a Face - the native BuildSketch
+objects.
+
+Here is an example of using BuildLine to create an object that otherwise might be
+difficult to create:
+
+Code reference: `docs/sdk/build123d/snippets/objects_1d.py`.
+
+Include options:
+- `:language: build123d`
+- `:start-after: [Ex. 6]`
+- `:end-before: [Ex. 6]`
+
+which generates:
+
+Image file: `docs/sdk/build123d/assets/buildline_example_6.svg`.
+
+**Note: SVG import to BuildLine**
+
+The BuildLine code used in this example was generated by translating a SVG file
+into BuildLine source code with the `import_svg_as_buildline_code`
+function. For example:
+
+```text
+svg_code, builder_name = import_svg_as_buildline_code("club.svg")
+```
+
+would translate the "club.svg" image file's paths into BuildLine code much like
+that shown above. From there it's easy for a user to add constraints or otherwise
+enhance the original image and use it in their design.
+
+## BuildLine to BuildPart
+
+The other primary reasons to use BuildLine is to create paths for BuildPart
+`sweep` operations. Here some curved and straight segments
+define a path:
+
+Code reference: `docs/sdk/build123d/snippets/objects_1d.py`.
+
+Include options:
+- `:language: build123d`
+- `:start-after: [Ex. 7]`
+- `:end-before: [Ex. 7]`
+
+which generates:
+
+Image file: `docs/sdk/build123d/assets/buildline_example_7.svg`.
+
+There are few things to note from this example:
+
+* The @ and % operators are used to create a plane normal to the beginning of the
+  path with which to create the circular section used by the sweep operation
+  (this plane is not one of the ordinal planes).
+* Both the path generated by BuildLine and the section generated by BuildSketch
+  have been transferred to BuildPart when each of them exit.
+* The BuildPart `Sweep` operation is using the path and section previously
+  transferred to it (as "pending" objects) as parameters of the sweep. The
+  `Sweep` operation "consumes" these pending objects as to not interfere with
+  subsequence operations.
+
+## Working on other Planes
+
+So far all of the examples were created on `Plane.XY` - the default plane - which is equivalent
+to global coordinates. Sometimes it's convenient to work on another plane, especially when
+creating paths for BuildPart `Sweep` operations.
+
+Code reference: `docs/sdk/build123d/snippets/objects_1d.py`.
+
+Include options:
+- `:language: build123d`
+- `:start-after: [Ex. 8]`
+- `:end-before: [Ex. 8]`
+
+which generates:
+
+Image file: `docs/sdk/build123d/assets/buildline_example_8.svg`.
+
+Here the BuildLine object is created on `Plane.YZ` just by specifying the working plane
+during BuildLine initialization.
+
+There are three rules to keep in mind when working with alternate planes in BuildLine:
+
+#. `BuildLine` accepts a single `Plane` to work with as opposed to other Builders
+   that accept more than one workplane.
+#. Values entered as tuples such as `(1, 2)` or `(1, 2, 3)` will be localized to the
+   current workplane.  This rule applies to points and to the use of tuples to modify
+   locations calculated with the `@` and `%` operators such as `l1 @ 1 + (1, 1)`.
+   For example, if the workplane is `Plane.YZ` the local value of `(1, 2)` would
+   be converted to `(0, 1, 2)` in global coordinates.  Three tuples are converted as
+   well - `(1, 2, 3)` on `Plane.YZ` would be `(3, 1, 2)` in global coordinates.
+   Providing values in local coordinates allows the designer to automate such
+   conversions.
+#. Values entered using the `Vector` class or those generated by the `@` operator
+   are considered global values and are not localized.  For example:
+   `Line(Vector(1, 2, 3), Vector(4, 5, 6))` will generate the same line independent
+   of the current workplane. It's unlikely that users will need to use `Vector`
+   values but the option is there.
+
+Finally, BuildLine's workplane need not be one of the predefined ordinal planes, it
+could be one created from a surface of a BuildPart part that is currently under
+construction.
+
+## Reference
+
+Class reference: `BuildLine`.
+
+Reference options:
+- `:members:`

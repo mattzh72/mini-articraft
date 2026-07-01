@@ -167,11 +167,41 @@ Common docs:
 
 build123d docs:
 
-- `docs/sdk/build123d/index.md` lists the copied build123d docs.
-- `docs/sdk/build123d/markdown/build_part.md` documents `BuildPart`.
-- `docs/sdk/build123d/markdown/build_sketch.md` documents `BuildSketch`.
-- `docs/sdk/build123d/markdown/objects.md` documents objects such as `Box`, `Cylinder`, and `Sphere`.
-- `docs/sdk/build123d/markdown/operations.md` documents operations such as `extrude`, `fillet`, `chamfer`, and `add`.
-- `docs/sdk/build123d/markdown/assemblies.md` documents `Compound` based assemblies for fixed groups of shapes.
-- `docs/sdk/build123d/markdown/import_export.md` documents build123d import and export helpers.
-- `docs/sdk/build123d/markdown/direct_api_reference.md` documents the direct build123d API.
+- `docs/sdk/build123d/algebra_definition.md` the formal object and placement algebra behind build123d algebra mode.
+- `docs/sdk/build123d/algebra_performance.md` performance guidance for algebra mode, especially batching operations instead of repeatedly fusing in loops.
+- `docs/sdk/build123d/assemblies.md` assembly organization with `Compound` trees, labels, joints, and packing helpers.
+- `docs/sdk/build123d/build_line.md` the `BuildLine` context manager for constructing one-dimensional curves and wire geometry.
+- `docs/sdk/build123d/build_part.md` the `BuildPart` context manager for creating three-dimensional parts from objects, sketches, and operations.
+- `docs/sdk/build123d/build_sketch.md` the `BuildSketch` context manager for creating planar two-dimensional profiles.
+- `docs/sdk/build123d/center.md` center calculations for CAD objects, including bounding-box, geometry, and mass centers.
+- `docs/sdk/build123d/debugging_logging.md` debugging build123d scripts with Python debuggers, logging, and diagnostic output.
+- `docs/sdk/build123d/examples_1.md` catalogs upstream build123d examples, with local verbatim copies under `docs/sdk/build123d/examples/`.
+- `docs/sdk/build123d/introduction.md` explains build123d's design goals, BREP geometry, parametric Python, and differences from CadQuery.
+- `docs/sdk/build123d/introductory_examples.md` is a broad tour of small build123d examples, with references to upstream example scripts when available.
+- `docs/sdk/build123d/joints.md` build123d joints for arranging solids and compounds with rigid, revolute, linear, cylindrical, and ball motion relationships.
+- `docs/sdk/build123d/key_concepts.md` explains topology, locations, moving shapes, selectors, and `ShapeList`.
+- `docs/sdk/build123d/key_concepts_algebra.md` explains algebra mode with object arithmetic and placement arithmetic.
+- `docs/sdk/build123d/key_concepts_builder.md` explains builder mode with `BuildLine`, `BuildSketch`, `BuildPart`, workplanes, locations, modes, and pending objects.
+- `docs/sdk/build123d/location_arithmetic.md` algebra-mode placement semantics for planes, locations, positions, and rotations.
+- `docs/sdk/build123d/moving_objects.md` explains builder-mode placement, algebra-mode placement, direct movement methods, translation, and rotation.
+- `docs/sdk/build123d/objects.md` object constructors for 1D curves, 2D sketches, and 3D parts, including common primitives and object placement notes.
+- `docs/sdk/build123d/OpenSCAD.md` explains how build123d differs from OpenSCAD and why profile-driven BREP modeling is usually preferable to solid-first CSG.
+- `docs/sdk/build123d/operations.md` build123d operations such as add, extrude, fillet, chamfer, loft, mirror, offset, revolve, sweep, and split.
+- `docs/sdk/build123d/tech_drawing_tutorial.md` explains how to create projected 2D technical drawing views from a build123d model and export SVG output.
+- `docs/sdk/build123d/tips.md` build123d modeling tips, best practices, FAQ guidance, and common pitfalls.
+- `docs/sdk/build123d/topology_selection.md` selectors, `ShapeList`, filtering, sorting, grouping, and topology exploration patterns.
+- `docs/sdk/build123d/tttt.md` lists Too Tall Toby challenge references and build123d solution links from the upstream tutorial page.
+- `docs/sdk/build123d/tutorial_constraints.md` explains how build123d uses precise construction and targeted constraint helpers instead of a broad sketch constraint solver.
+- `docs/sdk/build123d/tutorial_design.md` is a step-by-step workflow for analyzing a part, choosing an origin, sketching profiles, extruding, filleting, and adding holes.
+- `docs/sdk/build123d/tutorial_joints.md` is a build123d joint tutorial covering rigid, revolute, and cylindrical joints in a hinge assembly.
+- `docs/sdk/build123d/tutorial_lego.md` is a step-by-step parametric Lego block tutorial using sketches, offsets, grids, extrusion, pips, and fillets.
+- `docs/sdk/build123d/tutorial_selectors.md` is a step-by-step selector walkthrough that builds a part and fillets the intended edge using robust topological selection.
+- `docs/sdk/build123d/tutorial_stl_reconstruction.md` explains a mesh-guided workflow for detecting primitive hints from STL files and rewriting them into clean build123d models.
+- `docs/sdk/build123d/tutorial_surface_modeling.md` introduces direct surface modeling and build123d face construction tools.
+
+build123d support files:
+
+- `docs/sdk/build123d/assets/` contains upstream docs images and asset-local source files.
+- `docs/sdk/build123d/examples/` contains upstream example scripts and data files.
+- `docs/sdk/build123d/media/` contains standalone upstream docs media and reference files.
+- `docs/sdk/build123d/snippets/` contains upstream docs-root source snippets used by literal includes.
