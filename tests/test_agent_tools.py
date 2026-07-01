@@ -13,7 +13,7 @@ from mini_articraft.environments.local import LocalEnvironment
 
 
 def run(awaitable):
-    return asyncio.run(awaitable)
+    return asyncio.get_event_loop().run_until_complete(awaitable)
 
 
 def context(tmp_path) -> ToolContext:
