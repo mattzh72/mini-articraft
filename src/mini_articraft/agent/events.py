@@ -1,8 +1,3 @@
-from __future__ import annotations
-
-from dataclasses import dataclass, field
-from typing import Any
-
 """Run events emitted by the agent harness.
 
 These are plain, stdlib-only dataclasses so the harness can report progress
@@ -10,6 +5,11 @@ without depending on any UI library. The CLI renderer consumes them; the agent
 core stays free of rich. A consumer dispatches on the event type with
 ``isinstance``.
 """
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Any
 
 
 @dataclass(frozen=True)
