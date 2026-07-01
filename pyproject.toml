@@ -50,6 +50,12 @@ include = ["mini_articraft*"]
 [tool.setuptools.package-data]
 mini_articraft = ["prompts/*.md", "sdk/docs/common/*.md", "sdk/docs/cadquery/*.md"]
 
+[tool.pytest.ini_options]
+addopts = "-m 'not volume'"
+markers = [
+    "volume: opt-in load/concurrency stress tests (run with `-m volume`)",
+]
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"

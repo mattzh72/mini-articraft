@@ -19,7 +19,7 @@ from mini_articraft.record import Record, append_conversation, read_conversation
 
 
 def run(awaitable):
-    return asyncio.run(awaitable)
+    return asyncio.get_event_loop().run_until_complete(awaitable)
 
 
 class FakeModel:

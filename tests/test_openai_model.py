@@ -11,7 +11,7 @@ from mini_articraft.settings import Settings, get_settings
 
 
 def run(awaitable):
-    return asyncio.run(awaitable)
+    return asyncio.get_event_loop().run_until_complete(awaitable)
 
 
 def response_event(
