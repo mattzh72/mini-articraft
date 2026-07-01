@@ -5,7 +5,7 @@ import json
 import pytest
 
 from mini_articraft.environments.local import LocalEnvironment
-from mini_articraft.record import read_conversation
+from mini_articraft.record import Record, read_conversation
 
 
 def write_main(run_dir, code: str) -> None:
@@ -55,16 +55,12 @@ def run_tests() -> TestReport:
     manifest = json.loads(run_dir.joinpath("result", "model.json").read_text())
     assert manifest["name"] == "drawer"
 
-    record = json.loads(run_dir.joinpath("record.json").read_text())
-    assert record == {
-        "run_id": "drawer",
-        "status": "success",
-        "attempts": 1,
-        "error": "",
-        "result": "result/model.usdz",
-        "cost": 0.0,
-        "token_usage": {},
-    }
+    assert Record.load(run_dir / "record.json") == Record(
+        run_id="drawer",
+        status="success",
+        attempts=1,
+        result="result/model.usdz",
+    )
 
     conversation = read_conversation(run_dir / "conversation.jsonl")
     assert conversation == [{"error": "", "role": "compiler", "status": "success"}]

@@ -11,20 +11,18 @@ def test_record_saves_slim_run_summary(tmp_path) -> None:
 
     record.save(path)
 
-    payload = json.loads(path.read_text())
-    assert payload == {
-        "run_id": "run_1",
-        "status": "success",
-        "attempts": 0,
-        "error": "",
-        "result": "result/model.usdz",
-        "cost": 0.0,
-        "token_usage": {},
+    # Save/load round-trips the whole record via dataclass equality.
+    assert Record.load(path) == record
+    # The on-disk summary stays slim: pin the field set, not every value.
+    assert set(json.loads(path.read_text())) == {
+        "run_id",
+        "status",
+        "attempts",
+        "error",
+        "result",
+        "cost",
+        "token_usage",
     }
-
-    loaded = Record.load(path)
-    assert loaded.run_id == "run_1"
-    assert loaded.status == "success"
 
 
 def test_conversation_jsonl_is_append_only(tmp_path) -> None:
