@@ -67,7 +67,7 @@ def run_tests() -> TestReport:
     assert conversation == [{"error": "", "role": "compiler", "status": "success"}]
 
 
-def test_compile_path_enumerates_successful_usdz_outputs(tmp_path) -> None:
+def test_compile_path_enumerates_compileable_usdz_outputs(tmp_path) -> None:
     env = LocalEnvironment(output_dir=tmp_path)
     run_dir = env.create_run("versions")
     write_main(
@@ -87,9 +87,27 @@ def run_tests() -> TestReport:
     )
 
     first = env.compile_path(run_dir)
+    write_main(
+        run_dir,
+        """
+from build123d import *
+
+from mini_articraft.sdk import ArticulatedObject, TestContext, TestReport
+
+object_model = ArticulatedObject("versions", units="meters")
+object_model.part("base", Box(1.0, 1.0, 1.0))
+
+
+def run_tests() -> TestReport:
+    ctx = TestContext(object_model)
+    ctx.fail("prompt-specific check", "missing feature")
+    return ctx.report()
+""",
+    )
     second = env.compile_path(run_dir)
 
     assert first["usdz"] == str(run_dir / "result" / "usdz" / "0000.usdz")
+    assert second["status"] == "error"
     assert second["usdz"] == str(run_dir / "result" / "usdz" / "0001.usdz")
     assert sorted(path.name for path in run_dir.joinpath("result", "usdz").glob("*.usdz")) == [
         "0000.usdz",
@@ -242,6 +260,8 @@ def run_tests() -> TestReport:
     assert result["status"] == "error"
     assert "prompt-specific check" in result["error"]
     assert result["test_report"]["failures"][0]["name"] == "prompt-specific check"
+    assert result["usdz"] == str(run_dir / "result" / "usdz" / "0000.usdz")
+    assert Record.load(run_dir / "record.json").result == "result/usdz/0000.usdz"
 
 
 def test_compile_path_fails_baseline_collision_between_non_adjacent_parts(tmp_path) -> None:

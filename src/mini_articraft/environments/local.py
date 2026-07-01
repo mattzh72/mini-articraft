@@ -106,7 +106,7 @@ class LocalEnvironment:
         record.status = str(result["status"])
         record.attempts += 1
         record.error = str(result.get("error") or "")
-        if result["status"] == "success":
+        if result.get("usdz"):
             record.result = (
                 Path(str(result["usdz"])).resolve().relative_to(run_dir.resolve()).as_posix()
             )

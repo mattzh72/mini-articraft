@@ -66,8 +66,14 @@ def _write_usdz(obj: ArticulatedObject, path: Path, mesh_tolerance: float) -> No
 
         path.parent.mkdir(parents=True, exist_ok=True)
         stage.GetRootLayer().Save()
-        if not UsdUtils.CreateNewUsdzPackage(str(stage_path), str(path)):
-            raise RuntimeError(f"failed to create USDZ package: {path}")
+        temp_path = path.with_name(f".{path.name}.tmp")
+        temp_path.unlink(missing_ok=True)
+        try:
+            if not UsdUtils.CreateNewUsdzPackage(str(stage_path), str(temp_path)):
+                raise RuntimeError(f"failed to create USDZ package: {path}")
+            temp_path.replace(path)
+        finally:
+            temp_path.unlink(missing_ok=True)
 
 
 def _write_parts(
