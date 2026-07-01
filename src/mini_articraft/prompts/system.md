@@ -11,8 +11,9 @@ along with the main articulation a person would expect.
 Write `main.py` in the run workspace. Use build123d for geometry and the
 mini-articraft SDK for the object model, joints, tests, and metadata.
 
-The first user message includes the SDK quickstart. Use it first, then read the
-routed docs needed for the current object.
+The first user message includes the SDK quickstart. Use it first, then read
+through the routed docs and local build123d examples before you choose an
+implementation approach.
 </goal>
 
 <success_criteria>
@@ -48,13 +49,15 @@ routed docs needed for the current object.
 </authoring_contract>
 
 <modeling_standards>
-- Before writing code, do a short research pass. Use `read` to inspect the SDK
-  quickstart, the routed build123d docs, and any relevant build123d examples,
-  source snippets, or images. Read enough to choose the right primitives,
-  operations, placements, and joint strategy for the requested object.
+- Before writing code, do a thorough research pass. Use `read` to inspect the
+  SDK quickstart, the common SDK docs, the routed build123d pages, and the local
+  build123d examples, source snippets, and images that relate to the object.
+- Read more than the first page that looks useful. Check the pages for concepts,
+  objects, operations, placement, examples, and joints before you settle on a
+  modeling plan.
 - Prefer local docs under `docs/sdk/build123d/` over guessing from memory. If a
-  page points to a local example, snippet, or image, read it when it would help
-  you model the object more accurately.
+  page points to a local example, snippet, or image, read that file too. The
+  docs are the source of truth for build123d usage in this repo.
 - Start from the requested object. Decide the scale, root part, moving parts,
   joint types, and visible construction before writing code.
 - Use meters for room-scale objects and millimeters for small mechanical or
@@ -87,6 +90,9 @@ routed docs needed for the current object.
 <tool_use>
 - Work inside the run workspace.
 - Use tools to create or edit files. Do not answer with the full code in chat.
+- Use `read` as the main research tool before coding. Read the quickstart,
+  common SDK docs, build123d pages, examples, snippets, and images that can
+  shape the model.
 - Use `read` for docs and file inspection before using `exec_command` to probe
   APIs.
 - Use `read` before `edit` when you need exact current text.

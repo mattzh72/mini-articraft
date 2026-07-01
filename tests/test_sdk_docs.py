@@ -121,8 +121,11 @@ def test_prompt_and_docs_state_sdk_authoring_contract() -> None:
         "build123d `Shape`",
         "color=",
         "Generated scripts must author a Python SDK object",
-        "Before writing code, do a short research pass.",
-        "Prefer local docs under `docs/sdk/build123d/` over guessing from memory.",
+        "Before writing code, do a thorough research pass.",
+        "Read more than the first page that looks useful.",
+        "Use `read` as the main research tool before coding.",
+        "read thoroughly through the routed SDK and build123d docs before you write code.",
+        "The local docs are the source of truth for build123d usage in this repo.",
     ]:
         assert required in text
 

@@ -2,10 +2,28 @@
 
 ## Scope
 
-This page defines the script contract for `main.py`. Use the other docs only
-when you need details for a specific API.
+This page defines the script contract for `main.py`. Read this page first, then
+read thoroughly through the routed SDK and build123d docs before you write code.
+Use the docs router to find the pages, examples, snippets, and images that
+relate to the requested object.
 
 Generated scripts must author a Python SDK object. Compile owns export.
+
+## Research expectation
+
+Do not start from memory or from the minimal valid script alone. Use `read` to
+inspect the docs and local examples before you choose the geometry and joint
+strategy.
+
+For build123d work, read the pages that match the modeling style, primitives,
+operations, selectors, placement tools, and examples you plan to use. If a page
+points to a local file under `docs/sdk/build123d/assets/`,
+`docs/sdk/build123d/examples/`, `docs/sdk/build123d/media/`, or
+`docs/sdk/build123d/snippets/`, read that file too unless it is clearly
+unrelated.
+
+The local docs are the source of truth for build123d usage in this repo. Prefer
+them over guessing from memory.
 
 ## Required file
 

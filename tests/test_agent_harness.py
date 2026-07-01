@@ -382,6 +382,7 @@ def test_sdk_quickstart_user_message_is_preloaded() -> None:
 
     assert content.startswith("<sdk_quickstart>")
     assert "This SDK quickstart is preloaded for the run." in content
+    assert "read thoroughly through the routed docs" in content
     assert "# SDK quickstart" in content
     assert "`docs/sdk/common/40_testing.md`" in content
     assert content.endswith("</sdk_quickstart>")
