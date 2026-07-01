@@ -52,13 +52,11 @@ mini_articraft = [
     "prompts/*.md",
     "sdk/docs/common/*.md",
     "sdk/docs/build123d/*.md",
-    "sdk/docs/build123d/*.csv",
-    "sdk/docs/build123d/*.json",
-    "sdk/docs/build123d/markdown/*.md",
-    "sdk/docs/build123d/images/*/*.png",
-    "sdk/docs/build123d/images/*/*.jpg",
-    "sdk/docs/build123d/images/**/*.png",
-    "sdk/docs/build123d/images/**/*.jpg",
+    "sdk/docs/build123d/assets/*",
+    "sdk/docs/build123d/assets/*/*",
+    "sdk/docs/build123d/examples/*",
+    "sdk/docs/build123d/media/*",
+    "sdk/docs/build123d/snippets/*",
 ]
 
 [tool.pytest.ini_options]
@@ -70,6 +68,11 @@ markers = [
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+extend-exclude = [
+    "src/mini_articraft/sdk/docs/build123d/assets",
+    "src/mini_articraft/sdk/docs/build123d/examples",
+    "src/mini_articraft/sdk/docs/build123d/snippets",
+]
 
 [tool.ruff.lint]
 select = ["E", "F", "I"]
