@@ -1,0 +1,434 @@
+[
+  {
+    "slug": "introduction",
+    "title": "Introduction",
+    "markdown_file": "markdown/introduction.md",
+    "source_html": "https://build123d.readthedocs.io/en/latest/introduction.html",
+    "pdf_pages": "7-13",
+    "image_count": 0,
+    "notes": ""
+  },
+  {
+    "slug": "installation",
+    "title": "Installation",
+    "markdown_file": "markdown/installation.md",
+    "source_html": "https://build123d.readthedocs.io/en/latest/installation.html",
+    "pdf_pages": "13-14",
+    "image_count": 0,
+    "notes": ""
+  },
+  {
+    "slug": "key_concepts",
+    "title": "Key Concepts",
+    "markdown_file": "markdown/key_concepts.md",
+    "source_html": "https://build123d.readthedocs.io/en/latest/key_concepts.html",
+    "pdf_pages": "14-19",
+    "image_count": 1,
+    "notes": ""
+  },
+  {
+    "slug": "key_concepts_builder",
+    "title": "Key Concepts (builder mode)",
+    "markdown_file": "markdown/key_concepts_builder.md",
+    "source_html": "https://build123d.readthedocs.io/en/latest/key_concepts_builder.html",
+    "pdf_pages": "19-26",
+    "image_count": 0,
+    "notes": ""
+  },
+  {
+    "slug": "key_concepts_algebra",
+    "title": "Key Concepts (algebra mode)",
+    "markdown_file": "markdown/key_concepts_algebra.md",
+    "source_html": "https://build123d.readthedocs.io/en/latest/key_concepts_algebra.html",
+    "pdf_pages": "26-27",
+    "image_count": 0,
+    "notes": ""
+  },
+  {
+    "slug": "moving_objects",
+    "title": "Moving Objects",
+    "markdown_file": "markdown/moving_objects.md",
+    "source_html": "https://build123d.readthedocs.io/en/latest/moving_objects.html",
+    "pdf_pages": "27-29",
+    "image_count": 0,
+    "notes": ""
+  },
+  {
+    "slug": "OpenSCAD",
+    "title": "Transitioning from OpenSCAD",
+    "markdown_file": "markdown/OpenSCAD.md",
+    "source_html": "https://build123d.readthedocs.io/en/latest/OpenSCAD.html",
+    "pdf_pages": "29-33",
+    "image_count": 1,
+    "notes": ""
+  },
+  {
+    "slug": "introductory_examples",
+    "title": "Introductory Examples",
+    "markdown_file": "markdown/introductory_examples.md",
+    "source_html": "https://build123d.readthedocs.io/en/latest/introductory_examples.html",
+    "pdf_pages": "33-59",
+    "image_count": 0,
+    "notes": ""
+  },
+  {
+    "slug": "tutorials",
+    "title": "Tutorials",
+    "markdown_file": "markdown/tutorials.md",
+    "source_html": "https://build123d.readthedocs.io/en/latest/tutorials.html",
+    "pdf_pages": "59",
+    "image_count": 0,
+    "notes": "Parent page cropped before first tutorial section."
+  },
+  {
+    "slug": "tutorial_design",
+    "title": "Designing a Part in build123d",
+    "markdown_file": "markdown/tutorial_design.md",
+    "source_html": "https://build123d.readthedocs.io/en/latest/tutorial_design.html",
+    "pdf_pages": "59-67",
+    "image_count": 5,
+    "notes": ""
+  },
+  {
+    "slug": "tutorial_selectors",
+    "title": "Selector Tutorial",
+    "markdown_file": "markdown/tutorial_selectors.md",
+    "source_html": "https://build123d.readthedocs.io/en/latest/tutorial_selectors.html",
+    "pdf_pages": "67-70",
+    "image_count": 0,
+    "notes": ""
+  },
+  {
+    "slug": "tutorial_constraints",
+    "title": "Drawing with Constraints",
+    "markdown_file": "markdown/tutorial_constraints.md",
+    "source_html": "https://build123d.readthedocs.io/en/latest/tutorial_constraints.html",
+    "pdf_pages": "70-83",
+    "image_count": 1,
+    "notes": ""
+  },
+  {
+    "slug": "tutorial_lego",
+    "title": "Lego Tutorial",
+    "markdown_file": "markdown/tutorial_lego.md",
+    "source_html": "https://build123d.readthedocs.io/en/latest/tutorial_lego.html",
+    "pdf_pages": "83-90",
+    "image_count": 0,
+    "notes": ""
+  },
+  {
+    "slug": "tutorial_joints",
+    "title": "Joint Tutorial",
+    "markdown_file": "markdown/tutorial_joints.md",
+    "source_html": "https://build123d.readthedocs.io/en/latest/tutorial_joints.html",
+    "pdf_pages": "90-97",
+    "image_count": 0,
+    "notes": ""
+  },
+  {
+    "slug": "examples_1",
+    "title": "The build123d Examples",
+    "markdown_file": "markdown/examples_1.md",
+    "source_html": "https://build123d.readthedocs.io/en/latest/examples_1.html",
+    "pdf_pages": "97-181",
+    "image_count": 33,
+    "notes": ""
+  },
+  {
+    "slug": "tttt",
+    "title": "Too Tall Toby (TTT) Tutorials",
+    "markdown_file": "markdown/tttt.md",
+    "source_html": "https://build123d.readthedocs.io/en/latest/tttt.html",
+    "pdf_pages": "181-219",
+    "image_count": 16,
+    "notes": ""
+  },
+  {
+    "slug": "tutorial_stl_reconstruction",
+    "title": "Tutorial: Reconstructing a Design from an STL",
+    "markdown_file": "markdown/tutorial_stl_reconstruction.md",
+    "source_html": "https://build123d.readthedocs.io/en/latest/tutorial_stl_reconstruction.html",
+    "pdf_pages": "219-224",
+    "image_count": 0,
+    "notes": ""
+  },
+  {
+    "slug": "tutorial_surface_modeling",
+    "title": "Surface Modeling",
+    "markdown_file": "markdown/tutorial_surface_modeling.md",
+    "source_html": "https://build123d.readthedocs.io/en/latest/tutorial_surface_modeling.html",
+    "pdf_pages": "224-225",
+    "image_count": 0,
+    "notes": ""
+  },
+  {
+    "slug": "tutorial_surface_heart_token",
+    "title": "Tutorial: Heart Token (Basics)",
+    "markdown_file": "markdown/tutorial_surface_heart_token.md",
+    "source_html": "https://build123d.readthedocs.io/en/latest/tutorial_surface_heart_token.html",
+    "pdf_pages": "225-230",
+    "image_count": 4,
+    "notes": ""
+  },
+  {
+    "slug": "tutorial_spitfire_wing_gordon",
+    "title": "Tutorial: Spitfire Wing with Gordon Surface",
+    "markdown_file": "markdown/tutorial_spitfire_wing_gordon.md",
+    "source_html": "https://build123d.readthedocs.io/en/latest/tutorial_spitfire_wing_gordon.html",
+    "pdf_pages": "230-234",
+    "image_count": 1,
+    "notes": ""
+  },
+  {
+    "slug": "tech_drawing_tutorial",
+    "title": "Technical Drawing Tutorial",
+    "markdown_file": "markdown/tech_drawing_tutorial.md",
+    "source_html": "https://build123d.readthedocs.io/en/latest/tech_drawing_tutorial.html",
+    "pdf_pages": "234-237",
+    "image_count": 0,
+    "notes": ""
+  },
+  {
+    "slug": "objects",
+    "title": "Objects",
+    "markdown_file": "markdown/objects.md",
+    "source_html": "https://build123d.readthedocs.io/en/latest/objects.html",
+    "pdf_pages": "237-274",
+    "image_count": 8,
+    "notes": ""
+  },
+  {
+    "slug": "operations",
+    "title": "Operations",
+    "markdown_file": "markdown/operations.md",
+    "source_html": "https://build123d.readthedocs.io/en/latest/operations.html",
+    "pdf_pages": "274-287",
+    "image_count": 0,
+    "notes": ""
+  },
+  {
+    "slug": "topology_selection",
+    "title": "Topology Selection and Exploration",
+    "markdown_file": "markdown/topology_selection.md",
+    "source_html": "https://build123d.readthedocs.io/en/latest/topology_selection.html",
+    "pdf_pages": "287-292",
+    "image_count": 8,
+    "notes": ""
+  },
+  {
+    "slug": "topology_sort_examples",
+    "title": "Sort Examples",
+    "markdown_file": "markdown/topology_sort_examples.md",
+    "source_html": "https://build123d.readthedocs.io/en/latest/topology_selection/sort_examples.html",
+    "pdf_pages": "292-300",
+    "image_count": 12,
+    "notes": ""
+  },
+  {
+    "slug": "topology_group_examples",
+    "title": "Group Examples",
+    "markdown_file": "markdown/topology_group_examples.md",
+    "source_html": "https://build123d.readthedocs.io/en/latest/topology_selection/group_examples.html",
+    "pdf_pages": "300-307",
+    "image_count": 10,
+    "notes": ""
+  },
+  {
+    "slug": "topology_filter_examples",
+    "title": "Filter Examples",
+    "markdown_file": "markdown/topology_filter_examples.md",
+    "source_html": "https://build123d.readthedocs.io/en/latest/topology_selection/filter_examples.html",
+    "pdf_pages": "307-317",
+    "image_count": 15,
+    "notes": ""
+  },
+  {
+    "slug": "builders",
+    "title": "Builders",
+    "markdown_file": "markdown/builders.md",
+    "source_html": "https://build123d.readthedocs.io/en/latest/builders.html",
+    "pdf_pages": "317",
+    "image_count": 0,
+    "notes": "Parent page cropped before BuildLine section."
+  },
+  {
+    "slug": "build_line",
+    "title": "BuildLine",
+    "markdown_file": "markdown/build_line.md",
+    "source_html": "https://build123d.readthedocs.io/en/latest/build_line.html",
+    "pdf_pages": "317-321",
+    "image_count": 0,
+    "notes": ""
+  },
+  {
+    "slug": "build_sketch",
+    "title": "BuildSketch",
+    "markdown_file": "markdown/build_sketch.md",
+    "source_html": "https://build123d.readthedocs.io/en/latest/build_sketch.html",
+    "pdf_pages": "321-324",
+    "image_count": 0,
+    "notes": ""
+  },
+  {
+    "slug": "build_part",
+    "title": "BuildPart",
+    "markdown_file": "markdown/build_part.md",
+    "source_html": "https://build123d.readthedocs.io/en/latest/build_part.html",
+    "pdf_pages": "324-328",
+    "image_count": 1,
+    "notes": ""
+  },
+  {
+    "slug": "joints",
+    "title": "Joints",
+    "markdown_file": "markdown/joints.md",
+    "source_html": "https://build123d.readthedocs.io/en/latest/joints.html",
+    "pdf_pages": "328-341",
+    "image_count": 5,
+    "notes": ""
+  },
+  {
+    "slug": "assemblies",
+    "title": "Assemblies",
+    "markdown_file": "markdown/assemblies.md",
+    "source_html": "https://build123d.readthedocs.io/en/latest/assemblies.html",
+    "pdf_pages": "341-345",
+    "image_count": 0,
+    "notes": ""
+  },
+  {
+    "slug": "tips",
+    "title": "Tips, Best Practices and FAQ",
+    "markdown_file": "markdown/tips.md",
+    "source_html": "https://build123d.readthedocs.io/en/latest/tips.html",
+    "pdf_pages": "345-351",
+    "image_count": 2,
+    "notes": ""
+  },
+  {
+    "slug": "import_export",
+    "title": "Import/Export",
+    "markdown_file": "markdown/import_export.md",
+    "source_html": "https://build123d.readthedocs.io/en/latest/import_export.html",
+    "pdf_pages": "351-364",
+    "image_count": 0,
+    "notes": ""
+  },
+  {
+    "slug": "advanced",
+    "title": "Advanced Topics",
+    "markdown_file": "markdown/advanced.md",
+    "source_html": "https://build123d.readthedocs.io/en/latest/advanced.html",
+    "pdf_pages": "364",
+    "image_count": 0,
+    "notes": "Parent page cropped before first advanced subpage."
+  },
+  {
+    "slug": "algebra_performance",
+    "title": "Performance considerations in algebra mode",
+    "markdown_file": "markdown/algebra_performance.md",
+    "source_html": "https://build123d.readthedocs.io/en/latest/algebra_performance.html",
+    "pdf_pages": "364-365",
+    "image_count": 0,
+    "notes": ""
+  },
+  {
+    "slug": "location_arithmetic",
+    "title": "Location arithmetic for algebra mode",
+    "markdown_file": "markdown/location_arithmetic.md",
+    "source_html": "https://build123d.readthedocs.io/en/latest/location_arithmetic.html",
+    "pdf_pages": "365-370",
+    "image_count": 7,
+    "notes": ""
+  },
+  {
+    "slug": "algebra_definition",
+    "title": "Algebraic definition",
+    "markdown_file": "markdown/algebra_definition.md",
+    "source_html": "https://build123d.readthedocs.io/en/latest/algebra_definition.html",
+    "pdf_pages": "370-371",
+    "image_count": 0,
+    "notes": ""
+  },
+  {
+    "slug": "center",
+    "title": "CAD Object Centers",
+    "markdown_file": "markdown/center.md",
+    "source_html": "https://build123d.readthedocs.io/en/latest/center.html",
+    "pdf_pages": "371",
+    "image_count": 0,
+    "notes": ""
+  },
+  {
+    "slug": "debugging_logging",
+    "title": "Debugging & Logging",
+    "markdown_file": "markdown/debugging_logging.md",
+    "source_html": "https://build123d.readthedocs.io/en/latest/debugging_logging.html",
+    "pdf_pages": "371-373",
+    "image_count": 1,
+    "notes": ""
+  },
+  {
+    "slug": "cheat_sheet",
+    "title": "Cheat Sheet",
+    "markdown_file": "markdown/cheat_sheet.md",
+    "source_html": "https://build123d.readthedocs.io/en/latest/cheat_sheet.html",
+    "pdf_pages": "373-378",
+    "image_count": 0,
+    "notes": ""
+  },
+  {
+    "slug": "external",
+    "title": "External Tools and Libraries",
+    "markdown_file": "markdown/external.md",
+    "source_html": "https://build123d.readthedocs.io/en/latest/external.html",
+    "pdf_pages": "378-381",
+    "image_count": 0,
+    "notes": ""
+  },
+  {
+    "slug": "builder_api_reference",
+    "title": "Builder Common API Reference",
+    "markdown_file": "markdown/builder_api_reference.md",
+    "source_html": "https://build123d.readthedocs.io/en/latest/builder_api_reference.html",
+    "pdf_pages": "381-387",
+    "image_count": 0,
+    "notes": ""
+  },
+  {
+    "slug": "direct_api_reference",
+    "title": "Direct API Reference",
+    "markdown_file": "markdown/direct_api_reference.md",
+    "source_html": "https://build123d.readthedocs.io/en/latest/direct_api_reference.html",
+    "pdf_pages": "387-481",
+    "image_count": 4,
+    "notes": ""
+  },
+  {
+    "slug": "indices_and_tables",
+    "title": "Indices and tables",
+    "markdown_file": "markdown/indices_and_tables.md",
+    "source_html": "https://build123d.readthedocs.io/en/latest/index.html#indices-and-tables",
+    "pdf_pages": "481-483",
+    "image_count": 0,
+    "notes": "Generated index/table page extracted from PDF."
+  },
+  {
+    "slug": "python_module_index",
+    "title": "Python Module Index",
+    "markdown_file": "markdown/python_module_index.md",
+    "source_html": "https://build123d.readthedocs.io/en/latest/py-modindex.html",
+    "pdf_pages": "483-485",
+    "image_count": 0,
+    "notes": "Generated module index extracted from PDF."
+  },
+  {
+    "slug": "general_index",
+    "title": "Index",
+    "markdown_file": "markdown/general_index.md",
+    "source_html": "https://build123d.readthedocs.io/en/latest/genindex.html",
+    "pdf_pages": "485-493",
+    "image_count": 0,
+    "notes": "Generated general index extracted from PDF."
+  }
+]

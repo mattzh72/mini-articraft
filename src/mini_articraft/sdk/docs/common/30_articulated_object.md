@@ -5,8 +5,8 @@
 `ArticulatedObject` is the object model that `main.py` must export as
 `object_model`.
 
-Use it to register CadQuery parts and connect those parts with joints. Compile
-reads this object, runs tests, and exports the result.
+Use it to register build123d parts and connect those parts with SDK joints.
+Compile reads this object, runs tests, and exports the result.
 
 ## Constructor
 
@@ -26,7 +26,7 @@ Create one `ArticulatedObject` per generated script.
 ```python
 part = model.part(
     name: str,
-    shape: cq.Workplane | cq.Shape | cq.Assembly,
+    shape: build123d.Shape,
     *,
     color: tuple[float, float, float] | tuple[float, float, float, float] | None = None,
 )
@@ -38,7 +38,7 @@ Rules:
 
 - `name` must be a non-empty string.
 - `name` must be unique within the model.
-- `shape` must be a CadQuery `Workplane`, `Shape`, or `Assembly`.
+- `shape` must be a build123d `Shape`.
 - `color` must have three or four values from `0.0` to `1.0` when provided.
 - A part is the unit used by joints, export, and collision tests.
 
@@ -49,15 +49,28 @@ Example:
 ```python
 base = model.part(
     "base",
-    cq.Workplane("XY").box(0.3, 0.2, 0.04),
+    Box(0.3, 0.2, 0.04),
     color=(0.55, 0.57, 0.60),
 )
 lid = model.part(
     "lid",
-    cq.Workplane("XY").box(0.28, 0.18, 0.018),
+    Pos(0.0, 0.0, 0.04) * Box(0.28, 0.18, 0.018),
     color=(0.20, 0.36, 0.70),
 )
 ```
+
+If you use a `BuildPart` context, pass `builder.part` to `model.part(...)`.
+
+```python
+with BuildPart() as bracket_builder:
+    Box(0.08, 0.04, 0.01)
+    Cylinder(0.006, 0.02, mode=Mode.SUBTRACT)
+
+bracket = model.part("bracket", bracket_builder.part)
+```
+
+Keep motion in the SDK joint graph. Do not use build123d joints or a build123d
+assembly tree to describe moving mini-articraft parts.
 
 ## Part references
 
@@ -178,15 +191,3 @@ Compile runs validation through the baseline tests.
 
 Generated scripts may call `model.validate()` in helper code when early failure
 is useful.
-
-## Graph rules
-
-The part graph is a tree rooted at one part.
-
-Every non-root part should be the child of exactly one joint.
-
-Use fixed joints for parts that are permanently attached but should remain
-separate for export or testing.
-
-Do not leave decorative or support parts unconnected unless `run_tests()` calls
-`ctx.allow_isolated_part(...)` with a reason.

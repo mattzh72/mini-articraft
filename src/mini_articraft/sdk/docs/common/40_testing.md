@@ -30,7 +30,7 @@ ctx = TestContext(
 
 `model` must be an `ArticulatedObject`.
 
-`mesh_tolerance` controls CadQuery tessellation for mesh tests. It must be a
+`mesh_tolerance` controls build123d tessellation for mesh tests. It must be a
 positive finite number. Smaller values create denser meshes and slower checks.
 
 The default `mesh_tolerance` is `0.001`.
@@ -153,7 +153,7 @@ Alias for `ctx.part_world_position(...)`.
 
 ## Mesh collision checks
 
-Collision and distance checks use `python-fcl` on tessellated CadQuery meshes.
+Collision and distance checks use `python-fcl` on tessellated build123d meshes.
 
 The SDK uses `trimesh` to prepare triangle meshes and builds FCL BVH models.
 

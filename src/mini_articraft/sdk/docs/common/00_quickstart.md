@@ -2,8 +2,8 @@
 
 ## Scope
 
-This page defines the exact script contract for `main.py`. Use the other docs
-only when you need details for a specific API.
+This page defines the script contract for `main.py`. Use the other docs only
+when you need details for a specific API.
 
 Generated scripts must author a Python SDK object. Compile owns export.
 
@@ -13,7 +13,11 @@ Write one file named `main.py` in the run workspace.
 
 The file must import public SDK names from `mini_articraft.sdk`.
 
-The file may import CadQuery as `cadquery` or as `cq`.
+The file should import build123d with this form:
+
+```python
+from build123d import *
+```
 
 The file must define these top level names:
 
@@ -36,7 +40,7 @@ report has blocking failures.
 Use this import form in generated scripts:
 
 ```python
-import cadquery as cq
+from build123d import *
 
 from mini_articraft.sdk import (
     ArticulatedObject,
@@ -70,7 +74,7 @@ Do not import low level joint classes or part classes. The helper methods on
 ## Minimal valid script
 
 ```python
-import cadquery as cq
+from build123d import *
 
 from mini_articraft.sdk import ArticulatedObject, Frame, TestContext, TestReport
 
@@ -80,12 +84,12 @@ def build_object_model() -> ArticulatedObject:
 
     base = model.part(
         "base",
-        cq.Workplane("XY").box(0.24, 0.18, 0.04),
+        Box(0.24, 0.18, 0.04, align=(Align.CENTER, Align.CENTER, Align.MIN)),
         color=(0.55, 0.57, 0.60),
     )
     lid = model.part(
         "lid",
-        cq.Workplane("XY").box(0.22, 0.16, 0.018),
+        Pos(0.11, 0.0, 0.009) * Box(0.22, 0.16, 0.018),
         color=(0.20, 0.36, 0.70),
     )
 
@@ -93,7 +97,7 @@ def build_object_model() -> ArticulatedObject:
         "base_to_lid",
         base,
         lid,
-        frame=Frame(xyz=(-0.11, 0.0, 0.04)),
+        frame=Frame(xyz=(-0.12, 0.0, 0.04)),
         axis=(0.0, -1.0, 0.0),
         limits=(0.0, 1.2),
     )
@@ -112,6 +116,9 @@ def run_tests() -> TestReport:
     return ctx.report()
 ```
 
+When you build geometry with a `BuildPart` context, pass `builder.part` to
+`model.part(...)`, not the builder object itself.
+
 ## Units
 
 Every `ArticulatedObject` must declare units.
@@ -124,13 +131,13 @@ Supported units are:
 - `"inches"`
 - `"feet"`
 
-CadQuery geometry is unitless. The declared object units say what those numbers
-mean. Use meters for room-scale objects. Use millimeters for small mechanical or
-fabrication-style objects.
+build123d geometry is unitless. The declared object units say what those numbers
+mean. Use meters for room scale objects. Use millimeters for small mechanical or
+fabrication style objects.
 
 Use radians for `Frame.rpy` and for revolute joint limits.
 
-Use the same linear unit as the CadQuery geometry for `Frame.xyz`, prismatic
+Use the same linear unit as the build123d geometry for `Frame.xyz`, prismatic
 limits, mesh distances, and test tolerances.
 
 ## Compile behavior
@@ -158,12 +165,13 @@ Common docs:
 - `docs/sdk/common/35_joints.md` documents joint frames, fixed joints, revolute joints, continuous joints, prismatic joints, axes, and limits.
 - `docs/sdk/common/40_testing.md` documents `TestReport`, `TestContext`, authored checks, baseline checks, mesh collision, distance checks, poses, and allowances.
 
-CadQuery docs:
+build123d docs:
 
-- `docs/sdk/cadquery/35_cadquery.md` documents how mini-articraft accepts CadQuery geometry and what CadQuery objects may be registered as parts.
-- `docs/sdk/cadquery/36_cadquery_primer.md` documents the CadQuery object types that are useful in mini-articraft scripts.
-- `docs/sdk/cadquery/37_cadquery_workplane.md` documents the approved `cq.Workplane` patterns for generated scripts.
-- `docs/sdk/cadquery/38_cadquery_sketch.md` documents the approved `cq.Sketch` patterns for generated scripts.
-- `docs/sdk/cadquery/39_cadquery_assembly.md` documents how to use `cq.Assembly` as geometry inside one mini-articraft part.
-- `docs/sdk/cadquery/39b_cadquery_free_function.md` documents when to avoid CadQuery free function APIs in generated scripts.
-- `docs/sdk/cadquery/39c_cadquery_api_ref.md` lists the CadQuery calls that generated scripts should prefer.
+- `docs/sdk/build123d/index.md` lists the copied build123d docs.
+- `docs/sdk/build123d/markdown/build_part.md` documents `BuildPart`.
+- `docs/sdk/build123d/markdown/build_sketch.md` documents `BuildSketch`.
+- `docs/sdk/build123d/markdown/objects.md` documents objects such as `Box`, `Cylinder`, and `Sphere`.
+- `docs/sdk/build123d/markdown/operations.md` documents operations such as `extrude`, `fillet`, `chamfer`, and `add`.
+- `docs/sdk/build123d/markdown/assemblies.md` documents `Compound` based assemblies for fixed groups of shapes.
+- `docs/sdk/build123d/markdown/import_export.md` documents build123d import and export helpers.
+- `docs/sdk/build123d/markdown/direct_api_reference.md` documents the direct build123d API.

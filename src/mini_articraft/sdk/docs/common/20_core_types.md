@@ -46,7 +46,7 @@ Creates an empty object model.
 The model owns:
 
 - `name`, which is a non-empty string.
-- `units`, which declares what CadQuery coordinates mean.
+- `units`, which declares what build123d coordinates mean.
 - `meters_per_unit`, which is the scale of one model unit in meters.
 - `parts`, which is a list of registered part handles.
 - `joints`, which is a list of registered joint handles.
@@ -63,7 +63,7 @@ Add joints with `model.fixed(...)`, `model.revolute(...)`,
 A part handle has these public fields:
 
 - `name`, which is the part name.
-- `shape`, which is the CadQuery `Workplane`, `Shape`, or `Assembly` used for the part.
+- `shape`, which is the build123d `Shape` used for the part.
 - `color`, which is either `None` or an RGBA tuple with values from `0.0` to `1.0`.
 
 The `color=` argument accepts RGB or RGBA. RGB is stored with alpha `1.0`.
@@ -208,5 +208,5 @@ Every object must declare units.
 
 Use radians for rotations.
 
-Use the same linear unit for CadQuery geometry, `Frame.xyz`, prismatic motion,
+Use the same linear unit for build123d geometry, `Frame.xyz`, prismatic motion,
 mesh distance checks, and contact tolerances.
