@@ -3,8 +3,10 @@ from __future__ import annotations
 import asyncio
 import base64
 import logging
+import os
 import shlex
 import sys
+import time
 
 import pytest
 
@@ -373,6 +375,38 @@ def test_exec_sessions_aclose_logs_cleanup_errors(caplog) -> None:
 
     assert sessions._sessions == {}
     assert "failed to close exec session 7 during run cleanup" in caplog.text
+
+
+def _process_exists(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def test_exec_reaps_detached_descendants_after_exit(tmp_path) -> None:
+    """A command's detached children die with the tracked shell."""
+    ctx = context(tmp_path)
+
+    result = run(
+        get("exec_command").run(
+            ctx,
+            {
+                "command": "nohup sleep 60 >/dev/null 2>&1 & echo $!",
+                "login": False,
+                "yield_time_ms": 2000,
+            },
+        )
+    )
+
+    pid = int(str(result["stdout"]).strip())
+    deadline = time.monotonic() + 5
+    while _process_exists(pid) and time.monotonic() < deadline:
+        time.sleep(0.05)
+    assert not _process_exists(pid)
 
 
 def test_exec_command_zero_output_budget_returns_only_a_truncation_marker(tmp_path) -> None:
