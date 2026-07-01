@@ -9,13 +9,11 @@ from mini_articraft.record import Record, append_conversation, read_conversation
 
 def test_record_saves_slim_run_summary(tmp_path) -> None:
     path = tmp_path / "record.json"
-    record = Record(run_id="run_1", status="success", result="result/model.usdz")
 
-    record.save(path)
+    Record().save(path)
 
-    # Save/load round-trips the whole record via dataclass equality.
-    assert Record.load(path) == record
-    # The on-disk summary stays slim: pin the field set, not every value.
+    # Pin the serialized field set: the record stays a slim summary. Values and
+    # load round-tripping are covered by test_record_round_trips_all_fields.
     assert set(json.loads(path.read_text(encoding="utf-8"))) == {
         "run_id",
         "status",
