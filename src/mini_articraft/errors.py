@@ -15,11 +15,3 @@ class ValidationError(SDKError):
 
 class ModelError(MiniArticraftError):
     """Raised when the model response cannot be used."""
-
-
-class CompileError(MiniArticraftError):
-    """Raised when generated object code fails to compile."""
-
-
-class LimitsExceeded(MiniArticraftError):
-    """Raised when an agent run exceeds configured limits."""
