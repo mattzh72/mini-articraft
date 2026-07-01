@@ -18,6 +18,7 @@ class RunStarted:
     model: str
     prompt: str
     reasoning_effort: str = ""
+    context_window_tokens: int = 0
 
 
 @dataclass(frozen=True)

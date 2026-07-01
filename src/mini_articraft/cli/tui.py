@@ -22,6 +22,7 @@ from rich.spinner import Spinner
 from rich.text import Text
 
 from mini_articraft.agent import events
+from mini_articraft.models import context_window_tokens_for
 from mini_articraft.record import Record, read_conversation
 
 EventHandler = Callable[[events.Event], None]
@@ -101,6 +102,7 @@ class RunRenderer:
         self._names: dict[str, str] = {}
         self._turn = 0
         self._activity = "starting"
+        self._context_window_tokens = 0
         self._started: float | None = None
         self._finished: events.RunFinished | None = None
 
@@ -129,9 +131,13 @@ class RunRenderer:
                 run_id=run_id,
                 model=model,
                 reasoning_effort=reasoning_effort,
+                context_window_tokens=context_window_tokens,
             ):
                 self._started = time.monotonic()
                 self._activity = "thinking"
+                self._context_window_tokens = context_window_tokens or (
+                    context_window_tokens_for(model) or 0
+                )
                 title_parts = [run_id]
                 if model:
                     title_parts.append(model)
@@ -224,7 +230,10 @@ class RunRenderer:
             for call in tool_calls:
                 self._names[str(call.get("id") or "")] = str(call.get("name") or "")
                 self._print_tool_call(str(call.get("name") or ""), str(call.get("arguments") or ""))
-        token_line = _token_usage_line(token_usage or {})
+        token_line = _token_usage_line(
+            token_usage or {},
+            context_window_tokens=self._context_window_tokens,
+        )
         if token_line is not None:
             self._print(token_line)
 
@@ -329,41 +338,25 @@ def _clip(text: str, limit: int) -> str:
     return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
-def _token_usage_line(usage: dict[str, int]) -> Text | None:
+def _token_usage_line(usage: dict[str, int], *, context_window_tokens: int = 0) -> Text | None:
     total = int(usage.get("total_tokens") or 0)
     if total <= 0:
         return None
 
-    input_tokens = int(usage.get("input_tokens") or 0)
-    cached_tokens = min(input_tokens, int(usage.get("cached_input_tokens") or 0))
-    output_tokens = int(usage.get("output_tokens") or 0)
-    counts = [max(0, input_tokens - cached_tokens), cached_tokens, output_tokens]
-    widths = _bar_widths(counts, TOKEN_BAR_WIDTH)
-
     line = Text("    tokens ", style="dim")
     line.append(_format_tokens(total), style=SIGNAL_STYLE)
+    if context_window_tokens <= 0:
+        return line
+
+    percent = min(100.0, total / context_window_tokens * 100)
+    filled = round(TOKEN_BAR_WIDTH * min(total, context_window_tokens) / context_window_tokens)
+    filled = max(0, min(TOKEN_BAR_WIDTH, filled))
+    line.append(f" / {_format_tokens(context_window_tokens)} ", style="dim")
+    line.append(f"({percent:.1f}%)", style=SIGNAL_STYLE)
     line.append("  ")
-    for width, style in zip(widths, ("blue", "cyan", "green"), strict=True):
-        line.append("█" * width, style=style)
-    line.append(
-        f"  in {_format_tokens(input_tokens)}"
-        f" · cached {_format_tokens(cached_tokens)}"
-        f" · out {_format_tokens(output_tokens)}",
-        style="dim",
-    )
+    line.append("█" * filled, style="green")
+    line.append("░" * (TOKEN_BAR_WIDTH - filled), style="dim")
     return line
-
-
-def _bar_widths(counts: list[int], width: int) -> list[int]:
-    total = sum(counts)
-    if total <= 0:
-        return [0 for _ in counts]
-    widths = [max(1, round(width * count / total)) if count else 0 for count in counts]
-    while sum(widths) > width:
-        widths[widths.index(max(widths))] -= 1
-    while sum(widths) < width:
-        widths[counts.index(max(counts))] += 1
-    return widths
 
 
 def _args_summary(name: str, arguments: str) -> str:

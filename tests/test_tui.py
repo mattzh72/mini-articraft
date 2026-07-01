@@ -65,6 +65,7 @@ def test_renderer_shows_compile_and_errors() -> None:
 def test_renderer_shows_token_usage_bar() -> None:
     renderer, console = _renderer()
 
+    renderer.handle(events.RunStarted("run-x", "gpt-5.4-mini", "a box", "high", 400_000))
     renderer.handle(events.TurnStarted(1))
     renderer.handle(
         events.AssistantMessage(
@@ -82,9 +83,8 @@ def test_renderer_shows_token_usage_bar() -> None:
 
     out = _text(console)
     assert "tokens 1.2k" in out
-    assert "in 1k" in out
-    assert "cached 100" in out
-    assert "out 250" in out
+    assert "/ 400k" in out
+    assert "(0.3%)" in out
 
 
 def test_renderer_shows_full_compile_signals_without_protocol_tags_or_truncation() -> None:
