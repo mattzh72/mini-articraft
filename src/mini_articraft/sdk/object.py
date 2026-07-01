@@ -4,7 +4,7 @@ import math
 from dataclasses import dataclass, field
 from typing import TypeAlias
 
-import cadquery as cq
+from build123d import Shape
 
 from mini_articraft.errors import ValidationError
 from mini_articraft.sdk.joints import (
@@ -18,9 +18,8 @@ from mini_articraft.sdk.joints import (
     coerce_part_name,
 )
 
-CadQueryShape: TypeAlias = cq.Workplane | cq.Shape | cq.Assembly
+Build123dShape: TypeAlias = Shape
 Color: TypeAlias = tuple[float, float, float, float]
-_CADQUERY_TYPES = (cq.Workplane, cq.Shape, cq.Assembly)
 UNITS_TO_METERS = {
     "meters": 1.0,
     "centimeters": 0.01,
@@ -33,17 +32,15 @@ UNITS_TO_METERS = {
 @dataclass
 class Part:
     name: str
-    shape: CadQueryShape
+    shape: Build123dShape
     color: Color | None = None
 
     def __post_init__(self) -> None:
         self.name = str(self.name).strip()
         if not self.name:
             raise ValidationError("part name must be non-empty")
-        if not isinstance(self.shape, _CADQUERY_TYPES):
-            raise ValidationError(
-                f"part {self.name!r} shape must be a CadQuery Workplane, Shape, or Assembly"
-            )
+        if not isinstance(self.shape, Shape):
+            raise ValidationError(f"part {self.name!r} shape must be a build123d Shape")
         if self.color is not None:
             self.color = _as_color(self.color, field=f"part {self.name!r} color")
 
@@ -68,7 +65,7 @@ class ArticulatedObject:
     def meters_per_unit(self) -> float:
         return UNITS_TO_METERS[self.units]
 
-    def part(self, name: str, shape: CadQueryShape, *, color: Color | None = None) -> Part:
+    def part(self, name: str, shape: Build123dShape, *, color: Color | None = None) -> Part:
         part = Part(name=name, shape=shape, color=color)
         if any(existing.name == part.name for existing in self.parts):
             raise ValidationError(f"duplicate part name: {part.name!r}")

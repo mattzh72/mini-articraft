@@ -5,13 +5,13 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "mini-articraft"
 dynamic = ["version"]
-description = "A small reference agent for generating articulated CadQuery objects."
+description = "A small reference agent for generating articulated build123d objects."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { file = "LICENSE" }
 authors = [{ name = "mini-articraft contributors" }]
 dependencies = [
-    "cadquery>=2.5",
+    "build123d>=0.11.0",
     "numpy>=1.26",
     "pydantic>=2.0.0",
     "pydantic-settings>=2.14.2",
@@ -48,7 +48,18 @@ where = ["src"]
 include = ["mini_articraft*"]
 
 [tool.setuptools.package-data]
-mini_articraft = ["prompts/*.md", "sdk/docs/common/*.md", "sdk/docs/cadquery/*.md"]
+mini_articraft = [
+    "prompts/*.md",
+    "sdk/docs/common/*.md",
+    "sdk/docs/build123d/*.md",
+    "sdk/docs/build123d/*.csv",
+    "sdk/docs/build123d/*.json",
+    "sdk/docs/build123d/markdown/*.md",
+    "sdk/docs/build123d/images/*/*.png",
+    "sdk/docs/build123d/images/*/*.jpg",
+    "sdk/docs/build123d/images/**/*.png",
+    "sdk/docs/build123d/images/**/*.jpg",
+]
 
 [tool.pytest.ini_options]
 addopts = "-m 'not volume'"

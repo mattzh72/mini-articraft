@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import cadquery as cq
 import pytest
+from build123d import Box, Shape
 
 import mini_articraft.sdk as sdk
 from mini_articraft.sdk import (
@@ -11,8 +11,8 @@ from mini_articraft.sdk import (
 )
 
 
-def shape() -> cq.Workplane:
-    return cq.Workplane("XY").box(1.0, 1.0, 1.0)
+def shape() -> Shape:
+    return Box(1.0, 1.0, 1.0)
 
 
 def test_articulated_object_units_are_explicit_and_validated() -> None:
@@ -114,8 +114,8 @@ def test_duplicate_part_names_are_rejected() -> None:
         obj.part("base", shape())
 
 
-def test_part_requires_cadquery_shape() -> None:
+def test_part_requires_build123d_shape() -> None:
     obj = ArticulatedObject("bad_shape", units="meters")
 
-    with pytest.raises(ValidationError, match="CadQuery"):
+    with pytest.raises(ValidationError, match="build123d"):
         obj.part("base", object())

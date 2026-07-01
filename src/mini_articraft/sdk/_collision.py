@@ -4,14 +4,14 @@ import math
 from dataclasses import dataclass
 from typing import TypeAlias
 
-import cadquery as cq
 import fcl
 import numpy as np
 import trimesh
+from build123d import Shape
 
 from mini_articraft.errors import ValidationError
 from mini_articraft.sdk.joints import Frame, Joint, JointType
-from mini_articraft.sdk.object import ArticulatedObject, CadQueryShape
+from mini_articraft.sdk.object import ArticulatedObject, Build123dShape
 
 Vec3: TypeAlias = tuple[float, float, float]
 Mat4: TypeAlias = np.ndarray
@@ -68,7 +68,7 @@ class _PartMesh:
 @dataclass(frozen=True)
 class _GeometryComponent:
     name: str
-    shape: cq.Shape
+    shape: Shape
 
 
 @dataclass(frozen=True)
@@ -278,7 +278,7 @@ class MeshCollisionKernel:
         if cached is not None:
             return cached
 
-        shape = _cadquery_shape(part.shape)
+        shape = _build123d_shape(part.shape)
         mesh = _shape_to_mesh(shape, self.mesh_tolerance)
         bvh = _mesh_to_bvh(mesh)
         cached = _PartMesh(mesh=mesh, fcl_model=bvh)
@@ -293,7 +293,7 @@ class MeshCollisionKernel:
             return cached
 
         components: list[_GeometryComponent] = []
-        for index, shape in enumerate(_cadquery_components(part.shape), start=1):
+        for index, shape in enumerate(_build123d_components(part.shape), start=1):
             components.append(
                 _GeometryComponent(
                     name=f"solid_{index:03d}",
@@ -423,49 +423,34 @@ def _entry_for_object(
     return None
 
 
-def _cadquery_shape(model: CadQueryShape) -> cq.Shape:
-    if isinstance(model, cq.Shape):
+def _build123d_shape(model: Build123dShape) -> Shape:
+    if isinstance(model, Shape):
         return model
-    if isinstance(model, cq.Assembly):
-        return model.toCompound()
-    if isinstance(model, cq.Workplane):
-        values = list(model.vals())
-        if not values:
-            raise ValidationError("CadQuery Workplane produced no testable shape")
-        if not all(isinstance(value, cq.Shape) for value in values):
-            raise ValidationError("CadQuery Workplane produced non-shape objects")
-        if len(values) == 1:
-            return values[0]
-        return cq.Compound.makeCompound(values)
-    raise ValidationError(
-        "Unsupported CadQuery model type. Expected cadquery.Shape, Workplane, or Assembly."
-    )
+    raise ValidationError("Unsupported build123d model type. Expected build123d Shape.")
 
 
-def _cadquery_components(model: CadQueryShape) -> list[cq.Shape]:
-    shape = _cadquery_shape(model)
-    solids_getter = getattr(shape, "Solids", None)
-    if callable(solids_getter):
-        try:
-            solids = [solid for solid in solids_getter() if solid is not None]
-        except Exception:
-            solids = []
-        if solids:
-            return solids
+def _build123d_components(model: Build123dShape) -> list[Shape]:
+    shape = _build123d_shape(model)
+    try:
+        solids = [solid for solid in shape.solids() if solid is not None]
+    except Exception:
+        solids = []
+    if solids:
+        return solids
     return [shape]
 
 
-def _shape_to_mesh(shape: cq.Shape, tolerance: float) -> trimesh.Trimesh:
+def _shape_to_mesh(shape: Shape, tolerance: float) -> trimesh.Trimesh:
     vertices, faces = shape.tessellate(tolerance)
     if not vertices or not faces:
-        raise ValidationError("CadQuery shape produced an empty collision mesh")
+        raise ValidationError("build123d shape produced an empty collision mesh")
     mesh = trimesh.Trimesh(
-        vertices=np.asarray([[v.x, v.y, v.z] for v in vertices], dtype=np.float64),
+        vertices=np.asarray([[v.X, v.Y, v.Z] for v in vertices], dtype=np.float64),
         faces=np.asarray(faces, dtype=np.int32),
         process=False,
     )
     if mesh.vertices.size == 0 or mesh.faces.size == 0:
-        raise ValidationError("CadQuery shape produced an empty collision mesh")
+        raise ValidationError("build123d shape produced an empty collision mesh")
     return mesh
 
 

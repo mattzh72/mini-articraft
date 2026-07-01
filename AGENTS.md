@@ -27,7 +27,7 @@ Use these areas as the main boundaries:
 - `agent/` owns the generate and compile loop.
 - `models/` owns model adapters.
 - `environments/` owns local run creation and compile execution.
-- `sdk/` owns the small CadQuery object API, joints, and export helpers.
+- `sdk/` owns the small build123d object API, joints, and export helpers.
 - `prompts/` owns the agent prompts.
 - `config/` owns default runtime settings.
 - `record.py` owns the small JSON record and conversation helpers.

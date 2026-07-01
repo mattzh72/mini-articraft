@@ -8,7 +8,7 @@ from pathlib import Path
 
 from pxr import Gf, Sdf, Tf, Usd, UsdGeom, UsdPhysics, UsdUtils
 
-from mini_articraft.sdk._collision import MeshCollisionKernel, _cadquery_shape, _rpy_matrix
+from mini_articraft.sdk._collision import MeshCollisionKernel, _build123d_shape, _rpy_matrix
 from mini_articraft.sdk.joints import ContinuousLimits, Joint, JointLimits, JointType
 from mini_articraft.sdk.object import ArticulatedObject, Part
 
@@ -178,11 +178,11 @@ def _attrs(prim: Usd.Prim, values: dict[str, object]) -> None:
 
 
 def _mesh(part: Part, tolerance: float) -> tuple[list[Gf.Vec3f], list[tuple[int, int, int]]]:
-    vertices, faces = _cadquery_shape(part.shape).tessellate(tolerance)
+    vertices, faces = _build123d_shape(part.shape).tessellate(tolerance)
     if not vertices or not faces:
         raise TypeError(f"part {part.name!r} produced no USD mesh triangles")
     return (
-        [Gf.Vec3f(float(v.x), float(v.y), float(v.z)) for v in vertices],
+        [Gf.Vec3f(float(v.X), float(v.Y), float(v.Z)) for v in vertices],
         [tuple(int(i) for i in face) for face in faces],
     )
 

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import cadquery as cq
 import pytest
+from build123d import Box, Compound, Pos, Shape
 
 import mini_articraft.sdk._collision as collision_kernel
 from mini_articraft.errors import ValidationError
@@ -13,14 +13,14 @@ from mini_articraft.sdk import (
 )
 
 
-def box(size: float = 1.0) -> cq.Workplane:
-    return cq.Workplane("XY").box(size, size, size)
+def box(size: float = 1.0) -> Shape:
+    return Box(size, size, size)
 
 
-def compound_boxes(offset: float) -> cq.Compound:
-    first = cq.Workplane("XY").box(1.0, 1.0, 1.0).val()
-    second = cq.Workplane("XY").box(1.0, 1.0, 1.0).translate((offset, 0.0, 0.0)).val()
-    return cq.Compound.makeCompound([first, second])
+def compound_boxes(offset: float) -> Compound:
+    first = Box(1.0, 1.0, 1.0)
+    second = Pos(X=offset) * Box(1.0, 1.0, 1.0)
+    return Compound(children=[first, second])
 
 
 def test_report_records_checks_warnings_and_allowances() -> None:
@@ -175,7 +175,7 @@ def test_baseline_collision_check_uses_fcl_broadphase_manager(monkeypatch) -> No
     monkeypatch.setattr(collision_kernel.fcl, "DynamicAABBTreeCollisionManager", SpyManager)
 
     model = ArticulatedObject("manager", units="meters")
-    root = model.part("root", cq.Workplane("XY").box(3.0, 3.0, 0.1))
+    root = model.part("root", Box(3.0, 3.0, 0.1))
     part_a = model.part("part_a", box())
     part_b = model.part("part_b", box())
     model.fixed("root_to_a", root, part_a, frame=Frame(xyz=(0.0, 0.0, 0.55)))
@@ -191,7 +191,7 @@ def test_baseline_collision_check_uses_fcl_broadphase_manager(monkeypatch) -> No
 
 def test_allow_overlap_suppresses_only_baseline_collision() -> None:
     model = ArticulatedObject("allowance", units="meters")
-    root = model.part("root", cq.Workplane("XY").box(3.0, 3.0, 0.1))
+    root = model.part("root", Box(3.0, 3.0, 0.1))
     shaft = model.part("shaft", box())
     hub = model.part("hub", box())
     model.fixed("root_to_shaft", root, shaft, frame=Frame(xyz=(0.0, 0.0, 0.55)))

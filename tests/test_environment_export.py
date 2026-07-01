@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import math
 
-import cadquery as cq
+from build123d import Box
 from pxr import Gf, Usd, UsdGeom, UsdPhysics, UsdValidation
 
 from mini_articraft.environments.export import export_object
@@ -61,8 +61,8 @@ def test_export_object_writes_valid_usdz_and_manifest(tmp_path) -> None:
 
 def _hinge() -> ArticulatedObject:
     obj = ArticulatedObject("hinge", units="meters")
-    base = obj.part("base", cq.Workplane("XY").box(1.0, 1.0, 0.2), color=(0.6, 0.6, 0.65))
-    door = obj.part("door", cq.Workplane("XY").box(0.8, 0.1, 1.0), color=(0.2, 0.35, 0.8))
+    base = obj.part("base", Box(1.0, 1.0, 0.2), color=(0.6, 0.6, 0.65))
+    door = obj.part("door", Box(0.8, 0.1, 1.0), color=(0.2, 0.35, 0.8))
     obj.revolute(
         "base_to_door",
         base,
