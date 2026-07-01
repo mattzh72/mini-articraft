@@ -22,19 +22,26 @@ def compile_run(run_dir: Path) -> dict[str, Any]:
     result_dir = run_dir / "result"
     pending_result_dir = run_dir / ".result_pending"
 
-    payload = _compile_workspace(workspace, pending_result_dir)
-    if Path(str(payload.get("usdz") or "")).is_file():
+    _remove_tree(pending_result_dir)
+    if result_dir.exists():
+        shutil.copytree(result_dir, pending_result_dir)
+
+    payload = _compile_workspace(workspace, pending_result_dir, clean=False)
+    pending_usdz = Path(str(payload.get("usdz") or ""))
+    if pending_usdz.is_file():
+        relative_usdz = pending_usdz.relative_to(pending_result_dir)
         _replace_tree(pending_result_dir, result_dir)
         payload["manifest"] = str(result_dir / "model.json")
-        payload["usdz"] = str(result_dir / "model.usdz")
+        payload["usdz"] = str(result_dir / relative_usdz)
     else:
         _remove_tree(pending_result_dir)
     return payload
 
 
-def _compile_workspace(workspace: Path, export_dir: Path) -> dict[str, Any]:
-    _remove_tree(export_dir)
-    export_dir.mkdir(parents=True)
+def _compile_workspace(workspace: Path, export_dir: Path, *, clean: bool = True) -> dict[str, Any]:
+    if clean:
+        _remove_tree(export_dir)
+    export_dir.mkdir(parents=True, exist_ok=True)
 
     captured_stdout = io.StringIO()
     captured_stderr = io.StringIO()

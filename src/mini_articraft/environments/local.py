@@ -107,7 +107,9 @@ class LocalEnvironment:
         record.attempts += 1
         record.error = str(result.get("error") or "")
         if result["status"] == "success":
-            record.result = "result/model.usdz"
+            record.result = (
+                Path(str(result["usdz"])).resolve().relative_to(run_dir.resolve()).as_posix()
+            )
         record.save(run_dir / "record.json")
 
         append_conversation(

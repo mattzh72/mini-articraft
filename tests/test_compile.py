@@ -46,24 +46,56 @@ def run_tests() -> TestReport:
     assert result["status"] == "success"
     assert result["entrypoint"] == str(run_dir / "workspace" / "main.py")
     assert result["manifest"] == str(run_dir / "result" / "model.json")
-    assert result["usdz"] == str(run_dir / "result" / "model.usdz")
-    assert run_dir.joinpath("result", "model.usdz").is_file()
+    assert result["usdz"] == str(run_dir / "result" / "usdz" / "0000.usdz")
+    assert run_dir.joinpath("result", "usdz", "0000.usdz").is_file()
     assert result["compile_report"]["status"] == "success"
     assert result["compile_report"]["counts"] == {"failures": 0, "warnings": 0, "notes": 0}
     assert "<compile_signals>" in result["compile_report"]["signals_text"]
 
     manifest = json.loads(run_dir.joinpath("result", "model.json").read_text())
     assert manifest["name"] == "drawer"
+    assert manifest["files"] == {"usdz": "usdz/0000.usdz"}
 
     assert Record.load(run_dir / "record.json") == Record(
         run_id="drawer",
         status="success",
         attempts=1,
-        result="result/model.usdz",
+        result="result/usdz/0000.usdz",
     )
 
     conversation = read_conversation(run_dir / "conversation.jsonl")
     assert conversation == [{"error": "", "role": "compiler", "status": "success"}]
+
+
+def test_compile_path_enumerates_successful_usdz_outputs(tmp_path) -> None:
+    env = LocalEnvironment(output_dir=tmp_path)
+    run_dir = env.create_run("versions")
+    write_main(
+        run_dir,
+        """
+from build123d import *
+
+from mini_articraft.sdk import ArticulatedObject, TestContext, TestReport
+
+object_model = ArticulatedObject("versions", units="meters")
+object_model.part("base", Box(1.0, 1.0, 1.0))
+
+
+def run_tests() -> TestReport:
+    return TestContext(object_model).report()
+""",
+    )
+
+    first = env.compile_path(run_dir)
+    second = env.compile_path(run_dir)
+
+    assert first["usdz"] == str(run_dir / "result" / "usdz" / "0000.usdz")
+    assert second["usdz"] == str(run_dir / "result" / "usdz" / "0001.usdz")
+    assert sorted(path.name for path in run_dir.joinpath("result", "usdz").glob("*.usdz")) == [
+        "0000.usdz",
+        "0001.usdz",
+    ]
+    assert Record.load(run_dir / "record.json").result == "result/usdz/0001.usdz"
 
 
 def test_compile_path_supports_workspace_modules(tmp_path) -> None:
@@ -101,7 +133,7 @@ def build_object_model():
     result = env.compile_path(run_dir)
 
     assert result["status"] == "success"
-    assert result["usdz"] == str(run_dir / "result" / "model.usdz")
+    assert result["usdz"] == str(run_dir / "result" / "usdz" / "0000.usdz")
 
 
 def test_create_run_requires_new_simple_run_id(tmp_path) -> None:
@@ -247,8 +279,8 @@ def run_tests() -> TestReport:
     assert "fail_if_parts_collide_in_current_pose" in result["error"]
     assert "part_a" in result["error"]
     assert "part_b" in result["error"]
-    assert result["usdz"] == str(run_dir / "result" / "model.usdz")
-    assert run_dir.joinpath("result", "model.usdz").is_file()
+    assert result["usdz"] == str(run_dir / "result" / "usdz" / "0000.usdz")
+    assert run_dir.joinpath("result", "usdz", "0000.usdz").is_file()
 
 
 def test_compile_path_fails_disconnected_geometry_inside_part(tmp_path) -> None:

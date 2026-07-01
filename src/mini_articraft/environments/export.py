@@ -30,13 +30,17 @@ def export_object(
     root.mkdir(parents=True, exist_ok=True)
     obj.validate()
 
-    usdz = root / "model.usdz"
+    usdz = _next_usdz_path(root / "usdz")
     _write_usdz(obj, usdz, mesh_tolerance)
 
     manifest = root / "model.json"
     payload = _object_to_payload(obj) | {"files": {"usdz": usdz.relative_to(root).as_posix()}}
     manifest.write_text(json.dumps(payload, indent=2) + "\n")
     return ExportResult(root=root, manifest=manifest, usdz=usdz)
+
+
+def _next_usdz_path(usdz_dir: Path) -> Path:
+    return usdz_dir / f"{len(list(usdz_dir.glob('*.usdz'))):04d}.usdz"
 
 
 def _write_usdz(obj: ArticulatedObject, path: Path, mesh_tolerance: float) -> None:

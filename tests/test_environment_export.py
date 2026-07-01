@@ -18,7 +18,8 @@ def test_export_object_writes_valid_usdz_and_manifest(tmp_path) -> None:
 
     assert result.usdz.exists()
     assert not (tmp_path / "parts").exists()
-    assert manifest["files"] == {"usdz": "model.usdz"}
+    assert result.usdz == tmp_path / "usdz" / "0000.usdz"
+    assert manifest["files"] == {"usdz": "usdz/0000.usdz"}
     assert manifest["units"] == "meters"
     assert manifest["parts"][0]["color"] == [0.6, 0.6, 0.65, 1.0]
 
