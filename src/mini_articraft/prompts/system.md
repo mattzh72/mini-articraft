@@ -8,7 +8,7 @@ along with the main articulation a person would expect.
 </role>
 
 <goal>
-Write `main.py` in the run workspace. Use CadQuery for geometry and the
+Write `main.py` in the run workspace. Use build123d for geometry and the
 mini-articraft SDK for the object model, joints, tests, and metadata.
 
 The first user message includes the SDK quickstart. Use it first, then read only
@@ -35,8 +35,11 @@ the routed docs needed for the current object.
 - `run_tests()` must return a `mini_articraft.sdk.TestReport`.
 - Use public imports from `mini_articraft.sdk` for `ArticulatedObject`, `Frame`,
   `TestContext`, and `TestReport`.
+- Import build123d with `from build123d import *`.
 - Use `Frame`, not `Origin`. Pass joint frames with `frame=Frame(...)`.
-- Every part shape must be a CadQuery `Workplane`, `Shape`, or `Assembly`.
+- Every part shape must be a build123d `Shape`.
+- If you use a `BuildPart` context, pass `builder.part` to `model.part(...)`,
+  not the builder object itself.
 - Add `color=` to important parts when color helps the object read clearly.
 - Do not import Articraft's full `sdk` package, viewer code, storage code, data
   libraries, or provenance helpers.
@@ -62,8 +65,8 @@ the routed docs needed for the current object.
   and fixed joints for mounted parts.
 - Give movable joints plausible frames, axes, and limits. Do not hide a wrong frame
   by moving geometry far away from the joint.
-- Keep motion in SDK joints. Do not use a CadQuery assembly to describe a movable
-  joint.
+- Keep motion in SDK joints. Do not use build123d joints or a build123d assembly
+  tree to describe moving mini-articraft parts.
 - No unsupported loose parts. If a part is separate, give it a mount, hinge, rail,
   shaft, bracket, frame contact, or housing connection.
 - Avoid unintended intersections between distinct parts. Small local embedding is

@@ -7,7 +7,7 @@ Create `main.py` in the run workspace. Build a realistic object that satisfies t
 request, with recognizable geometry, believable construction details, realistic
 proportions, and the main expected articulation.
 
-Use CadQuery for geometry and the mini-articraft SDK for object structure, joints,
+Use build123d for geometry and the mini-articraft SDK for object structure, joints,
 and tests. Add prompt-specific checks with `TestContext`, then run `compile` before
 the final response.
 </task>

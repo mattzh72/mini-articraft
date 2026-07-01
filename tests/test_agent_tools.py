@@ -243,14 +243,14 @@ def test_compile_tool_compiles_workspace(tmp_path) -> None:
     ctx = context(tmp_path)
     ctx.workspace.joinpath("main.py").write_text(
         """
-import cadquery as cq
+from build123d import *
 
 from mini_articraft.sdk import ArticulatedObject, TestContext, TestReport
 
 
 def build_object_model() -> ArticulatedObject:
     model = ArticulatedObject("box", units="meters")
-    model.part("base", cq.Workplane("XY").box(1, 1, 1))
+    model.part("base", Box(1, 1, 1))
     return model
 
 

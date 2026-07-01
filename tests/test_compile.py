@@ -18,15 +18,15 @@ def test_compile_path_compiles_existing_run_directory(tmp_path) -> None:
     write_main(
         run_dir,
         """
-import cadquery as cq
+from build123d import *
 
 from mini_articraft.sdk import ArticulatedObject, TestContext, TestReport
 
 
 def build_object_model() -> ArticulatedObject:
     model = ArticulatedObject("drawer", units="meters")
-    base = model.part("base", cq.Workplane("XY").box(1.0, 1.0, 0.2))
-    drawer = model.part("drawer", cq.Workplane("XY").box(0.8, 0.8, 0.2))
+    base = model.part("base", Box(1.0, 1.0, 0.2))
+    drawer = model.part("drawer", Box(0.8, 0.8, 0.2))
     model.fixed("base_to_drawer", base, drawer)
     return model
 
@@ -85,14 +85,14 @@ def run_tests() -> TestReport:
     )
     run_dir.joinpath("workspace", "parts", "drawer.py").write_text(
         """
-import cadquery as cq
+from build123d import *
 
 from mini_articraft.sdk import ArticulatedObject
 
 
 def build_object_model():
     model = ArticulatedObject("helper_module_drawer", units="meters")
-    model.part("base", cq.Workplane("XY").box(1.0, 1.0, 0.2))
+    model.part("base", Box(1.0, 1.0, 0.2))
     return model
 """,
         encoding="utf-8",
@@ -144,12 +144,12 @@ def test_compile_path_requires_run_tests(tmp_path) -> None:
     write_main(
         run_dir,
         """
-import cadquery as cq
+from build123d import *
 
 from mini_articraft.sdk import ArticulatedObject
 
 object_model = ArticulatedObject("box", units="meters")
-object_model.part("base", cq.Workplane("XY").box(1.0, 1.0, 1.0))
+object_model.part("base", Box(1.0, 1.0, 1.0))
 """,
     )
 
@@ -165,12 +165,12 @@ def test_compile_path_requires_run_tests_report(tmp_path) -> None:
     write_main(
         run_dir,
         """
-import cadquery as cq
+from build123d import *
 
 from mini_articraft.sdk import ArticulatedObject
 
 object_model = ArticulatedObject("box", units="meters")
-object_model.part("base", cq.Workplane("XY").box(1.0, 1.0, 1.0))
+object_model.part("base", Box(1.0, 1.0, 1.0))
 
 
 def run_tests():
@@ -190,12 +190,12 @@ def test_compile_path_fails_authored_test_failure(tmp_path) -> None:
     write_main(
         run_dir,
         """
-import cadquery as cq
+from build123d import *
 
 from mini_articraft.sdk import ArticulatedObject, TestContext, TestReport
 
 object_model = ArticulatedObject("box", units="meters")
-object_model.part("base", cq.Workplane("XY").box(1.0, 1.0, 1.0))
+object_model.part("base", Box(1.0, 1.0, 1.0))
 
 
 def run_tests() -> TestReport:
@@ -218,16 +218,16 @@ def test_compile_path_fails_baseline_collision_between_non_adjacent_parts(tmp_pa
     write_main(
         run_dir,
         """
-import cadquery as cq
+from build123d import *
 
 from mini_articraft.sdk import ArticulatedObject, Frame, TestContext, TestReport
 
 
 def build_object_model() -> ArticulatedObject:
     model = ArticulatedObject("collision_failure", units="meters")
-    root = model.part("root", cq.Workplane("XY").box(3.0, 3.0, 0.1))
-    part_a = model.part("part_a", cq.Workplane("XY").box(1.0, 1.0, 1.0))
-    part_b = model.part("part_b", cq.Workplane("XY").box(1.0, 1.0, 1.0))
+    root = model.part("root", Box(3.0, 3.0, 0.1))
+    part_a = model.part("part_a", Box(1.0, 1.0, 1.0))
+    part_b = model.part("part_b", Box(1.0, 1.0, 1.0))
     model.fixed("root_to_a", root, part_a, frame=Frame(xyz=(0.0, 0.0, 0.55)))
     model.fixed("root_to_b", root, part_b, frame=Frame(xyz=(0.0, 0.0, 0.55)))
     return model
@@ -257,16 +257,16 @@ def test_compile_path_fails_disconnected_geometry_inside_part(tmp_path) -> None:
     write_main(
         run_dir,
         """
-import cadquery as cq
+from build123d import *
 
 from mini_articraft.sdk import ArticulatedObject, TestContext, TestReport
 
 
 def build_object_model() -> ArticulatedObject:
     model = ArticulatedObject("disconnected_geometry", units="meters")
-    left = cq.Workplane("XY").box(1.0, 1.0, 1.0).val()
-    right = cq.Workplane("XY").box(1.0, 1.0, 1.0).translate((1.2, 0.0, 0.0)).val()
-    model.part("base", cq.Compound.makeCompound([left, right]))
+    left = Box(1.0, 1.0, 1.0)
+    right = Pos(X=1.2) * Box(1.0, 1.0, 1.0)
+    model.part("base", Compound(children=[left, right]))
     return model
 
 
@@ -295,16 +295,16 @@ def test_compile_path_honors_authored_overlap_allowance(tmp_path) -> None:
     write_main(
         run_dir,
         """
-import cadquery as cq
+from build123d import *
 
 from mini_articraft.sdk import ArticulatedObject, Frame, TestContext, TestReport
 
 
 def build_object_model() -> ArticulatedObject:
     model = ArticulatedObject("allowed_collision", units="meters")
-    root = model.part("root", cq.Workplane("XY").box(3.0, 3.0, 0.1))
-    shaft = model.part("shaft", cq.Workplane("XY").box(1.0, 1.0, 1.0))
-    hub = model.part("hub", cq.Workplane("XY").box(1.0, 1.0, 1.0))
+    root = model.part("root", Box(3.0, 3.0, 0.1))
+    shaft = model.part("shaft", Box(1.0, 1.0, 1.0))
+    hub = model.part("hub", Box(1.0, 1.0, 1.0))
     model.fixed("root_to_shaft", root, shaft, frame=Frame(xyz=(0.0, 0.0, 0.55)))
     model.fixed("root_to_hub", root, hub, frame=Frame(xyz=(0.0, 0.0, 0.55)))
     return model
