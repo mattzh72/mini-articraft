@@ -23,8 +23,4 @@ class Environment(Protocol):
     def compile_path(self, run_dir: Path | str) -> dict[str, Any]: ...
 
 
-class Agent(Protocol):
-    async def run(self, prompt: str, **kwargs: Any) -> dict[str, Any]: ...
-
-
-__all__ = ["Agent", "Environment", "Model", "__version__", "package_dir"]
+__all__ = ["Environment", "Model", "__version__", "package_dir"]
