@@ -4,11 +4,14 @@ import hashlib
 import json
 import os
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from mini_articraft import package_dir
+
+if TYPE_CHECKING:
+    from mini_articraft.agent.tools._exec import ExecSessions
 
 SDK_DOCS_ROOT = package_dir / "sdk" / "docs"
 WORKSPACE_SDK_DOCS_ROOT = Path("docs") / "sdk"
@@ -24,6 +27,13 @@ IGNORED_WORKSPACE_DIRECTORIES = {
 IGNORED_WORKSPACE_SUFFIXES = {".pyc", ".pyo", ".swp", ".swo"}
 
 
+def _new_exec_sessions() -> ExecSessions:
+    # Imported lazily to break the _core <-> _exec import cycle.
+    from mini_articraft.agent.tools._exec import ExecSessions
+
+    return ExecSessions()
+
+
 @dataclass
 class ToolContext:
     env: Any
@@ -34,6 +44,7 @@ class ToolContext:
     successful_compile_digest: str | None = None
     last_compile_failure_signature: str | None = None
     consecutive_compile_failures: int = 0
+    exec_sessions: ExecSessions = field(default_factory=_new_exec_sessions)
 
     def refresh_compile_freshness(self) -> bool:
         return (

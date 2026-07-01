@@ -15,7 +15,6 @@ import mini_articraft.agent.tools as tools
 from mini_articraft import Environment, Model, package_dir
 from mini_articraft.agent import events
 from mini_articraft.agent.tools import ToolContext
-from mini_articraft.agent.tools._exec import MANAGER as EXEC_MANAGER
 from mini_articraft.record import Record, append_conversation
 from mini_articraft.settings import DEFAULT_MAX_TURNS
 
@@ -164,7 +163,7 @@ class Agent:
             else:
                 hit_max_turns = True
         finally:
-            await EXEC_MANAGER.terminate(context)
+            await context.exec_sessions.aclose()
 
         workspace_is_compiled = _latest_workspace_is_compiled(context)
         record = Record.load(record_path)
@@ -279,7 +278,7 @@ class Agent:
         name = str(call["name"])
         call_id = str(call["id"])
         try:
-            live_sessions = EXEC_MANAGER.live_session_ids(context)
+            live_sessions = context.exec_sessions.live_ids()
             if live_sessions and name != "write_stdin":
                 raise ValueError(
                     "finish the running exec_command with write_stdin before calling "
@@ -329,7 +328,7 @@ def _supports_parallel(call: dict[str, Any]) -> bool:
 
 
 def _latest_workspace_is_compiled(context: ToolContext) -> bool:
-    if EXEC_MANAGER.has_live_session(context):
+    if context.exec_sessions.live_ids():
         return False
     return context.refresh_compile_freshness()
 
@@ -339,7 +338,7 @@ def _has_successful_compile(context: ToolContext) -> bool:
 
 
 def _compile_required_reminder(context: ToolContext) -> str:
-    if live_sessions := EXEC_MANAGER.live_session_ids(context):
+    if live_sessions := context.exec_sessions.live_ids():
         return (
             "<compile_required>\n"
             f"exec_command session {live_sessions[0]} is still running.\n"
@@ -372,7 +371,7 @@ def _empty_response_reminder(
         tag = "final_response_required"
         state = "The latest workspace has already compiled successfully."
         action = "Return a visible final response now, or call a tool if further work is needed."
-    elif live_sessions := EXEC_MANAGER.live_session_ids(context):
+    elif live_sessions := context.exec_sessions.live_ids():
         tag = "compile_required"
         state = f"exec_command session {live_sessions[0]} is still running."
         action = "Use `write_stdin` until it exits, then run `compile` before concluding."
