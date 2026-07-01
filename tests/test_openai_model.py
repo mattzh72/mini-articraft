@@ -6,7 +6,7 @@ import json
 import pytest
 
 from mini_articraft.errors import ModelError
-from mini_articraft.models.openai import OpenAIModel
+from mini_articraft.models.openai import OpenAIModel, context_window_tokens_for
 from mini_articraft.settings import Settings, get_settings
 
 
@@ -168,6 +168,13 @@ def test_openai_model_returns_estimated_cost(monkeypatch: pytest.MonkeyPatch) ->
         "output_tokens": 20,
         "total_tokens": 1_020,
     }
+
+
+def test_openai_model_exposes_context_window() -> None:
+    assert openai_model().context_window_tokens == 1_050_000
+    assert context_window_tokens_for("gpt-5.5-2026-04-23") == 1_050_000
+    assert context_window_tokens_for("gpt-5.4-mini-2026-03-17") == 400_000
+    assert context_window_tokens_for("gpt-test") is None
 
 
 def test_openai_model_sends_function_call_outputs_with_previous_response(

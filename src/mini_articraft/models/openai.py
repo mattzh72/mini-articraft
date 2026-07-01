@@ -10,6 +10,14 @@ from mini_articraft.settings import Settings, get_settings
 
 _WEBSOCKET_URL = "wss://api.openai.com/v1/responses"
 _MAX_OUTPUT_TOKENS = 128_000
+_CONTEXT_WINDOWS = {
+    "gpt-5.5-pro": 1_050_000,
+    "gpt-5.5": 1_050_000,
+    "gpt-5.4-pro": 1_050_000,
+    "gpt-5.4-mini": 400_000,
+    "gpt-5.4-nano": 400_000,
+    "gpt-5.4": 1_050_000,
+}
 _TOKEN_PRICES_PER_MILLION = {
     "gpt-5.5-pro": (30.0, 30.0, 180.0),
     "gpt-5.5": (5.0, 0.5, 30.0),
@@ -27,6 +35,10 @@ class OpenAIModel:
         self._input_items: list[dict[str, Any]] = []
         self._last_message_count = 0
         self._previous_response_id: str | None = None
+
+    @property
+    def context_window_tokens(self) -> int:
+        return context_window_tokens_for(self.config.openai_model) or 0
 
     async def query(
         self,
@@ -266,6 +278,13 @@ def _prices_for(model: str) -> tuple[float, float, float] | None:
     for name, prices in sorted(_TOKEN_PRICES_PER_MILLION.items(), key=lambda item: -len(item[0])):
         if model == name or model.startswith(f"{name}-"):
             return prices
+    return None
+
+
+def context_window_tokens_for(model: str) -> int | None:
+    for name, tokens in sorted(_CONTEXT_WINDOWS.items(), key=lambda item: -len(item[0])):
+        if model == name or model.startswith(f"{name}-"):
+            return tokens
     return None
 
 
