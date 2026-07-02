@@ -29,7 +29,7 @@ Use these areas as the main boundaries:
 - `environments/` owns local run creation and compile execution.
 - `sdk/` owns the small build123d object API, joints, and export helpers.
 - `prompts/` owns the agent prompts.
-- `config/` owns default runtime settings.
+- `settings.py` owns default runtime settings.
 - `record.py` owns the small JSON record and conversation helpers.
 - `tests/` owns pytest coverage for the package.
 

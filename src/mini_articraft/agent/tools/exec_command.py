@@ -49,6 +49,5 @@ TOOL = Tool(
         ["command"],
     ),
     run,
-    mutates=True,
     supports_parallel=True,
 )

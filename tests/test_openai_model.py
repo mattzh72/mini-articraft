@@ -255,7 +255,7 @@ def test_openai_model_uses_incremental_websocket_inputs(
     assert model._input_items[1] == {"type": "reasoning", "encrypted_content": "encrypted"}
 
 
-def test_openai_model_round_trips_phase_and_response_items(
+def test_openai_model_round_trips_response_items(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     socket = FakeWebSocket([response_event("result")])
@@ -265,11 +265,7 @@ def test_openai_model_round_trips_phase_and_response_items(
         openai_model().query(
             [
                 {"role": "system", "content": "system contract"},
-                {
-                    "role": "assistant",
-                    "phase": "commentary",
-                    "content": "I will inspect the compile error.",
-                },
+                {"role": "assistant", "content": "I will inspect the compile error."},
                 {"id": "rs_123", "type": "reasoning", "summary": []},
                 {"role": "user", "content": "continue"},
             ],
@@ -277,19 +273,10 @@ def test_openai_model_round_trips_phase_and_response_items(
     )
 
     assert socket.sent[0]["input"] == [
-        {
-            "role": "assistant",
-            "content": "I will inspect the compile error.",
-            "phase": "commentary",
-        },
+        {"role": "assistant", "content": "I will inspect the compile error."},
         {"id": "rs_123", "type": "reasoning", "summary": []},
         {"role": "user", "content": "continue"},
     ]
-
-
-def test_openai_model_rejects_phase_on_user_message() -> None:
-    with pytest.raises(ValueError, match="phase is only valid"):
-        run(openai_model().query([{"role": "user", "phase": "final_answer", "content": "hello"}]))
 
 
 def test_openai_model_loads_dotenv(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:

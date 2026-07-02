@@ -48,10 +48,10 @@ class OpenAIModel:
     ) -> dict[str, Any]:
         """Query the OpenAI Responses API and return the completed text response."""
         new_items = self._new_input_items(messages)
-        previous_response_id = None
-        input_items = [*self._input_items, *new_items]
-        if self._previous_response_id is not None:
-            previous_response_id = self._previous_response_id
+        previous_response_id = self._previous_response_id
+        if previous_response_id is None:
+            input_items = [*self._input_items, *new_items]
+        else:
             input_items = new_items
 
         request = self._request(messages, input_items, previous_response_id, tools)
@@ -88,7 +88,7 @@ class OpenAIModel:
         request: dict[str, Any] = {
             "model": self.config.openai_model,
             "input": input_items,
-            "reasoning": self._reasoning(),
+            "reasoning": {"effort": self.config.openai_reasoning_effort},
             "include": ["reasoning.encrypted_content"],
             "max_output_tokens": _MAX_OUTPUT_TOKENS,
             "store": False,
@@ -102,9 +102,6 @@ class OpenAIModel:
         if instructions:
             request["instructions"] = instructions
         return request
-
-    def _reasoning(self) -> dict[str, str]:
-        return {"effort": self.config.openai_reasoning_effort}
 
     async def _send_websocket(self, request: dict[str, Any]) -> dict[str, Any]:
         websocket = await self._ensure_websocket()
@@ -171,16 +168,7 @@ def _instructions(messages: list[dict[str, Any]]) -> str:
 
 
 def _input_message(message: dict[str, Any]) -> dict[str, Any]:
-    item: dict[str, Any] = {
-        "role": message["role"],
-        "content": _message_text(message),
-    }
-    phase = message.get("phase")
-    if phase is not None:
-        if message["role"] != "assistant":
-            raise ValueError("phase is only valid on assistant messages")
-        item["phase"] = phase
-    return item
+    return {"role": message["role"], "content": _message_text(message)}
 
 
 def _message_text(message: dict[str, Any]) -> str:

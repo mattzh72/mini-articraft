@@ -39,5 +39,4 @@ TOOL = Tool(
         ["path", "old_text", "new_text"],
     ),
     run,
-    mutates=True,
 )

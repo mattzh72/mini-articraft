@@ -31,5 +31,4 @@ TOOL = Tool(
         ["path", "content"],
     ),
     run,
-    mutates=True,
 )

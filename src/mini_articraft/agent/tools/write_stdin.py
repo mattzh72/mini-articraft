@@ -38,5 +38,4 @@ TOOL = Tool(
         ["session_id"],
     ),
     run,
-    mutates=True,
 )

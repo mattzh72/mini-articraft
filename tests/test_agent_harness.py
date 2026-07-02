@@ -214,7 +214,7 @@ def test_agent_requires_compile_after_any_post_compile_tool_call(
         agent_tools,
         "TOOLS",
         {
-            "write": Tool("write", fake_schema("write"), run_write, mutates=True),
+            "write": Tool("write", fake_schema("write"), run_write),
             "read": Tool("read", fake_schema("read"), run_read, supports_parallel=True),
             "compile": compile_success_tool(),
         },
@@ -351,7 +351,7 @@ def test_agent_serializes_non_parallel_tools(monkeypatch, tmp_path) -> None:
         agent_tools,
         "TOOLS",
         {
-            "write": Tool("write", fake_schema("write"), run_write, mutates=True),
+            "write": Tool("write", fake_schema("write"), run_write),
             "compile": compile_success_tool(),
         },
     )

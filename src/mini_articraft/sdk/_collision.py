@@ -94,7 +94,7 @@ class MeshCollisionKernel:
         transform = self.world_transforms(pose).get(part_name)
         if transform is None:
             return None
-        return _as_vec3(transform[:3, 3])
+        return _array_to_vec3(transform[:3, 3])
 
     def part_world_vertices(self, part_name: str, pose: dict[str, float]) -> np.ndarray:
         mesh = self._part_mesh(part_name).mesh
@@ -559,11 +559,6 @@ def _array_to_vec3(value: object) -> Vec3 | None:
     array = np.asarray(value, dtype=np.float64).reshape(-1)
     if len(array) < 3:
         return None
-    return (float(array[0]), float(array[1]), float(array[2]))
-
-
-def _as_vec3(value: object) -> Vec3:
-    array = np.asarray(value, dtype=np.float64).reshape(-1)
     return (float(array[0]), float(array[1]), float(array[2]))
 
 
