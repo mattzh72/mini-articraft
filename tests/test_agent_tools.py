@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import logging
 import shlex
 import sys
 
@@ -9,6 +10,7 @@ import pytest
 
 from mini_articraft.agent.tools import ToolContext, get, schemas
 from mini_articraft.agent.tools._core import workspace_digest
+from mini_articraft.agent.tools._exec import ExecSessions
 from mini_articraft.compile_feedback import build_compile_report_from_payload
 from mini_articraft.environments.local import LocalEnvironment
 
@@ -354,6 +356,23 @@ def test_exec_command_truncates_output_middle(tmp_path) -> None:
     )
 
     assert result["stdout"] == "012345…8 chars truncated…efghij"
+
+
+def test_exec_sessions_aclose_logs_cleanup_errors(caplog) -> None:
+    class BrokenSession:
+        session_id = 7
+
+        async def aclose(self) -> None:
+            raise RuntimeError("close failed")
+
+    sessions = ExecSessions()
+    sessions._sessions[7] = BrokenSession()  # type: ignore[assignment]
+    caplog.set_level(logging.WARNING, logger="mini_articraft.agent.tools._exec")
+
+    run(sessions.aclose())
+
+    assert sessions._sessions == {}
+    assert "failed to close exec session 7 during run cleanup" in caplog.text
 
 
 def test_exec_command_zero_output_budget_returns_only_a_truncation_marker(tmp_path) -> None:
