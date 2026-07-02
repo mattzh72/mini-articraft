@@ -7,13 +7,16 @@ import os
 import runpy
 import sys
 import traceback
+from collections.abc import Callable, Iterable
 from dataclasses import asdict, replace
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
-from mini_articraft.compile_feedback import build_compile_report_from_payload
+from mini_articraft.compile_feedback import build_compile_report_from_payload, empty_compile_payload
 from mini_articraft.environments.export import export_object
-from mini_articraft.sdk import ArticulatedObject, TestContext, TestFailure, TestReport
+from mini_articraft.sdk import ArticulatedObject, TestContext, TestReport
+
+T = TypeVar("T")
 
 
 def compile_run(run_dir: Path) -> dict[str, Any]:
@@ -27,14 +30,7 @@ def _compile_workspace(workspace: Path, export_dir: Path) -> dict[str, Any]:
 
     captured_stdout = io.StringIO()
     captured_stderr = io.StringIO()
-    payload: dict[str, Any] = {
-        "status": "error",
-        "manifest": "",
-        "usdz": "",
-        "test_report": None,
-        "error": "",
-        "traceback": "",
-    }
+    payload = empty_compile_payload()
 
     previous_cwd = Path.cwd()
     sys.path.insert(0, str(workspace))
@@ -141,48 +137,35 @@ def _without_allowance_notes(report: TestReport) -> TestReport:
 
 
 def _merge_test_reports(authored_report: TestReport, baseline_report: TestReport) -> TestReport:
-    checks: list[str] = []
-    seen_checks: set[str] = set()
-    for report in (authored_report, baseline_report):
-        for check in report.checks:
-            if check not in seen_checks:
-                seen_checks.add(check)
-                checks.append(check)
-
-    failures: list[TestFailure] = []
-    seen_failures: set[tuple[str, str]] = set()
-    for report in (authored_report, baseline_report):
-        for failure in report.failures:
-            key = (failure.name, failure.details)
-            if key not in seen_failures:
-                seen_failures.add(key)
-                failures.append(failure)
-
-    warnings: list[str] = []
-    seen_warnings: set[str] = set()
-    for report in (authored_report, baseline_report):
-        for warning in report.warnings:
-            if warning not in seen_warnings:
-                seen_warnings.add(warning)
-                warnings.append(warning)
-
-    allowances: list[str] = []
-    seen_allowances: set[str] = set()
-    for allowance in authored_report.allowances:
-        if allowance not in seen_allowances:
-            seen_allowances.add(allowance)
-            allowances.append(allowance)
+    checks = _ordered_unique([*authored_report.checks, *baseline_report.checks])
+    failures = _ordered_unique(
+        [*authored_report.failures, *baseline_report.failures],
+        key=lambda failure: (failure.name, failure.details),
+    )
+    warnings = _ordered_unique([*authored_report.warnings, *baseline_report.warnings])
+    allowances = _ordered_unique(authored_report.allowances)
 
     return TestReport(
         passed=not failures,
         checks_run=len(checks),
-        checks=tuple(checks),
-        failures=tuple(failures),
-        warnings=tuple(warnings),
-        allowances=tuple(allowances),
+        checks=checks,
+        failures=failures,
+        warnings=warnings,
+        allowances=allowances,
         allowed_isolated_parts=authored_report.allowed_isolated_parts,
         allowed_overlaps=authored_report.allowed_overlaps,
     )
+
+
+def _ordered_unique(items: Iterable[T], key: Callable[[T], Any] | None = None) -> tuple[T, ...]:
+    seen: set[Any] = set()
+    unique: list[T] = []
+    for item in items:
+        marker = item if key is None else key(item)
+        if marker not in seen:
+            seen.add(marker)
+            unique.append(item)
+    return tuple(unique)
 
 
 def _raise_for_failed_test_report(report: TestReport) -> None:
@@ -215,16 +198,7 @@ def _jsonable(value: Any) -> Any:
 def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     if len(args) != 1:
-        payload = {
-            "status": "error",
-            "manifest": "",
-            "usdz": "",
-            "test_report": None,
-            "stdout": "",
-            "stderr": "",
-            "error": "Usage: mini-articraft-compile-run <run_dir>",
-            "traceback": "",
-        }
+        payload = empty_compile_payload(error="Usage: mini-articraft-compile-run <run_dir>")
         payload["compile_report"] = build_compile_report_from_payload(payload)
         print(json.dumps(payload))
         return 2

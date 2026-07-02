@@ -13,6 +13,7 @@ from mini_articraft.sdk._collision import (
     GeometryConnectivityFinding,
     MeshCollisionKernel,
     Vec3,
+    _pair_key,
 )
 from mini_articraft.sdk.joints import Joint, coerce_part_name
 from mini_articraft.sdk.object import ArticulatedObject, PartRef
@@ -613,10 +614,6 @@ def _root_part_names(model: ArticulatedObject) -> list[str]:
     part_names = {part.name for part in model.parts}
     child_names = {joint.child for joint in model.joints}
     return sorted(part_names - child_names)
-
-
-def _pair_key(part_a: str, part_b: str) -> tuple[str, str]:
-    return (part_a, part_b) if part_a <= part_b else (part_b, part_a)
 
 
 __all__ = [

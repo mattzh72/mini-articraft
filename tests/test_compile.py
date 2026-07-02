@@ -5,7 +5,9 @@ import json
 import pytest
 
 from mini_articraft.environments.local import LocalEnvironment
+from mini_articraft.environments.worker import _merge_test_reports
 from mini_articraft.record import Record, read_conversation
+from mini_articraft.sdk import TestFailure, TestReport
 
 
 def write_main(run_dir, code: str) -> None:
@@ -391,3 +393,44 @@ def test_compile_path_reports_timeout(tmp_path) -> None:
     assert result["status"] == "error"
     assert "timed out" in result["error"]
     assert result["compile_report"]["status"] == "failure"
+
+
+def test_merge_test_reports_dedupes_and_keeps_order() -> None:
+    authored = TestReport(
+        passed=False,
+        checks_run=2,
+        checks=("expect_contact('base', 'lid')", "check_model_valid"),
+        failures=(TestFailure(name="expect_contact", details="no contact"),),
+        warnings=("lid overlaps base",),
+        allowances=(
+            "allow_overlap('base', 'lid'): seated pin",
+            "allow_overlap('base', 'lid'): seated pin",
+        ),
+    )
+    baseline = TestReport(
+        passed=False,
+        checks_run=2,
+        checks=("check_model_valid", "check_single_root_part"),
+        failures=(
+            TestFailure(name="expect_contact", details="no contact"),
+            TestFailure(name="fail_if_isolated_parts", details="lid is isolated"),
+        ),
+        warnings=("lid overlaps base", "lid has thin walls"),
+        allowances=("baseline allowance is ignored",),
+    )
+
+    merged = _merge_test_reports(authored, baseline)
+
+    assert merged.passed is False
+    assert merged.checks == (
+        "expect_contact('base', 'lid')",
+        "check_model_valid",
+        "check_single_root_part",
+    )
+    assert merged.checks_run == 3
+    assert [failure.name for failure in merged.failures] == [
+        "expect_contact",
+        "fail_if_isolated_parts",
+    ]
+    assert merged.warnings == ("lid overlaps base", "lid has thin walls")
+    assert merged.allowances == ("allow_overlap('base', 'lid'): seated pin",)

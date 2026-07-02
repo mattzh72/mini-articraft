@@ -64,6 +64,19 @@ class CompileSignalBundle:
     signals: tuple[CompileSignal, ...] = ()
 
 
+def empty_compile_payload(*, error: str = "", stdout: str = "", stderr: str = "") -> dict[str, Any]:
+    return {
+        "status": "error",
+        "manifest": "",
+        "usdz": "",
+        "test_report": None,
+        "stdout": stdout,
+        "stderr": stderr,
+        "error": error,
+        "traceback": "",
+    }
+
+
 def build_compile_report_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
     status: Status = "success" if payload["status"] == "success" else "failure"
     return build_compile_report(

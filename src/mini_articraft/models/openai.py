@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from typing import Any
 
 import websockets
@@ -10,21 +11,24 @@ from mini_articraft.settings import Settings, get_settings
 
 _WEBSOCKET_URL = "wss://api.openai.com/v1/responses"
 _MAX_OUTPUT_TOKENS = 128_000
-_CONTEXT_WINDOWS = {
-    "gpt-5.5-pro": 1_050_000,
-    "gpt-5.5": 1_050_000,
-    "gpt-5.4-pro": 1_050_000,
-    "gpt-5.4-mini": 400_000,
-    "gpt-5.4-nano": 400_000,
-    "gpt-5.4": 1_050_000,
-}
-_TOKEN_PRICES_PER_MILLION = {
-    "gpt-5.5-pro": (30.0, 30.0, 180.0),
-    "gpt-5.5": (5.0, 0.5, 30.0),
-    "gpt-5.4-pro": (30.0, 30.0, 180.0),
-    "gpt-5.4-mini": (0.75, 0.075, 4.5),
-    "gpt-5.4-nano": (0.2, 0.02, 1.25),
-    "gpt-5.4": (2.5, 0.25, 15.0),
+
+
+@dataclass(frozen=True)
+class _ModelSpec:
+    context_window_tokens: int
+    input_price: float
+    cached_input_price: float
+    output_price: float
+
+
+# Prices are USD per million tokens: input, cached input, output.
+_MODELS = {
+    "gpt-5.5-pro": _ModelSpec(1_050_000, 30.0, 30.0, 180.0),
+    "gpt-5.5": _ModelSpec(1_050_000, 5.0, 0.5, 30.0),
+    "gpt-5.4-pro": _ModelSpec(1_050_000, 30.0, 30.0, 180.0),
+    "gpt-5.4-mini": _ModelSpec(400_000, 0.75, 0.075, 4.5),
+    "gpt-5.4-nano": _ModelSpec(400_000, 0.2, 0.02, 1.25),
+    "gpt-5.4": _ModelSpec(1_050_000, 2.5, 0.25, 15.0),
 }
 
 
@@ -226,18 +230,17 @@ def _response_tool_calls(response: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _response_cost(response: dict[str, Any]) -> float:
-    prices = _prices_for(str(response.get("model") or ""))
+    spec = _model_spec(str(response.get("model") or ""))
     usage = _response_token_usage(response)
-    if not usage or prices is None:
+    if not usage or spec is None:
         return 0.0
 
-    input_price, cached_price, output_price = prices
     uncached_tokens = max(0, usage["input_tokens"] - usage["cached_input_tokens"])
     return round(
         (
-            uncached_tokens * input_price
-            + usage["cached_input_tokens"] * cached_price
-            + usage["output_tokens"] * output_price
+            uncached_tokens * spec.input_price
+            + usage["cached_input_tokens"] * spec.cached_input_price
+            + usage["output_tokens"] * spec.output_price
         )
         / 1_000_000,
         8,
@@ -262,18 +265,16 @@ def _response_token_usage(response: dict[str, Any]) -> dict[str, int]:
     }
 
 
-def _prices_for(model: str) -> tuple[float, float, float] | None:
-    for name, prices in sorted(_TOKEN_PRICES_PER_MILLION.items(), key=lambda item: -len(item[0])):
+def _model_spec(model: str) -> _ModelSpec | None:
+    for name, spec in sorted(_MODELS.items(), key=lambda item: -len(item[0])):
         if model == name or model.startswith(f"{name}-"):
-            return prices
+            return spec
     return None
 
 
 def context_window_tokens_for(model: str) -> int | None:
-    for name, tokens in sorted(_CONTEXT_WINDOWS.items(), key=lambda item: -len(item[0])):
-        if model == name or model.startswith(f"{name}-"):
-            return tokens
-    return None
+    spec = _model_spec(model)
+    return spec.context_window_tokens if spec is not None else None
 
 
 def _int(value: Any) -> int:
