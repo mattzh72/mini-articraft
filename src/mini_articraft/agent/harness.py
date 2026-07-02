@@ -16,12 +16,13 @@ from mini_articraft import Environment, Model, package_dir
 from mini_articraft.agent import events
 from mini_articraft.agent.tools import ToolContext
 from mini_articraft.record import Record, append_conversation
+from mini_articraft.settings import DEFAULT_MAX_TURNS
 
 PROMPT_SLUG_MAX_LENGTH = 48
 
 
 class AgentConfig(BaseModel):
-    max_turns: int = 200
+    max_turns: int = DEFAULT_MAX_TURNS
     output_path: Path | None = None
 
 

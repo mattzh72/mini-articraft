@@ -3,7 +3,12 @@ from __future__ import annotations
 from typing import Any
 
 from mini_articraft.agent.tools._core import Tool, ToolContext, schema
-from mini_articraft.agent.tools._exec import MANAGER, collect
+from mini_articraft.agent.tools._exec import (
+    MANAGER,
+    MAX_OUTPUT_TOKENS_PROPERTY,
+    YIELD_TIME_MS_PROPERTY,
+    collect,
+)
 
 
 async def run(context: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
@@ -37,14 +42,8 @@ TOOL = Tool(
                 "type": "number",
                 "description": "Hard timeout in seconds. If it elapses while the process is still running, the process group is killed and timed_out is returned.",
             },
-            "yield_time_ms": {
-                "type": "integer",
-                "description": "Wait before yielding output. Defaults to 10000 ms; values above 30000 ms are capped.",
-            },
-            "max_output_tokens": {
-                "type": "integer",
-                "description": "Output token budget. Defaults to 10000 tokens; larger requests may be capped by policy.",
-            },
+            "yield_time_ms": YIELD_TIME_MS_PROPERTY,
+            "max_output_tokens": MAX_OUTPUT_TOKENS_PROPERTY,
         },
         ["command"],
     ),

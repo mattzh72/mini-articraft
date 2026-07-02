@@ -11,10 +11,11 @@ from pydantic import BaseModel
 from mini_articraft import package_dir
 from mini_articraft.compile_feedback import build_compile_report_from_payload, empty_compile_payload
 from mini_articraft.record import Record, append_conversation
+from mini_articraft.settings import DEFAULT_OUTPUT_DIR
 
 
 class LocalEnvironmentConfig(BaseModel):
-    output_dir: Path = Path("runs")
+    output_dir: Path = DEFAULT_OUTPUT_DIR
     timeout_seconds: float = 30.0
 
 

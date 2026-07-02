@@ -11,6 +11,7 @@ from pxr import Gf, Sdf, Tf, Usd, UsdGeom, UsdPhysics, UsdUtils
 from mini_articraft.sdk._collision import MeshCollisionKernel, _build123d_shape, _rpy_matrix
 from mini_articraft.sdk.joints import ContinuousLimits, Joint, JointLimits, JointType
 from mini_articraft.sdk.object import ArticulatedObject, Part
+from mini_articraft.sdk.testing import DEFAULT_MESH_TOLERANCE
 
 
 @dataclass(frozen=True)
@@ -24,7 +25,7 @@ def export_object(
     obj: ArticulatedObject,
     output_dir: Path | str,
     *,
-    mesh_tolerance: float = 0.001,
+    mesh_tolerance: float = DEFAULT_MESH_TOLERANCE,
 ) -> ExportResult:
     root = Path(output_dir)
     root.mkdir(parents=True, exist_ok=True)

@@ -13,7 +13,7 @@ from mini_articraft.agent import Agent, events
 from mini_articraft.cli.tui import replay_run, run_live
 from mini_articraft.environments import LocalEnvironment
 from mini_articraft.models import OpenAIModel
-from mini_articraft.settings import Settings, get_settings
+from mini_articraft.settings import DEFAULT_OUTPUT_DIR, Settings, get_settings
 
 app = typer.Typer(help="Generate articulated objects with mini-articraft.", add_completion=False)
 COMMANDS = {"generate", "replay"}
@@ -98,7 +98,7 @@ def _default_output_dir() -> Path:
     try:
         return get_settings().output_dir
     except ValidationError:
-        return Path("runs")
+        return DEFAULT_OUTPUT_DIR
 
 
 def _settings(

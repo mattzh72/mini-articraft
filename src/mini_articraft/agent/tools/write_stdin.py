@@ -3,7 +3,14 @@ from __future__ import annotations
 from typing import Any
 
 from mini_articraft.agent.tools._core import Tool, ToolContext, schema
-from mini_articraft.agent.tools._exec import MANAGER, collect, session_id, write
+from mini_articraft.agent.tools._exec import (
+    MANAGER,
+    MAX_OUTPUT_TOKENS_PROPERTY,
+    YIELD_TIME_MS_PROPERTY,
+    collect,
+    session_id,
+    write,
+)
 
 
 async def run(context: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
@@ -26,14 +33,8 @@ TOOL = Tool(
                 "type": "string",
                 "description": "Bytes to write to stdin. Defaults to empty, which polls without writing.",
             },
-            "yield_time_ms": {
-                "type": "integer",
-                "description": "Wait before yielding output. Defaults to 10000 ms; values above 30000 ms are capped.",
-            },
-            "max_output_tokens": {
-                "type": "integer",
-                "description": "Output token budget. Defaults to 10000 tokens; larger requests may be capped by policy.",
-            },
+            "yield_time_ms": YIELD_TIME_MS_PROPERTY,
+            "max_output_tokens": MAX_OUTPUT_TOKENS_PROPERTY,
         },
         ["session_id"],
     ),

@@ -1,3 +1,11 @@
+"""Interactive subprocess sessions for the exec_command and write_stdin tools.
+
+This module is deliberately the most production-shaped corner of the repo:
+persistent sessions, bounded output buffers, and process-group signals are
+worth their complexity because interactively probing build123d APIs is a real
+agent workflow that a one-shot runner cannot serve.
+"""
+
 from __future__ import annotations
 
 import asyncio
@@ -16,6 +24,21 @@ DEFAULT_YIELD_TIME_MS = 10_000
 MAX_YIELD_TIME_MS = 30_000
 MAX_OUTPUT_TOKENS = 10_000
 MAX_OUTPUT_BYTES = 1024 * 1024
+
+YIELD_TIME_MS_PROPERTY = {
+    "type": "integer",
+    "description": (
+        f"Wait before yielding output. Defaults to {DEFAULT_YIELD_TIME_MS} ms; "
+        f"values above {MAX_YIELD_TIME_MS} ms are capped."
+    ),
+}
+MAX_OUTPUT_TOKENS_PROPERTY = {
+    "type": "integer",
+    "description": (
+        f"Output token budget. Defaults to {MAX_OUTPUT_TOKENS} tokens; "
+        "larger requests may be capped by policy."
+    ),
+}
 
 
 class OutputBuffer:
