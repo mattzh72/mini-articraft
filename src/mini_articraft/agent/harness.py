@@ -84,6 +84,7 @@ class Agent:
         cost = 0.0
         token_usage: dict[str, int] = {}
         turn = 0
+        hit_max_turns = False
         for turn in range(1, self.config.max_turns + 1):
             self._emit(events.TurnStarted(turn))
             response = await self.model.query(self.messages, tools=tools.schemas())
@@ -114,12 +115,15 @@ class Agent:
 
             await self._run_tool_calls(context, tool_calls, conversation_path)
         else:
-            record = Record.load(run_dir / "record.json")
+            hit_max_turns = True
+
+        record = Record.load(run_dir / "record.json")
+        if hit_max_turns:
             record.status = "error"
             record.error = "agent hit max turns limit"
             record.save(run_dir / "record.json")
 
-        data = Record.load(run_dir / "record.json").to_dict()
+        data = record.to_dict()
         data["message"] = final_text
         data["run"] = str(run_dir)
         if context.compile_result and isinstance(
@@ -128,7 +132,7 @@ class Agent:
         ):
             data["compile_report"] = context.compile_result["compile_report"]
         if self.config.output_path:
-            Record.load(run_dir / "record.json").save(self.config.output_path)
+            record.save(self.config.output_path)
         self._emit(
             events.RunFinished(
                 status=str(data.get("status") or ""),
