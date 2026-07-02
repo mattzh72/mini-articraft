@@ -182,9 +182,6 @@ class TestContext:
     def part_world_position(self, part: PartRef) -> Vec3 | None:
         return self._kernel().part_world_position(_part_name(part, field="part"), self._pose)
 
-    def link_world_position(self, link: PartRef) -> Vec3 | None:
-        return self.part_world_position(link)
-
     def expect_no_collision(
         self,
         link_a: PartRef,
@@ -570,17 +567,9 @@ def _collision_details(query: CollisionQuery) -> str:
 
 
 def _distance_details(query: DistanceQuery) -> str:
-    finding = DistanceFinding(
-        link_a=query.part_a,
-        link_b=query.part_b,
-        distance=query.distance,
-        nearest_a=query.nearest_a,
-        nearest_b=query.nearest_b,
-        collided=query.collided,
-    )
     return (
-        f"{finding.link_a!r} vs {finding.link_b!r}: distance={finding.distance:.6g} "
-        f"collided={finding.collided} nearest_a={finding.nearest_a} nearest_b={finding.nearest_b}"
+        f"{query.part_a!r} vs {query.part_b!r}: distance={query.distance:.6g} "
+        f"collided={query.collided} nearest_a={query.nearest_a} nearest_b={query.nearest_b}"
     )
 
 

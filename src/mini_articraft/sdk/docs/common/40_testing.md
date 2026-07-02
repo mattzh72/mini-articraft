@@ -143,14 +143,6 @@ Returns the world position of the part frame in the current pose.
 Returns `None` when the part cannot be resolved in the current world transform
 map.
 
-### `ctx.link_world_position(...)`
-
-```python
-ctx.link_world_position(link: str | part_handle) -> tuple[float, float, float] | None
-```
-
-Alias for `ctx.part_world_position(...)`.
-
 ## Mesh collision checks
 
 Collision and distance checks use `python-fcl` on tessellated build123d meshes.

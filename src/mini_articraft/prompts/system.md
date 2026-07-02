@@ -37,7 +37,8 @@ implementation approach.
 <authoring_contract>
 - Generated scripts must author a Python SDK object. Compile owns the rest of the
   run flow.
-- `main.py` must define `build_object_model()`, `object_model`, and `run_tests()`.
+- `main.py` must define `object_model` and `run_tests()`. Build the model in a
+  `build_object_model()` function, as the quickstart shows.
 - `object_model` must be a `mini_articraft.sdk.ArticulatedObject`.
 - Every `ArticulatedObject` must declare units, such as
   `ArticulatedObject("hinge", units="meters")`.
