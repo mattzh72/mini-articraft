@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import json
+import os
 import re
+import signal
 import subprocess
+import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -51,26 +55,23 @@ class LocalEnvironment:
 
     def _run_worker(self, run_dir: Path) -> dict[str, Any]:
         args = [
-            "uv",
-            "run",
-            "mini-articraft-compile-run",
+            sys.executable,
+            "-m",
+            "mini_articraft.environments.worker",
             str(run_dir.resolve()),
         ]
-        try:
-            completed = subprocess.run(
-                args,
-                cwd=_project_root(),
-                text=True,
-                capture_output=True,
-                timeout=self.config.timeout_seconds,
-                check=False,
-            )
-        except subprocess.TimeoutExpired as exc:
+        completed = _run_isolated_process(
+            args,
+            cwd=_project_root(),
+            timeout_seconds=self.config.timeout_seconds,
+        )
+        if completed.timed_out:
             return _error_result(
                 run_dir,
                 error=f"compile timed out after {self.config.timeout_seconds:g}s",
-                stdout=_timeout_text(exc.stdout),
-                stderr=_timeout_text(exc.stderr),
+                stdout=completed.stdout,
+                stderr=completed.stderr,
+                returncode=completed.returncode,
             )
 
         try:
@@ -140,12 +141,52 @@ def _link_sdk_docs(workspace: Path) -> None:
     docs_dir.joinpath("sdk").symlink_to(package_dir / "sdk" / "docs", target_is_directory=True)
 
 
-def _timeout_text(value: str | bytes | None) -> str:
-    if value is None:
-        return ""
-    if isinstance(value, bytes):
-        return value.decode("utf-8", errors="replace")
-    return value
+@dataclass(frozen=True)
+class _ProcessResult:
+    stdout: str
+    stderr: str
+    returncode: int | None
+    timed_out: bool = False
+
+
+def _run_isolated_process(
+    args: list[str],
+    *,
+    cwd: Path,
+    timeout_seconds: float,
+) -> _ProcessResult:
+    proc = subprocess.Popen(
+        args,
+        cwd=cwd,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        start_new_session=True,
+    )
+    try:
+        stdout, stderr = proc.communicate(timeout=timeout_seconds)
+    except subprocess.TimeoutExpired:
+        stdout, stderr = _stop_timed_out_worker(proc)
+        return _ProcessResult(stdout, stderr, proc.returncode, timed_out=True)
+    return _ProcessResult(stdout, stderr, proc.returncode)
+
+
+def _stop_timed_out_worker(proc: subprocess.Popen[str]) -> tuple[str, str]:
+    _signal_worker_group(proc, signal.SIGTERM)
+    try:
+        return proc.communicate(timeout=1)
+    except subprocess.TimeoutExpired:
+        _signal_worker_group(proc, signal.SIGKILL)
+        return proc.communicate()
+
+
+def _signal_worker_group(proc: subprocess.Popen[str], sig: signal.Signals) -> None:
+    if proc.poll() is not None:
+        return
+    try:
+        os.killpg(proc.pid, sig)
+    except ProcessLookupError:
+        return
 
 
 def _with_paths(run_dir: Path, result: dict[str, Any]) -> dict[str, Any]:

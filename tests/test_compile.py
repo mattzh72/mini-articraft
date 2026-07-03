@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import json
+import os
+import signal
+import sys
+import time
 
 import pytest
 
-from mini_articraft.environments.local import LocalEnvironment
+from mini_articraft.environments.local import LocalEnvironment, _run_isolated_process
 from mini_articraft.environments.worker import _merge_test_reports
 from mini_articraft.record import Record, read_conversation
 from mini_articraft.sdk import TestFailure, TestReport
@@ -12,6 +16,30 @@ from mini_articraft.sdk import TestFailure, TestReport
 
 def write_main(run_dir, code: str) -> None:
     run_dir.joinpath("workspace", "main.py").write_text(code, encoding="utf-8")
+
+
+def _assert_process_exited(pid: int) -> None:
+    deadline = time.monotonic() + 2
+    while time.monotonic() < deadline:
+        if not _process_exists(pid):
+            return
+        time.sleep(0.05)
+
+    try:
+        os.kill(pid, signal.SIGKILL)
+    except ProcessLookupError:
+        return
+    pytest.fail(f"process {pid} was still running after compile timeout")
+
+
+def _process_exists(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
 
 
 def test_compile_path_compiles_existing_run_directory(tmp_path) -> None:
@@ -386,13 +414,51 @@ def run_tests() -> TestReport:
 def test_compile_path_reports_timeout(tmp_path) -> None:
     env = LocalEnvironment(output_dir=tmp_path, timeout_seconds=0.2)
     run_dir = env.create_run("slow")
-    write_main(run_dir, "while True:\n    pass\n")
+    write_main(run_dir, "import time\ntime.sleep(60)\n")
 
     result = env.compile_path(run_dir)
 
     assert result["status"] == "error"
     assert "timed out" in result["error"]
     assert result["compile_report"]["status"] == "failure"
+
+
+def test_isolated_process_timeout_cleans_descendants(tmp_path) -> None:
+    worker_pid_file = tmp_path / "worker.pid"
+    child_pid_file = tmp_path / "child.pid"
+    child_code = (
+        "from pathlib import Path; import os, time; "
+        f"Path({str(child_pid_file)!r}).write_text(str(os.getpid()), encoding='utf-8'); "
+        "time.sleep(60)"
+    )
+    worker_code = f"""
+import os
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+child_pid_file = Path({str(child_pid_file)!r})
+subprocess.Popen([sys.executable, "-c", {child_code!r}])
+for _ in range(100):
+    if child_pid_file.exists():
+        break
+    time.sleep(0.01)
+Path({str(worker_pid_file)!r}).write_text(str(os.getpid()), encoding="utf-8")
+time.sleep(60)
+"""
+
+    result = _run_isolated_process(
+        [sys.executable, "-c", worker_code],
+        cwd=tmp_path,
+        timeout_seconds=1,
+    )
+
+    assert result.timed_out is True
+    worker_pid = int(worker_pid_file.read_text(encoding="utf-8"))
+    child_pid = int(child_pid_file.read_text(encoding="utf-8"))
+    _assert_process_exited(worker_pid)
+    _assert_process_exited(child_pid)
 
 
 def test_merge_test_reports_dedupes_and_keeps_order() -> None:
