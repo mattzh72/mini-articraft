@@ -245,7 +245,7 @@ def _as_color(value: tuple[float, ...], *, field: str) -> Color:
         raise ValidationError(f"{field} must have 3 or 4 numeric values") from exc
 
     if len(raw) == 3:
-        raw = raw + (1.0,)
+        raw = (*raw, 1.0)
     if len(raw) != 4:
         raise ValidationError(f"{field} must have 3 or 4 numeric values")
     if any(not math.isfinite(component) for component in raw):

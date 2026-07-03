@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from typer.testing import CliRunner
 
@@ -12,7 +12,7 @@ from mini_articraft.settings import Settings
 
 
 class FakeOpenAIModel:
-    instances: list["FakeOpenAIModel"] = []
+    instances: ClassVar[list[FakeOpenAIModel]] = []
 
     def __init__(self, settings: Settings):
         self.settings = settings
@@ -24,7 +24,7 @@ class FakeOpenAIModel:
 
 
 class FakeEnvironment:
-    instances: list["FakeEnvironment"] = []
+    instances: ClassVar[list[FakeEnvironment]] = []
 
     def __init__(self, **kwargs: Any):
         self.kwargs = kwargs
@@ -32,8 +32,8 @@ class FakeEnvironment:
 
 
 class FakeAgent:
-    instances: list["FakeAgent"] = []
-    result: dict[str, object] = {
+    instances: ClassVar[list[FakeAgent]] = []
+    result: ClassVar[dict[str, object]] = {
         "status": "success",
         "run": "/tmp/run",
         "result": "result/model.usdz",

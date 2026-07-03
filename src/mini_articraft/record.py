@@ -20,7 +20,7 @@ class Record:
         return asdict(self)
 
     @classmethod
-    def load(cls, path: Path) -> "Record":
+    def load(cls, path: Path) -> Record:
         if not path.exists():
             return cls()
         payload = json.loads(path.read_text(encoding="utf-8"))

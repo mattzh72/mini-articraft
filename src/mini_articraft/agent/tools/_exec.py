@@ -127,8 +127,11 @@ class ExecManager:
         self._sessions[session.session_id] = session
         assert proc.stdout is not None
         assert proc.stderr is not None
-        asyncio.create_task(_read_stream(session, proc.stdout, session.stdout))
-        asyncio.create_task(_read_stream(session, proc.stderr, session.stderr))
+
+        # Known fire-and-forget leak; the exec reactor refactor (PR #9) stores
+        # these tasks on the session and cancels them in aclose().
+        asyncio.create_task(_read_stream(session, proc.stdout, session.stdout))  # noqa: RUF006
+        asyncio.create_task(_read_stream(session, proc.stderr, session.stderr))  # noqa: RUF006
         return session
 
     def get(self, context: ToolContext, session_id: int) -> ExecSession:

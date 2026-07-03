@@ -323,7 +323,7 @@ def test_openai_model_raises_on_incomplete_response(monkeypatch: pytest.MonkeyPa
     )
     patch_websocket(monkeypatch, socket)
 
-    with pytest.raises(ModelError, match="max_output_tokens.*no visible output"):
+    with pytest.raises(ModelError, match=r"max_output_tokens.*no visible output"):
         run(openai_model().query([{"role": "user", "content": "hello"}]))
 
 
