@@ -18,16 +18,21 @@ class Settings(BaseSettings):
         populate_by_name=True,
     )
 
-    output_dir: Path = Field(DEFAULT_OUTPUT_DIR, validation_alias="MINI_ARTICRAFT_OUTPUT_DIR")
-    openai_model: str = Field("gpt-5.5", validation_alias="MINI_ARTICRAFT_MODEL")
+    output_dir: Path = Field(
+        default=DEFAULT_OUTPUT_DIR,
+        validation_alias="MINI_ARTICRAFT_OUTPUT_DIR",
+    )
+    openai_model: str = Field(default="gpt-5.5", validation_alias="MINI_ARTICRAFT_MODEL")
     openai_reasoning_effort: str = Field(
-        "high",
+        default="high",
         validation_alias="MINI_ARTICRAFT_REASONING_EFFORT",
     )
     openai_api_key: str = Field(validation_alias="OPENAI_API_KEY")
-    max_turns: int = Field(DEFAULT_MAX_TURNS, validation_alias="MINI_ARTICRAFT_MAX_TURNS")
+    max_turns: int = Field(default=DEFAULT_MAX_TURNS, validation_alias="MINI_ARTICRAFT_MAX_TURNS")
 
 
 @cache
 def get_settings() -> Settings:
-    return Settings()
+    # openai_api_key has no default on purpose: it is populated from the
+    # environment (OPENAI_API_KEY / .env) when the settings load.
+    return Settings()  # pyright: ignore[reportCallIssue]

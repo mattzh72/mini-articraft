@@ -15,7 +15,9 @@ def _renderer() -> tuple[RunRenderer, Console]:
 
 
 def _text(console: Console) -> str:
-    return console.file.getvalue()
+    file = console.file
+    assert isinstance(file, io.StringIO)
+    return file.getvalue()
 
 
 def test_renderer_primary_status_style_is_white() -> None:

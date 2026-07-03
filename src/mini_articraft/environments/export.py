@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import math
 import tempfile
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -194,7 +195,7 @@ def _mesh(part: Part, tolerance: float) -> tuple[list[Gf.Vec3f], list[tuple[int,
         raise TypeError(f"part {part.name!r} produced no USD mesh triangles")
     return (
         [Gf.Vec3f(float(v.X), float(v.Y), float(v.Z)) for v in vertices],
-        [tuple(int(i) for i in face) for face in faces],
+        [(int(a), int(b), int(c)) for a, b, c in faces],
     )
 
 
@@ -255,7 +256,7 @@ def _gf_matrix(matrix) -> Gf.Matrix4d:
     return Gf.Matrix4d(rows)
 
 
-def _safe_name_map(names: object) -> dict[str, str]:
+def _safe_name_map(names: Iterable[object]) -> dict[str, str]:
     result: dict[str, str] = {}
     used: set[str] = set()
     for raw in names:
