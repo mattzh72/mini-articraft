@@ -25,6 +25,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "basedpyright>=1.39.9",
     "pytest>=8.0.0",
     "ruff>=0.11.0",
 ]
@@ -49,6 +50,7 @@ include = ["mini_articraft*"]
 
 [tool.setuptools.package-data]
 mini_articraft = [
+    "py.typed",
     "prompts/*.md",
     "sdk/docs/common/*.md",
     "sdk/docs/build123d/*.md",
@@ -58,6 +60,12 @@ mini_articraft = [
     "sdk/docs/build123d/media/*",
     "sdk/docs/build123d/snippets/*",
 ]
+
+[tool.basedpyright]
+include = ["src", "tests", "scripts"]
+# The vendored build123d doc snippets are agent-facing content, not package code.
+exclude = ["src/mini_articraft/sdk/docs"]
+typeCheckingMode = "standard"
 
 [tool.pytest.ini_options]
 addopts = "-m 'not volume'"
