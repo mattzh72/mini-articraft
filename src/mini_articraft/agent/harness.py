@@ -173,6 +173,13 @@ class Agent:
         for call, item, tool_started in zip(tool_calls, items, started, strict=True):
             self.messages.append(item)
             append_conversation(conversation_path, item)
+            image_message = _image_message_from_item(context, item)
+            if image_message is not None:
+                self.messages.append(image_message)
+                append_conversation(
+                    conversation_path,
+                    {"role": "user", "content": f"[{len(image_message['content']) - 1} rendered image(s)]"},
+                )
             self._emit(
                 events.ToolFinished(
                     str(call["id"]),
@@ -193,6 +200,36 @@ class Agent:
         except Exception as exc:
             payload = {"error": str(exc)}
         return tools.result_item(call_id, payload)
+
+
+def _image_message_from_item(context: ToolContext, item: dict[str, Any]) -> dict[str, Any] | None:
+    """If a tool result carries image paths (result['images']), build a user
+    message with base64 image blocks so the model can see them. function_call_output
+    is text-only, so tool-rendered images ride in as a follow-up user message."""
+    import base64
+
+    try:
+        payload = json.loads(item.get("output") or "{}")
+    except (TypeError, ValueError):
+        return None
+    result = payload.get("result")
+    if not isinstance(result, dict):
+        return None
+    paths = result.get("images")
+    if not isinstance(paths, list) or not paths:
+        return None
+
+    blocks: list[dict[str, Any]] = [{"type": "text", "text": "Rendered image(s) from the tool:"}]
+    for raw in paths:
+        candidate = Path(str(raw))
+        if not candidate.is_absolute():
+            candidate = context.workspace / candidate
+        if not candidate.exists():
+            continue
+        media = "image/png" if candidate.suffix.lower() == ".png" else "image/jpeg"
+        data = base64.b64encode(candidate.read_bytes()).decode("ascii")
+        blocks.append({"type": "image", "source": {"type": "base64", "media_type": media, "data": data}})
+    return {"role": "user", "content": blocks} if len(blocks) > 1 else None
 
 
 def _arguments(call: dict[str, Any]) -> dict[str, Any]:

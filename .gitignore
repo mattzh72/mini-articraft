@@ -232,3 +232,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Large / generated data artifacts (meshes, agent runs, gallery) — 500MB+
+data/
+out/

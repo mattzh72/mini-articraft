@@ -51,12 +51,17 @@ class OpenAIModel:
         if not text and not tool_calls:
             raise ModelError("OpenAI response did not contain output_text")
 
+        thinking = "\n".join(
+            s.get("text", "")
+            for item in _response_output(response) if item.get("type") == "reasoning"
+            for s in (item.get("summary") or []) if isinstance(s, dict))
         self._input_items.extend(new_items)
         self._input_items.extend(_response_output(response))
         self._previous_response_id = _response_id(response)
         self._last_message_count = len(messages)
         return {
             "text": text,
+            "thinking": thinking,
             "tool_calls": tool_calls,
             "token_usage": _response_token_usage(response),
             "cost": _response_cost(response),
@@ -92,12 +97,24 @@ class OpenAIModel:
         return request
 
     def _reasoning(self) -> dict[str, str]:
-        return {"effort": self.config.openai_reasoning_effort}
+        # summary="auto": surface reasoning summaries so traces can show WHY,
+        # not just what (they are display-only; context uses encrypted_content)
+        return {"effort": self.config.openai_reasoning_effort, "summary": "auto"}
 
     async def _send_websocket(self, request: dict[str, Any]) -> dict[str, Any]:
-        websocket = await self._ensure_websocket()
-        await websocket.send(json.dumps({"type": "response.create", **request}))
-        return await _receive_websocket_response(websocket)
+        from websockets.exceptions import ConnectionClosed
+        try:
+            websocket = await self._ensure_websocket()
+            await websocket.send(json.dumps({"type": "response.create", **request}))
+            return await _receive_websocket_response(websocket)
+        except ConnectionClosed:
+            # keepalive died (event loop blocked by long local work): reopen
+            # once and resend — context lives server-side behind
+            # previous_response_id, so the retry is stateless for us
+            await self._close_websocket()
+            websocket = await self._ensure_websocket()
+            await websocket.send(json.dumps({"type": "response.create", **request}))
+            return await _receive_websocket_response(websocket)
 
     async def _ensure_websocket(self) -> Any:
         if self._websocket is not None and not getattr(self._websocket, "closed", False):
@@ -159,16 +176,36 @@ def _instructions(messages: list[dict[str, Any]]) -> str:
 
 
 def _input_message(message: dict[str, Any]) -> dict[str, Any]:
-    item: dict[str, Any] = {
-        "role": message["role"],
-        "content": _message_text(message),
-    }
+    content = message["content"]
+    rendered: Any = _content_parts(content, message["role"]) if isinstance(content, list) else content
+    item: dict[str, Any] = {"role": message["role"], "content": rendered}
     phase = message.get("phase")
     if phase is not None:
         if message["role"] != "assistant":
             raise ValueError("phase is only valid on assistant messages")
         item["phase"] = phase
     return item
+
+
+def _content_parts(blocks: list[Any], role: str) -> list[dict[str, Any]]:
+    """Convert Anthropic-style content blocks to Responses API parts (text/image)."""
+    text_type = "output_text" if role == "assistant" else "input_text"
+    parts: list[dict[str, Any]] = []
+    for block in blocks:
+        if isinstance(block, str):
+            parts.append({"type": text_type, "text": block})
+        elif isinstance(block, dict) and block.get("type") == "text":
+            parts.append({"type": text_type, "text": block["text"]})
+        elif isinstance(block, dict) and block.get("type") == "image":
+            source = block.get("source", {})
+            if source.get("type") == "base64":
+                parts.append({
+                    "type": "input_image",
+                    "image_url": f"data:{source['media_type']};base64,{source['data']}",
+                })
+            elif source.get("type") == "url":
+                parts.append({"type": "input_image", "image_url": source["url"]})
+    return parts or [{"type": text_type, "text": ""}]
 
 
 def _message_text(message: dict[str, Any]) -> str:
