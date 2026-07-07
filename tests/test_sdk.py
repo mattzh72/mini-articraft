@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import pytest
-from build123d import Box, Shape
+from build123d import Box
+from build123d.topology import Shape
 
 import mini_articraft.sdk as sdk
 from mini_articraft.sdk import (
@@ -9,6 +10,7 @@ from mini_articraft.sdk import (
     Frame,
     ValidationError,
 )
+from mini_articraft.sdk.joints import JointLimits
 
 
 def shape() -> Shape:
@@ -51,9 +53,10 @@ def test_valid_prismatic_object() -> None:
     obj.validate()
     assert obj.joints[0].type.value == "prismatic"
     assert obj.joints[0].frame == Frame(xyz=(0.0, 0.0, 0.02))
-    assert obj.joints[0].limits is not None
-    assert obj.joints[0].limits.lower == -0.02
-    assert obj.joints[0].limits.upper == 0.20
+    limits = obj.joints[0].limits
+    assert isinstance(limits, JointLimits)
+    assert limits.lower == -0.02
+    assert limits.upper == 0.20
 
 
 def test_revolute_requires_limits_argument() -> None:
@@ -62,7 +65,7 @@ def test_revolute_requires_limits_argument() -> None:
     door = obj.part("door", shape())
 
     with pytest.raises(TypeError):
-        obj.revolute("base_to_door", base, door)
+        obj.revolute("base_to_door", base, door)  # pyright: ignore[reportCallIssue]
 
 
 def test_revolute_limits_must_be_tuple() -> None:
@@ -71,7 +74,7 @@ def test_revolute_limits_must_be_tuple() -> None:
     cover = obj.part("cover", shape())
 
     with pytest.raises(ValidationError, match="tuple"):
-        obj.revolute("base_to_cover", base, cover, limits=[0.0, 1.0])
+        obj.revolute("base_to_cover", base, cover, limits=[0.0, 1.0])  # pyright: ignore[reportArgumentType]
 
 
 def test_continuous_joint_allows_unbounded_rotation() -> None:
@@ -94,7 +97,7 @@ def test_continuous_joint_does_not_accept_manual_limits() -> None:
     rotor = obj.part("rotor", shape())
 
     with pytest.raises(TypeError):
-        obj.continuous("frame_to_rotor", frame, rotor, limits=(0.0, 1.0))
+        obj.continuous("frame_to_rotor", frame, rotor, limits=(0.0, 1.0))  # pyright: ignore[reportCallIssue]
 
 
 def test_validation_rejects_multiple_roots() -> None:
@@ -118,4 +121,4 @@ def test_part_requires_build123d_shape() -> None:
     obj = ArticulatedObject("bad_shape", units="meters")
 
     with pytest.raises(ValidationError, match="build123d"):
-        obj.part("base", object())
+        obj.part("base", object())  # pyright: ignore[reportArgumentType]

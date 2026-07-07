@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from typing import Any
 
 import pytest
 
@@ -72,7 +73,7 @@ def patch_websocket(monkeypatch: pytest.MonkeyPatch, socket: FakeWebSocket) -> N
     monkeypatch.setattr("mini_articraft.models.openai.websockets.connect", connect)
 
 
-def openai_model(**kwargs: object) -> OpenAIModel:
+def openai_model(**kwargs: Any) -> OpenAIModel:
     return OpenAIModel(Settings(openai_api_key="sk-test", **kwargs))
 
 
@@ -199,7 +200,7 @@ def test_openai_model_sends_function_call_outputs_with_previous_response(
     )
     patch_websocket(monkeypatch, socket)
     model = openai_model()
-    messages = [{"role": "user", "content": "build"}]
+    messages: list[dict[str, Any]] = [{"role": "user", "content": "build"}]
 
     run(model.query(messages, tools=[]))
     messages.extend(

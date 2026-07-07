@@ -4,7 +4,7 @@ import math
 from dataclasses import dataclass, field
 from typing import TypeAlias
 
-from build123d import Shape
+from build123d.topology import Shape
 
 from mini_articraft.errors import ValidationError
 from mini_articraft.sdk.joints import (
@@ -20,6 +20,7 @@ from mini_articraft.sdk.joints import (
 
 Build123dShape: TypeAlias = Shape
 Color: TypeAlias = tuple[float, float, float, float]
+ColorLike: TypeAlias = tuple[float, float, float] | Color
 UNITS_TO_METERS = {
     "meters": 1.0,
     "centimeters": 0.01,
@@ -63,10 +64,12 @@ class ArticulatedObject:
 
     @property
     def meters_per_unit(self) -> float:
+        assert self.units is not None  # normalized by __post_init__
         return UNITS_TO_METERS[self.units]
 
-    def part(self, name: str, shape: Build123dShape, *, color: Color | None = None) -> Part:
-        part = Part(name=name, shape=shape, color=color)
+    def part(self, name: str, shape: Build123dShape, *, color: ColorLike | None = None) -> Part:
+        rgba = None if color is None else _as_color(color, field=f"part {name!r} color")
+        part = Part(name=name, shape=shape, color=rgba)
         if any(existing.name == part.name for existing in self.parts):
             raise ValidationError(f"duplicate part name: {part.name!r}")
         self.parts.append(part)
@@ -238,7 +241,7 @@ def _normalize_units(value: str | None) -> str:
     return units
 
 
-def _as_color(value: tuple[float, ...], *, field: str) -> Color:
+def _as_color(value: ColorLike, *, field: str) -> Color:
     try:
         raw = tuple(float(component) for component in value)
     except (TypeError, ValueError) as exc:

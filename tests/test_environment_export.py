@@ -79,4 +79,5 @@ def _joint_x_axis(joint: UsdPhysics.RevoluteJoint) -> tuple[float, float, float]
     matrix = Gf.Matrix4d(1.0)
     matrix.SetRotate(joint.GetLocalRot0Attr().Get())
     vector = matrix.TransformDir(Gf.Vec3d(1.0, 0.0, 0.0)).GetNormalized()
-    return tuple(round(float(component), 6) for component in vector)
+    x, y, z = (round(float(component), 6) for component in vector)
+    return (x, y, z)

@@ -214,9 +214,11 @@ async def write(session: ExecSession, chars: str) -> None:
 
 
 def session_id(value: object) -> int:
+    if not isinstance(value, (int, float, str)):
+        raise ValueError("session_id must be a positive integer")
     try:
         session_id = int(value)
-    except (TypeError, ValueError) as exc:
+    except ValueError as exc:
         raise ValueError("session_id must be a positive integer") from exc
     if session_id < 1:
         raise ValueError("session_id must be a positive integer")
@@ -300,10 +302,12 @@ def _decode(data: bytes, max_output_tokens: object) -> str:
 
 
 def _char_budget(raw_tokens: object) -> int:
-    try:
-        tokens = int(raw_tokens) if raw_tokens is not None else MAX_OUTPUT_TOKENS
-    except (TypeError, ValueError):
-        tokens = MAX_OUTPUT_TOKENS
+    tokens = MAX_OUTPUT_TOKENS
+    if isinstance(raw_tokens, (int, float, str)):
+        try:
+            tokens = int(raw_tokens)
+        except ValueError:
+            tokens = MAX_OUTPUT_TOKENS
     return max(0, min(MAX_OUTPUT_BYTES, tokens * 4))
 
 

@@ -387,6 +387,8 @@ def _bundle_from_dict(value: dict[str, Any]) -> CompileSignalBundle:
 
 
 def _report_dict(value: object) -> dict[str, Any] | None:
-    if value is None:
-        return None
-    return asdict(value) if isinstance(value, TestReport) else value
+    if isinstance(value, TestReport):
+        return asdict(value)
+    if isinstance(value, dict):
+        return value
+    return None

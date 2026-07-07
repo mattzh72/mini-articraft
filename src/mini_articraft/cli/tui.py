@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable, Coroutine
 from pathlib import Path
 from typing import Any
 
@@ -26,7 +26,7 @@ from mini_articraft.models import context_window_tokens_for
 from mini_articraft.record import Record, read_conversation
 
 EventHandler = Callable[[events.Event], None]
-LiveRun = Callable[[EventHandler], Awaitable[dict[str, Any]]]
+LiveRun = Callable[[EventHandler], Coroutine[Any, Any, dict[str, Any]]]
 PRIMARY_STYLE = "white"
 SIGNAL_STYLE = "grey70"
 TOKEN_BAR_WIDTH = 24

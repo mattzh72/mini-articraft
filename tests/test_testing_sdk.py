@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import pytest
-from build123d import Box, Compound, Pos, Shape
+from build123d import Box, Compound, Pos
+from build123d.topology import Shape
 
 import mini_articraft.sdk._collision as collision_kernel
 from mini_articraft.errors import ValidationError

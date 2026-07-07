@@ -121,7 +121,9 @@ class Joint:
 
 
 def _positive(value: object, field: str) -> float:
-    value = float(value)
-    if value <= 0.0:
+    if not isinstance(value, (int, float, str)):
+        raise ValidationError(f"{field} must be a positive number")
+    number = float(value)
+    if number <= 0.0:
         raise ValidationError(f"{field} must be positive")
-    return value
+    return number

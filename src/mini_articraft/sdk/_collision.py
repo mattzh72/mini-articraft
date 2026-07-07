@@ -7,7 +7,7 @@ from typing import TypeAlias
 import fcl
 import numpy as np
 import trimesh
-from build123d import Shape
+from build123d.topology import Shape
 
 from mini_articraft.errors import ValidationError
 from mini_articraft.sdk.joints import Frame, Joint, JointType
@@ -432,7 +432,7 @@ def _build123d_shape(model: Build123dShape) -> Shape:
 def _build123d_components(model: Build123dShape) -> list[Shape]:
     shape = _build123d_shape(model)
     try:
-        solids = [solid for solid in shape.solids() if solid is not None]
+        solids: list[Shape] = [solid for solid in shape.solids() if solid is not None]
     except Exception:
         solids = []
     if solids:
@@ -563,11 +563,11 @@ def _array_to_vec3(value: object) -> Vec3 | None:
 
 
 def _optional_float(value: object) -> float | None:
-    if value is None:
+    if not isinstance(value, (int, float, str)):
         return None
     try:
         number = float(value)
-    except (TypeError, ValueError):
+    except ValueError:
         return None
     if not math.isfinite(number):
         return None
