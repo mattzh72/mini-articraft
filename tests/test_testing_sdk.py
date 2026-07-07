@@ -121,9 +121,8 @@ def test_pose_rejects_unknown_joint_name() -> None:
     model.part("base", box())
     ctx = TestContext(model)
 
-    with pytest.raises(ValidationError, match="Unknown joint"):
-        with ctx.pose(missing=1.0):
-            pass
+    with pytest.raises(ValidationError, match="Unknown joint"), ctx.pose(missing=1.0):
+        pass
 
 
 def test_pose_context_changes_mesh_collision_state_and_restores() -> None:

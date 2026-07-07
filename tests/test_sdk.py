@@ -30,7 +30,7 @@ def test_origin_is_not_public_sdk_api() -> None:
 def test_part_color_is_normalized_and_validated() -> None:
     obj = ArticulatedObject("color", units="meters")
     assert obj.part("base", shape(), color=(0.1, 0.2, 0.3)).color == (0.1, 0.2, 0.3, 1.0)
-    with pytest.raises(ValidationError, match="between 0.0 and 1.0"):
+    with pytest.raises(ValidationError, match=r"between 0\.0 and 1\.0"):
         obj.part("bad", shape(), color=(1.2, 0.0, 0.0))
 
 

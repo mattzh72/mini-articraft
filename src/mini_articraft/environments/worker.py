@@ -172,12 +172,11 @@ def _raise_for_failed_test_report(report: TestReport) -> None:
     if report.passed:
         return
     lines = ["SDK tests failed:"]
-    for failure in report.failures[:10]:
-        lines.append(f"- {failure.name}: {failure.details}")
+    lines.extend(f"- {failure.name}: {failure.details}" for failure in report.failures[:10])
     if len(report.failures) > 10:
         lines.append(f"... ({len(report.failures) - 10} more)")
     exc = ValueError("\n".join(lines))
-    setattr(exc, "test_report", report)
+    exc.test_report = report
     raise exc
 
 

@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import ClassVar, Iterator
+from typing import ClassVar
 
 from mini_articraft.errors import ValidationError
 from mini_articraft.sdk._collision import (

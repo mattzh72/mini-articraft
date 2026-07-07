@@ -21,8 +21,7 @@ def _tracked_files() -> list[str]:
     result = subprocess.run(
         ["git", "ls-files"],
         check=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        capture_output=True,
         text=True,
     )
     return [line for line in result.stdout.splitlines() if line]
@@ -44,9 +43,7 @@ def _is_forbidden(path: str) -> bool:
         return True
     if any(part in _FORBIDDEN_DIRECTORIES for part in parts):
         return True
-    if any(part.endswith(".egg-info") for part in parts):
-        return True
-    return False
+    return any(part.endswith(".egg-info") for part in parts)
 
 
 _FORBIDDEN_DIRECTORIES = {
