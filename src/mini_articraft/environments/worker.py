@@ -7,7 +7,7 @@ import os
 import runpy
 import sys
 import traceback
-from collections.abc import Callable, Iterable
+from collections.abc import Hashable, Iterable
 from dataclasses import asdict, replace
 from pathlib import Path
 from typing import Any, TypeVar
@@ -16,7 +16,7 @@ from mini_articraft.compile_feedback import build_compile_report_from_payload, e
 from mini_articraft.environments.export import export_object
 from mini_articraft.sdk import ArticulatedObject, TestContext, TestReport
 
-T = TypeVar("T")
+T = TypeVar("T", bound=Hashable)
 
 
 def compile_run(run_dir: Path) -> dict[str, Any]:
@@ -48,6 +48,7 @@ def _compile_workspace(workspace: Path, export_dir: Path) -> dict[str, Any]:
             baseline_report = _run_baseline_tests(object_model, authored_report)
             test_report = _merge_test_reports(authored_report, baseline_report)
             payload["test_report"] = _serialize_test_report(test_report)
+            _raise_for_failed_test_report(test_report)
             result = export_object(object_model, export_dir)
             payload.update(
                 {
@@ -55,7 +56,6 @@ def _compile_workspace(workspace: Path, export_dir: Path) -> dict[str, Any]:
                     "usdz": str(result.usdz),
                 }
             )
-            _raise_for_failed_test_report(test_report)
 
         payload.update(
             {
@@ -108,11 +108,11 @@ def _run_baseline_tests(obj: ArticulatedObject, authored_report: TestReport) -> 
         )
     for overlap in authored_report.allowed_overlaps:
         ctx.allow_overlap(
-            overlap.link_a,
-            overlap.link_b,
+            overlap.part_a,
+            overlap.part_b,
             reason=overlap.reason,
-            elem_a=overlap.elem_a,
-            elem_b=overlap.elem_b,
+            shape_a=overlap.shape_a,
+            shape_b=overlap.shape_b,
         )
 
     ctx.check_model_valid()
@@ -122,8 +122,9 @@ def _run_baseline_tests(obj: ArticulatedObject, authored_report: TestReport) -> 
         return _without_allowance_notes(preliminary)
 
     ctx.fail_if_isolated_parts()
-    ctx.fail_if_part_contains_disconnected_geometry_islands()
-    ctx.fail_if_parts_collide_in_current_pose()
+    ctx.warn_if_part_contains_disconnected_geometry_islands()
+    ctx.warn_if_absurd_dimensions()
+    ctx.fail_if_parts_overlap_in_current_pose()
     return _without_allowance_notes(ctx.report())
 
 
@@ -138,9 +139,16 @@ def _without_allowance_notes(report: TestReport) -> TestReport:
 
 def _merge_test_reports(authored_report: TestReport, baseline_report: TestReport) -> TestReport:
     checks = _ordered_unique([*authored_report.checks, *baseline_report.checks])
+    baseline_failure_names = {failure.name for failure in baseline_report.failures}
     failures = _ordered_unique(
-        [*authored_report.failures, *baseline_report.failures],
-        key=lambda failure: (failure.name, failure.details),
+        [
+            *(
+                failure
+                for failure in authored_report.failures
+                if failure.name not in baseline_failure_names
+            ),
+            *baseline_report.failures,
+        ]
     )
     warnings = _ordered_unique([*authored_report.warnings, *baseline_report.warnings])
     allowances = _ordered_unique(authored_report.allowances)
@@ -157,13 +165,12 @@ def _merge_test_reports(authored_report: TestReport, baseline_report: TestReport
     )
 
 
-def _ordered_unique(items: Iterable[T], key: Callable[[T], Any] | None = None) -> tuple[T, ...]:
-    seen: set[Any] = set()
+def _ordered_unique(items: Iterable[T]) -> tuple[T, ...]:
+    seen: set[T] = set()
     unique: list[T] = []
     for item in items:
-        marker = item if key is None else key(item)
-        if marker not in seen:
-            seen.add(marker)
+        if item not in seen:
+            seen.add(item)
             unique.append(item)
     return tuple(unique)
 

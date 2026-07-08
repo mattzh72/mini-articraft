@@ -8,7 +8,11 @@ import time
 
 import pytest
 
-from mini_articraft.environments.local import LocalEnvironment, _run_isolated_process
+from mini_articraft.environments.local import (
+    DEFAULT_MAIN_PY,
+    LocalEnvironment,
+    _run_isolated_process,
+)
 from mini_articraft.environments.worker import _merge_test_reports
 from mini_articraft.record import Record, read_conversation
 from mini_articraft.sdk import TestFailure, TestReport
@@ -24,7 +28,6 @@ def _assert_process_exited(pid: int) -> None:
         if not _process_exists(pid):
             return
         time.sleep(0.05)
-
     try:
         os.kill(pid, signal.SIGKILL)
     except ProcessLookupError:
@@ -42,281 +45,173 @@ def _process_exists(pid: int) -> bool:
     return True
 
 
-def test_compile_path_compiles_existing_run_directory(tmp_path) -> None:
+def test_create_run_seeds_an_editable_scaffold_and_docs(tmp_path) -> None:
     env = LocalEnvironment(output_dir=tmp_path)
-    run_dir = env.create_run("drawer")
+    run_dir = env.create_run("seeded")
+
+    assert run_dir.joinpath("workspace", "main.py").read_text() == DEFAULT_MAIN_PY
+    assert run_dir.joinpath("workspace", "docs", "sdk").is_symlink()
+    assert Record.load(run_dir / "record.json") == Record(run_id="seeded")
+
+
+def test_compile_path_exports_usdz_but_only_updates_attempt_data(tmp_path) -> None:
+    env = LocalEnvironment(output_dir=tmp_path)
+    run_dir = env.create_run("box")
+
+    result = env.compile_path(run_dir)
+
+    assert result["status"] == "success"
+    assert result["usdz"] == str(run_dir / "result" / "usdz" / "0000.usdz")
+    assert result["compile_report"]["status"] == "success"
+    assert result["compile_report"]["counts"]["failures"] == 0
+    assert "<compile_signals>" in result["compile_report"]["signals_text"]
+    manifest = json.loads(run_dir.joinpath("result", "model.json").read_text())
+    assert manifest["name"] == "object"
+
+    assert Record.load(run_dir / "record.json") == Record(
+        run_id="box",
+        status="created",
+        attempts=1,
+    )
+    assert read_conversation(run_dir / "conversation.jsonl") == []
+
+
+def test_failed_compile_does_not_create_or_publish_a_usdz(tmp_path) -> None:
+    env = LocalEnvironment(output_dir=tmp_path)
+    run_dir = env.create_run("failure")
     write_main(
         run_dir,
-        """
-from build123d import *
-
+        """from build123d import Box
 from mini_articraft.sdk import ArticulatedObject, TestContext, TestReport
 
-
-def build_object_model() -> ArticulatedObject:
-    model = ArticulatedObject("drawer", units="meters")
-    base = model.part("base", Box(1.0, 1.0, 0.2))
-    drawer = model.part("drawer", Box(0.8, 0.8, 0.2))
-    model.fixed("base_to_drawer", base, drawer)
-    return model
-
-
-object_model = build_object_model()
-
+object_model = ArticulatedObject("failure")
+base = object_model.part("base")
+base.add(Box(1, 1, 1), name="body")
 
 def run_tests() -> TestReport:
     ctx = TestContext(object_model)
-    ctx.expect_contact("base", "drawer")
+    ctx.fail("prompt feature", "missing")
     return ctx.report()
 """,
     )
 
     result = env.compile_path(run_dir)
 
-    assert result["status"] == "success"
-    assert result["entrypoint"] == str(run_dir / "workspace" / "main.py")
-    assert result["manifest"] == str(run_dir / "result" / "model.json")
-    assert result["usdz"] == str(run_dir / "result" / "usdz" / "0000.usdz")
-    assert run_dir.joinpath("result", "usdz", "0000.usdz").is_file()
-    assert result["compile_report"]["status"] == "success"
-    assert result["compile_report"]["counts"] == {"failures": 0, "warnings": 0, "notes": 0}
-    assert "<compile_signals>" in result["compile_report"]["signals_text"]
-
-    manifest = json.loads(run_dir.joinpath("result", "model.json").read_text())
-    assert manifest["name"] == "drawer"
-    assert manifest["files"] == {"usdz": "usdz/0000.usdz"}
-
-    assert Record.load(run_dir / "record.json") == Record(
-        run_id="drawer",
-        status="success",
-        attempts=1,
-        result="result/usdz/0000.usdz",
-    )
-
-    conversation = read_conversation(run_dir / "conversation.jsonl")
-    assert conversation == [{"error": "", "role": "compiler", "status": "success"}]
+    assert result["status"] == "error"
+    assert not list(run_dir.joinpath("result", "usdz").glob("*.usdz"))
+    assert not run_dir.joinpath("result", "model.json").exists()
+    record = Record.load(run_dir / "record.json")
+    assert record.status == "created"
+    assert record.attempts == 1
+    assert record.result == ""
 
 
-def test_compile_path_enumerates_compileable_usdz_outputs(tmp_path) -> None:
+def test_a_failed_attempt_does_not_consume_the_next_usdz_number(tmp_path) -> None:
     env = LocalEnvironment(output_dir=tmp_path)
     run_dir = env.create_run("versions")
-    write_main(
-        run_dir,
-        """
-from build123d import *
-
-from mini_articraft.sdk import ArticulatedObject, TestContext, TestReport
-
-object_model = ArticulatedObject("versions", units="meters")
-object_model.part("base", Box(1.0, 1.0, 1.0))
-
-
-def run_tests() -> TestReport:
-    return TestContext(object_model).report()
-""",
-    )
-
     first = env.compile_path(run_dir)
-    write_main(
-        run_dir,
-        """
-from build123d import *
-
-from mini_articraft.sdk import ArticulatedObject, TestContext, TestReport
-
-object_model = ArticulatedObject("versions", units="meters")
-object_model.part("base", Box(1.0, 1.0, 1.0))
-
-
-def run_tests() -> TestReport:
-    ctx = TestContext(object_model)
-    ctx.fail("prompt-specific check", "missing feature")
-    return ctx.report()
-""",
-    )
+    write_main(run_dir, "raise RuntimeError('bad edit')\n")
+    failed = env.compile_path(run_dir)
+    write_main(run_dir, DEFAULT_MAIN_PY)
     second = env.compile_path(run_dir)
 
-    assert first["usdz"] == str(run_dir / "result" / "usdz" / "0000.usdz")
-    assert second["status"] == "error"
-    assert second["usdz"] == str(run_dir / "result" / "usdz" / "0001.usdz")
-    assert sorted(path.name for path in run_dir.joinpath("result", "usdz").glob("*.usdz")) == [
-        "0000.usdz",
-        "0001.usdz",
-    ]
-    assert Record.load(run_dir / "record.json").result == "result/usdz/0001.usdz"
+    assert first["usdz"].endswith("0000.usdz")
+    assert failed["status"] == "error"
+    assert not failed.get("usdz")
+    assert second["usdz"].endswith("0001.usdz")
 
 
 def test_compile_path_supports_workspace_modules(tmp_path) -> None:
     env = LocalEnvironment(output_dir=tmp_path)
-    run_dir = env.create_run("multi")
-    run_dir.joinpath("workspace", "parts").mkdir()
+    run_dir = env.create_run("modules")
+    parts = run_dir / "workspace" / "parts"
+    parts.mkdir()
+    parts.joinpath("body.py").write_text(
+        """from build123d import Box
+from mini_articraft.sdk import ArticulatedObject
+
+def build():
+    model = ArticulatedObject("module")
+    base = model.part("base")
+    base.add(Box(0.2, 0.2, 0.2), name="body")
+    return model
+""",
+        encoding="utf-8",
+    )
     write_main(
         run_dir,
-        """
-from mini_articraft.sdk import TestContext, TestReport
-from parts.drawer import build_object_model
+        """from mini_articraft.sdk import TestContext, TestReport
+from parts.body import build
 
-object_model = build_object_model()
-
+object_model = build()
 
 def run_tests() -> TestReport:
     return TestContext(object_model).report()
 """,
     )
-    run_dir.joinpath("workspace", "parts", "drawer.py").write_text(
-        """
-from build123d import *
 
-from mini_articraft.sdk import ArticulatedObject
+    assert env.compile_path(run_dir)["status"] == "success"
 
 
-def build_object_model():
-    model = ArticulatedObject("helper_module_drawer", units="meters")
-    model.part("base", Box(1.0, 1.0, 0.2))
-    return model
-""",
-        encoding="utf-8",
-    )
-
-    result = env.compile_path(run_dir)
-
-    assert result["status"] == "success"
-    assert result["usdz"] == str(run_dir / "result" / "usdz" / "0000.usdz")
-
-
-def test_create_run_requires_new_simple_run_id(tmp_path) -> None:
+def test_create_run_requires_a_new_simple_run_id(tmp_path) -> None:
     env = LocalEnvironment(output_dir=tmp_path)
-
     env.create_run("one")
-
     with pytest.raises(FileExistsError):
         env.create_run("one")
     with pytest.raises(ValueError):
         env.create_run("../escape")
 
 
-def test_compile_path_requires_workspace_main_py(tmp_path) -> None:
+def test_compile_path_reports_missing_required_entrypoint_values(tmp_path) -> None:
     env = LocalEnvironment(output_dir=tmp_path)
-    run_dir = env.create_run("missing")
 
-    result = env.compile_path(run_dir)
+    missing_main = env.create_run("missing_main")
+    missing_main.joinpath("workspace", "main.py").unlink()
+    assert env.compile_path(missing_main)["error"] == "workspace/main.py is required"
 
-    assert result["status"] == "error"
-    assert result["error"] == "workspace/main.py is required"
-    assert result["compile_report"]["status"] == "failure"
+    missing_model = env.create_run("missing_model")
+    write_main(missing_model, "value = 1\n")
+    assert "object_model" in env.compile_path(missing_model)["error"]
 
-
-def test_compile_path_reports_missing_object_model(tmp_path) -> None:
-    env = LocalEnvironment(output_dir=tmp_path)
-    run_dir = env.create_run("bad")
-    write_main(run_dir, "not_object_model = object()")
-
-    result = env.compile_path(run_dir)
-
-    assert result["status"] == "error"
-    assert "object_model" in result["error"]
-    assert "ArticulatedObject" in result["error"]
-
-
-def test_compile_path_requires_run_tests(tmp_path) -> None:
-    env = LocalEnvironment(output_dir=tmp_path)
-    run_dir = env.create_run("missing_tests")
+    missing_tests = env.create_run("missing_tests")
     write_main(
-        run_dir,
-        """
-from build123d import *
-
+        missing_tests,
+        """from build123d import Box
 from mini_articraft.sdk import ArticulatedObject
-
-object_model = ArticulatedObject("box", units="meters")
-object_model.part("base", Box(1.0, 1.0, 1.0))
+object_model = ArticulatedObject("box")
+base = object_model.part("base")
+base.add(Box(1, 1, 1), name="body")
 """,
     )
+    assert "run_tests" in env.compile_path(missing_tests)["error"]
 
-    result = env.compile_path(run_dir)
-
-    assert result["status"] == "error"
-    assert "run_tests" in result["error"]
-
-
-def test_compile_path_requires_run_tests_report(tmp_path) -> None:
-    env = LocalEnvironment(output_dir=tmp_path)
-    run_dir = env.create_run("bad_tests")
+    bad_report = env.create_run("bad_report")
     write_main(
-        run_dir,
-        """
-from build123d import *
-
+        bad_report,
+        """from build123d import Box
 from mini_articraft.sdk import ArticulatedObject
-
-object_model = ArticulatedObject("box", units="meters")
-object_model.part("base", Box(1.0, 1.0, 1.0))
-
-
+object_model = ArticulatedObject("box")
+base = object_model.part("base")
+base.add(Box(1, 1, 1), name="body")
 def run_tests():
     return None
 """,
     )
-
-    result = env.compile_path(run_dir)
-
-    assert result["status"] == "error"
-    assert "TestReport" in result["error"]
+    assert "must return TestReport" in env.compile_path(bad_report)["error"]
 
 
-def test_compile_path_fails_authored_test_failure(tmp_path) -> None:
+def test_baseline_checks_adjacent_parent_child_penetration_before_export(tmp_path) -> None:
     env = LocalEnvironment(output_dir=tmp_path)
-    run_dir = env.create_run("authored_failure")
+    run_dir = env.create_run("overlap")
     write_main(
         run_dir,
-        """
-from build123d import *
+        """from build123d import Box
+from mini_articraft.sdk import ArticulatedObject, ArticulationType, Origin, TestContext, TestReport
 
-from mini_articraft.sdk import ArticulatedObject, TestContext, TestReport
-
-object_model = ArticulatedObject("box", units="meters")
-object_model.part("base", Box(1.0, 1.0, 1.0))
-
-
-def run_tests() -> TestReport:
-    ctx = TestContext(object_model)
-    ctx.fail("prompt-specific check", "missing feature")
-    return ctx.report()
-""",
-    )
-
-    result = env.compile_path(run_dir)
-
-    assert result["status"] == "error"
-    assert "prompt-specific check" in result["error"]
-    assert result["test_report"]["failures"][0]["name"] == "prompt-specific check"
-    assert result["usdz"] == str(run_dir / "result" / "usdz" / "0000.usdz")
-    assert Record.load(run_dir / "record.json").result == "result/usdz/0000.usdz"
-
-
-def test_compile_path_fails_baseline_collision_between_non_adjacent_parts(tmp_path) -> None:
-    env = LocalEnvironment(output_dir=tmp_path)
-    run_dir = env.create_run("collision_failure")
-    write_main(
-        run_dir,
-        """
-from build123d import *
-
-from mini_articraft.sdk import ArticulatedObject, Frame, TestContext, TestReport
-
-
-def build_object_model() -> ArticulatedObject:
-    model = ArticulatedObject("collision_failure", units="meters")
-    root = model.part("root", Box(3.0, 3.0, 0.1))
-    part_a = model.part("part_a", Box(1.0, 1.0, 1.0))
-    part_b = model.part("part_b", Box(1.0, 1.0, 1.0))
-    model.fixed("root_to_a", root, part_a, frame=Frame(xyz=(0.0, 0.0, 0.55)))
-    model.fixed("root_to_b", root, part_b, frame=Frame(xyz=(0.0, 0.0, 0.55)))
-    return model
-
-
-object_model = build_object_model()
-
+object_model = ArticulatedObject("overlap")
+base = object_model.part("base"); base.add(Box(1, 1, 1), name="body")
+child = object_model.part("child"); child.add(Box(1, 1, 1), name="body")
+object_model.articulation("mount", ArticulationType.FIXED, base, child, origin=Origin())
 
 def run_tests() -> TestReport:
     return TestContext(object_model).report()
@@ -326,34 +221,22 @@ def run_tests() -> TestReport:
     result = env.compile_path(run_dir)
 
     assert result["status"] == "error"
-    assert "fail_if_parts_collide_in_current_pose" in result["error"]
-    assert "part_a" in result["error"]
-    assert "part_b" in result["error"]
-    assert result["usdz"] == str(run_dir / "result" / "usdz" / "0000.usdz")
-    assert run_dir.joinpath("result", "usdz", "0000.usdz").is_file()
+    assert "fail_if_parts_overlap_in_current_pose" in result["error"]
+    assert not list(run_dir.joinpath("result", "usdz").glob("*.usdz"))
 
 
-def test_compile_path_fails_disconnected_geometry_inside_part(tmp_path) -> None:
+def test_disconnected_geometry_is_a_compiler_warning(tmp_path) -> None:
     env = LocalEnvironment(output_dir=tmp_path)
-    run_dir = env.create_run("disconnected_geometry")
+    run_dir = env.create_run("disconnected")
     write_main(
         run_dir,
-        """
-from build123d import *
-
+        """from build123d import Box, Pos
 from mini_articraft.sdk import ArticulatedObject, TestContext, TestReport
 
-
-def build_object_model() -> ArticulatedObject:
-    model = ArticulatedObject("disconnected_geometry", units="meters")
-    left = Box(1.0, 1.0, 1.0)
-    right = Pos(X=1.2) * Box(1.0, 1.0, 1.0)
-    model.part("base", Compound(children=[left, right]))
-    return model
-
-
-object_model = build_object_model()
-
+object_model = ArticulatedObject("disconnected")
+base = object_model.part("base")
+base.add(Pos(X=-1) * Box(0.5, 0.5, 0.5), name="left")
+base.add(Pos(X=1) * Box(0.5, 0.5, 0.5), name="right")
 
 def run_tests() -> TestReport:
     return TestContext(object_model).report()
@@ -362,43 +245,29 @@ def run_tests() -> TestReport:
 
     result = env.compile_path(run_dir)
 
-    assert result["status"] == "error"
-    assert "fail_if_part_contains_disconnected_geometry_islands" in result["error"]
-    assert "solid_002 nearest=solid_001 distance=0.2" in result["error"]
-    signal = result["compile_report"]["signal_bundle"]["signals"][0]
-    assert signal["kind"] == "disconnected_geometry"
-    assert signal["code"] == "QC_DISCONNECTED_GEOMETRY"
-    assert result["compile_report"]["counts"] == {"failures": 1, "warnings": 0, "notes": 0}
+    assert result["status"] == "success"
+    assert any("Disconnected geometry" in warning for warning in result["test_report"]["warnings"])
+    assert result["compile_report"]["counts"]["warnings"] >= 1
 
 
-def test_compile_path_honors_authored_overlap_allowance(tmp_path) -> None:
+def test_compile_honors_an_exact_shape_overlap_allowance(tmp_path) -> None:
     env = LocalEnvironment(output_dir=tmp_path)
-    run_dir = env.create_run("allowed_collision")
+    run_dir = env.create_run("allowance")
     write_main(
         run_dir,
-        """
-from build123d import *
+        """from build123d import Box
+from mini_articraft.sdk import ArticulatedObject, ArticulationType, Origin, TestContext, TestReport
 
-from mini_articraft.sdk import ArticulatedObject, Frame, TestContext, TestReport
-
-
-def build_object_model() -> ArticulatedObject:
-    model = ArticulatedObject("allowed_collision", units="meters")
-    root = model.part("root", Box(3.0, 3.0, 0.1))
-    shaft = model.part("shaft", Box(1.0, 1.0, 1.0))
-    hub = model.part("hub", Box(1.0, 1.0, 1.0))
-    model.fixed("root_to_shaft", root, shaft, frame=Frame(xyz=(0.0, 0.0, 0.55)))
-    model.fixed("root_to_hub", root, hub, frame=Frame(xyz=(0.0, 0.0, 0.55)))
-    return model
-
-
-object_model = build_object_model()
-
+object_model = ArticulatedObject("allowance")
+shaft = object_model.part("shaft"); shaft.add(Box(1, 1, 1), name="steel")
+hub = object_model.part("hub"); hub.add(Box(1, 1, 1), name="liner")
+object_model.articulation("mount", ArticulationType.FIXED, shaft, hub, origin=Origin())
 
 def run_tests() -> TestReport:
     ctx = TestContext(object_model)
-    ctx.allow_overlap("shaft", "hub", reason="shaft is intentionally captured in the hub")
-    ctx.expect_collision("shaft", "hub")
+    ctx.allow_overlap(
+        "shaft", "hub", shape_a="steel", shape_b="liner", reason="captured shaft"
+    )
     return ctx.report()
 """,
     )
@@ -406,9 +275,8 @@ def run_tests() -> TestReport:
     result = env.compile_path(run_dir)
 
     assert result["status"] == "success"
-    assert result["test_report"]["allowances"] == [
-        "allow_overlap('hub', 'shaft'): shaft is intentionally captured in the hub"
-    ]
+    assert result["test_report"]["allowed_overlaps"][0]["shape_a"] == "liner"
+    assert result["test_report"]["allowed_overlaps"][0]["shape_b"] == "steel"
 
 
 def test_compile_path_reports_timeout(tmp_path) -> None:
@@ -447,56 +315,72 @@ for _ in range(100):
 Path({str(worker_pid_file)!r}).write_text(str(os.getpid()), encoding="utf-8")
 time.sleep(60)
 """
-
     result = _run_isolated_process(
-        [sys.executable, "-c", worker_code],
-        cwd=tmp_path,
-        timeout_seconds=1,
+        [sys.executable, "-c", worker_code], cwd=tmp_path, timeout_seconds=1
     )
 
     assert result.timed_out is True
-    worker_pid = int(worker_pid_file.read_text(encoding="utf-8"))
-    child_pid = int(child_pid_file.read_text(encoding="utf-8"))
-    _assert_process_exited(worker_pid)
-    _assert_process_exited(child_pid)
+    _assert_process_exited(int(worker_pid_file.read_text()))
+    _assert_process_exited(int(child_pid_file.read_text()))
 
 
-def test_merge_test_reports_dedupes_and_keeps_order() -> None:
+def test_merge_test_reports_deduplicates_compiler_owned_checks() -> None:
     authored = TestReport(
         passed=False,
         checks_run=2,
-        checks=("expect_contact('base', 'lid')", "check_model_valid"),
-        failures=(TestFailure(name="expect_contact", details="no contact"),),
-        warnings=("lid overlaps base",),
-        allowances=(
-            "allow_overlap('base', 'lid'): seated pin",
-            "allow_overlap('base', 'lid'): seated pin",
-        ),
+        checks=("custom", "check_model_valid"),
+        failures=(TestFailure("check_model_valid", "authored duplicate"),),
+        warnings=("one",),
+        allowances=("allow", "allow"),
     )
     baseline = TestReport(
         passed=False,
         checks_run=2,
         checks=("check_model_valid", "check_single_root_part"),
-        failures=(
-            TestFailure(name="expect_contact", details="no contact"),
-            TestFailure(name="fail_if_isolated_parts", details="lid is isolated"),
-        ),
-        warnings=("lid overlaps base", "lid has thin walls"),
-        allowances=("baseline allowance is ignored",),
+        failures=(TestFailure("check_model_valid", "compiler result"),),
+        warnings=("one", "two"),
     )
 
     merged = _merge_test_reports(authored, baseline)
 
-    assert merged.passed is False
-    assert merged.checks == (
-        "expect_contact('base', 'lid')",
-        "check_model_valid",
-        "check_single_root_part",
+    assert merged.checks == ("custom", "check_model_valid", "check_single_root_part")
+    assert merged.failures == (TestFailure("check_model_valid", "compiler result"),)
+    assert merged.warnings == ("one", "two")
+    assert merged.allowances == ("allow",)
+
+
+def test_merge_test_reports_keeps_authored_failure_when_baseline_check_passes() -> None:
+    authored = TestReport(
+        passed=False,
+        checks_run=1,
+        checks=("check_model_valid",),
+        failures=(TestFailure("check_model_valid", "authored constraint"),),
     )
-    assert merged.checks_run == 3
-    assert [failure.name for failure in merged.failures] == [
-        "expect_contact",
-        "fail_if_isolated_parts",
-    ]
-    assert merged.warnings == ("lid overlaps base", "lid has thin walls")
-    assert merged.allowances == ("allow_overlap('base', 'lid'): seated pin",)
+    baseline = TestReport(
+        passed=True,
+        checks_run=1,
+        checks=("check_model_valid",),
+        failures=(),
+    )
+
+    merged = _merge_test_reports(authored, baseline)
+
+    assert merged.failures == (TestFailure("check_model_valid", "authored constraint"),)
+    assert not merged.passed
+
+
+def test_merge_test_reports_keeps_distinct_same_named_authored_failures() -> None:
+    authored = TestReport(
+        passed=False,
+        checks_run=2,
+        checks=("prompt_geometry",),
+        failures=(
+            TestFailure("prompt_geometry", "missing handle"),
+            TestFailure("prompt_geometry", "missing controls"),
+        ),
+    )
+    baseline = TestReport(True, 0, (), ())
+
+    merged = _merge_test_reports(authored, baseline)
+
+    assert merged.failures == authored.failures

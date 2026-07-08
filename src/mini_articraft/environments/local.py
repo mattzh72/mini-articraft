@@ -14,13 +14,34 @@ from pydantic import BaseModel
 
 from mini_articraft import package_dir
 from mini_articraft.compile_feedback import build_compile_report_from_payload, empty_compile_payload
-from mini_articraft.record import Record, append_conversation
+from mini_articraft.record import Record
 from mini_articraft.settings import DEFAULT_OUTPUT_DIR
 
 
 class LocalEnvironmentConfig(BaseModel):
     output_dir: Path = DEFAULT_OUTPUT_DIR
-    timeout_seconds: float = 30.0
+    timeout_seconds: float = 300.0
+
+
+DEFAULT_MAIN_PY = """from build123d import Box
+
+from mini_articraft.sdk import ArticulatedObject, TestContext, TestReport
+
+
+def build_object_model() -> ArticulatedObject:
+    model = ArticulatedObject("object")
+    base = model.part("base")
+    base.add(Box(0.2, 0.2, 0.1), name="body", color=(0.7, 0.7, 0.72))
+    return model
+
+
+object_model = build_object_model()
+
+
+def run_tests() -> TestReport:
+    ctx = TestContext(object_model)
+    return ctx.report()
+"""
 
 
 class LocalEnvironment:
@@ -36,6 +57,7 @@ class LocalEnvironment:
         (run_dir / "workspace").mkdir(parents=True)
         (run_dir / "result").mkdir()
         _link_sdk_docs(run_dir / "workspace")
+        run_dir.joinpath("workspace", "main.py").write_text(DEFAULT_MAIN_PY, encoding="utf-8")
         (run_dir / "conversation.jsonl").touch()
         Record(run_id=run_id).save(run_dir / "record.json")
         return run_dir
@@ -46,11 +68,11 @@ class LocalEnvironment:
 
         if not (workspace / "main.py").is_file():
             result = _error_result(run_dir, error="workspace/main.py is required")
-            self._record_compile(run_dir, result)
+            self._record_compile(run_dir)
             return result
 
         result = self._run_worker(run_dir)
-        self._record_compile(run_dir, result)
+        self._record_compile(run_dir)
         return result
 
     def _run_worker(self, run_dir: Path) -> dict[str, Any]:
@@ -102,26 +124,11 @@ class LocalEnvironment:
         payload["compile_report"] = build_compile_report_from_payload(payload)
         return _with_paths(run_dir, payload)
 
-    def _record_compile(self, run_dir: Path, result: dict[str, Any]) -> None:
+    def _record_compile(self, run_dir: Path) -> None:
         record = Record.load(run_dir / "record.json")
         record.run_id = run_dir.name
-        record.status = str(result["status"])
         record.attempts += 1
-        record.error = str(result.get("error") or "")
-        if result.get("usdz"):
-            record.result = (
-                Path(str(result["usdz"])).resolve().relative_to(run_dir.resolve()).as_posix()
-            )
         record.save(run_dir / "record.json")
-
-        append_conversation(
-            run_dir / "conversation.jsonl",
-            {
-                "role": "compiler",
-                "status": result["status"],
-                "error": result.get("error", ""),
-            },
-        )
 
 
 def _validate_run_id(run_id: str) -> str:
