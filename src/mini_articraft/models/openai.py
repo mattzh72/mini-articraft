@@ -64,7 +64,7 @@ class OpenAIModel:
         text = _response_text(response)
         tool_calls = _response_tool_calls(response)
         _raise_for_bad_status(response, text)
-        if not text and not tool_calls:
+        if not text and not tool_calls and not _response_has_reasoning(response):
             raise ModelError("OpenAI response did not contain output_text")
 
         self._input_items.extend(new_items)
@@ -227,6 +227,10 @@ def _response_tool_calls(response: dict[str, Any]) -> list[dict[str, Any]]:
             }
         )
     return calls
+
+
+def _response_has_reasoning(response: dict[str, Any]) -> bool:
+    return any(item.get("type") == "reasoning" for item in _response_output(response))
 
 
 def _response_cost(response: dict[str, Any]) -> float:

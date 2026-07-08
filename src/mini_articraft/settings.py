@@ -7,7 +7,8 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEFAULT_OUTPUT_DIR = Path("runs")
-DEFAULT_MAX_TURNS = 200
+DEFAULT_MAX_TURNS = 100
+DEFAULT_OPENAI_MODEL = "gpt-5.5-2026-04-23"
 
 
 class Settings(BaseSettings):
@@ -22,7 +23,10 @@ class Settings(BaseSettings):
         default=DEFAULT_OUTPUT_DIR,
         validation_alias="MINI_ARTICRAFT_OUTPUT_DIR",
     )
-    openai_model: str = Field(default="gpt-5.5", validation_alias="MINI_ARTICRAFT_MODEL")
+    openai_model: str = Field(
+        default=DEFAULT_OPENAI_MODEL,
+        validation_alias="MINI_ARTICRAFT_MODEL",
+    )
     openai_reasoning_effort: str = Field(
         default="high",
         validation_alias="MINI_ARTICRAFT_REASONING_EFFORT",

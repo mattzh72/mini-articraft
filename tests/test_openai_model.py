@@ -8,7 +8,7 @@ import pytest
 
 from mini_articraft.errors import ModelError
 from mini_articraft.models.openai import OpenAIModel, context_window_tokens_for
-from mini_articraft.settings import Settings, get_settings
+from mini_articraft.settings import DEFAULT_MAX_TURNS, Settings, get_settings
 
 
 def run(awaitable):
@@ -18,7 +18,7 @@ def run(awaitable):
 def response_event(
     text: str,
     *,
-    model: str = "gpt-5.5",
+    model: str = "gpt-5.5-2026-04-23",
     response_id: str = "resp_1",
     status: str = "completed",
     incomplete_details: dict[str, object] | None = None,
@@ -74,7 +74,7 @@ def patch_websocket(monkeypatch: pytest.MonkeyPatch, socket: FakeWebSocket) -> N
 
 
 def openai_model(**kwargs: Any) -> OpenAIModel:
-    return OpenAIModel(Settings(openai_api_key="sk-test", **kwargs))
+    return OpenAIModel(Settings(openai_api_key="sk-test", _env_file=None, **kwargs))
 
 
 def test_openai_model_uses_websocket(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -94,7 +94,7 @@ def test_openai_model_uses_websocket(monkeypatch: pytest.MonkeyPatch) -> None:
     assert socket.sent == [
         {
             "type": "response.create",
-            "model": "gpt-5.5",
+            "model": "gpt-5.5-2026-04-23",
             "input": [{"role": "user", "content": "build a hinge"}],
             "reasoning": {"effort": "high"},
             "include": ["reasoning.encrypted_content"],
@@ -172,6 +172,8 @@ def test_openai_model_returns_estimated_cost(monkeypatch: pytest.MonkeyPatch) ->
 
 
 def test_openai_model_exposes_context_window() -> None:
+    assert openai_model().config.openai_model == "gpt-5.5-2026-04-23"
+    assert DEFAULT_MAX_TURNS == 100
     assert openai_model().context_window_tokens == 1_050_000
     assert context_window_tokens_for("gpt-5.5-2026-04-23") == 1_050_000
     assert context_window_tokens_for("gpt-5.4-mini-2026-03-17") == 400_000
@@ -371,3 +373,23 @@ def test_openai_model_raises_without_text(monkeypatch: pytest.MonkeyPatch) -> No
 
     with pytest.raises(ModelError, match="output_text"):
         run(openai_model().query([{"role": "user", "content": "hello"}]))
+
+
+def test_openai_model_returns_completed_reasoning_only_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    socket = FakeWebSocket(
+        [
+            response_event(
+                "",
+                output=[{"type": "reasoning", "encrypted_content": "encrypted"}],
+            )
+        ]
+    )
+    patch_websocket(monkeypatch, socket)
+
+    result = run(openai_model().query([{"role": "user", "content": "hello"}]))
+
+    assert result["text"] == ""
+    assert "reasoning" not in result
+    assert result["tool_calls"] == []
