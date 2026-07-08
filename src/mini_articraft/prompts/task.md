@@ -3,15 +3,18 @@ User request:
 
 {{ prompt }}
 
-Create `main.py` in the run workspace. Build a realistic object that satisfies the
-request, with recognizable geometry, believable construction details, realistic
-proportions, and the main expected articulation.
+Edit `main.py` in the run workspace and build the requested object. Meet the four
+quality requirements from the system prompt. Use realistic geometry, model the
+primary mechanism, support every part, and avoid unintended overlap.
 
-Use build123d for geometry and the mini-articraft SDK for object structure, joints,
-and tests. Add prompt-specific checks with `TestContext`, then run `compile` before
-the final response.
+Start with the preloaded SDK quickstart. Use `read` for only the SDK references,
+build123d pages, mesh helper pages, and local examples that answer a current
+design question. Then implement the object with
+`Part.add(shape, name=..., color=...)`, add prompt-specific checks, and run
+`compile`.
 
-Before writing code, use `read` to study the SDK docs, the build123d pages, and
-local examples or snippets that relate to this object. Read thoroughly before
-you choose the modeling approach and create `main.py`.
+Treat every compile signal as design evidence. Preserve prompt-critical visible
+geometry while you repair named defects. Finish only after the current workspace
+has a successful compile, then return a short visible summary of the object and
+its main motion.
 </task>
