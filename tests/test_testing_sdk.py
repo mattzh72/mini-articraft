@@ -1,233 +1,302 @@
 from __future__ import annotations
 
 import pytest
-from build123d import Box, Compound, Pos
-from build123d.topology import Shape
+from build123d import Box, Pos
 
-import mini_articraft.sdk._collision as collision_kernel
 from mini_articraft.errors import ValidationError
 from mini_articraft.sdk import (
     AllowedOverlap,
     ArticulatedObject,
-    Frame,
+    ArticulationType,
+    MotionLimits,
+    Origin,
     TestContext,
 )
 
 
-def box(size: float = 1.0) -> Shape:
-    return Box(size, size, size)
+def add_box(part, name: str, *, size: float = 1.0, x: float = 0.0) -> None:
+    part.add(Pos(X=x) * Box(size, size, size), name=name)
 
 
-def compound_boxes(offset: float) -> Compound:
-    first = Box(1.0, 1.0, 1.0)
-    second = Pos(X=offset) * Box(1.0, 1.0, 1.0)
-    return Compound(children=[first, second])
+def fixed(model: ArticulatedObject, name: str, parent, child, xyz=(0.0, 0.0, 0.0)):
+    return model.articulation(
+        name,
+        ArticulationType.FIXED,
+        parent,
+        child,
+        origin=Origin(xyz=xyz),
+    )
 
 
-def test_report_records_checks_warnings_and_allowances() -> None:
-    model = ArticulatedObject("report", units="meters")
-    model.part("base", box())
+def test_report_records_warnings_and_shape_scoped_allowances() -> None:
+    model = ArticulatedObject("report")
+    base = model.part("base")
+    add_box(base, "outer")
+    insert = model.part("insert")
+    add_box(insert, "inner", size=0.25)
     ctx = TestContext(model)
 
     ctx.check("custom pass", True)
-    ctx.warn("non-blocking note")
+    ctx.warn("nonblocking note")
     ctx.allow_isolated_part("base", reason="display stand")
-    ctx.allow_overlap("base", "base", reason="self allowance is only recorded")
+    ctx.allow_overlap(
+        "base",
+        "insert",
+        shape_a=" outer ",
+        shape_b=" inner ",
+        reason="nested shape",
+    )
 
     report = ctx.report()
-
     assert report.passed
-    assert report.checks == ("custom pass",)
-    assert report.warnings == ("non-blocking note",)
-    assert report.allowances == (
-        "allow_isolated_part('base'): display stand",
-        "allow_overlap('base', 'base'): self allowance is only recorded",
-    )
-    assert report.allowed_isolated_parts == ("base",)
+    assert report.warnings == ("nonblocking note",)
     assert report.allowed_overlaps == (
-        AllowedOverlap("base", "base", "self allowance is only recorded"),
+        AllowedOverlap("base", "insert", "nested shape", "outer", "inner"),
     )
 
+    with pytest.raises(TypeError, match="shape_a"):
+        ctx.allow_overlap("base", "insert", reason="too broad")
 
-def test_expect_collision_and_no_collision_use_mesh_queries() -> None:
-    model = ArticulatedObject("collisions", units="meters")
-    root = model.part("root", box(0.1))
-    left = model.part("left", box())
-    far = model.part("far", box())
-    overlapping = model.part("overlapping", box())
-    model.fixed("root_to_left", root, left)
-    model.fixed("root_to_far", root, far, frame=Frame(xyz=(3.0, 0.0, 0.0)))
-    model.fixed("root_to_overlapping", root, overlapping, frame=Frame(xyz=(0.25, 0.0, 0.0)))
+
+def test_named_shape_queries_and_world_bounds() -> None:
+    model = ArticulatedObject("queries")
+    root = model.part("root")
+    add_box(root, "left", x=-1.0)
+    add_box(root, "right", x=1.0)
     ctx = TestContext(model)
 
-    assert ctx.expect_no_collision("left", "far")
-    assert ctx.expect_collision("left", "overlapping")
+    assert ctx.shape_world_bounds("root", "left") == ((-1.5, -0.5, -0.5), (-0.5, 0.5, 0.5))
+    assert ctx.part_world_bounds("root") == ((-1.5, -0.5, -0.5), (1.5, 0.5, 0.5))
+    distance = ctx.distance_between("root", "root", shape_a="left", shape_b="right")
+    assert distance.distance == pytest.approx(1.0)
 
-    report = ctx.report()
-    assert report.passed
-    assert report.checks == (
-        "expect_no_collision(left,far)",
-        "expect_collision(left,overlapping)",
-    )
+    with pytest.raises(ValidationError, match="unknown shape"):
+        ctx.shape_world_bounds("root", "missing")
 
 
-def test_expect_distance_and_contact_use_fcl_distance() -> None:
-    model = ArticulatedObject("distance", units="meters")
-    left = model.part("left", box())
-    right = model.part("right", box())
-    model.fixed("left_to_right", left, right, frame=Frame(xyz=(2.0, 0.0, 0.0)))
+def test_build123d_shape_bounds_refresh_after_location_mutation() -> None:
+    model = ArticulatedObject("mutable_shape")
+    root = model.part("root")
+    shape = Box(1.0, 1.0, 1.0)
+    root.add(shape, name="body")
     ctx = TestContext(model)
 
-    assert ctx.expect_distance("left", "right", min_distance=0.99, max_distance=1.01)
-    assert not ctx.expect_contact("left", "right", contact_tol=0.1)
+    assert ctx.shape_world_bounds("root", "body")[0][0] == pytest.approx(-0.5)
+    shape.locate(Pos(X=2.0))
 
-    report = ctx.report()
-    assert not report.passed
-    assert report.failures[0].name == "expect_contact(left,right)"
-    assert "distance=1" in report.failures[0].details
+    assert ctx.shape_world_bounds("root", "body")[0][0] == pytest.approx(1.5)
 
 
-def test_mesh_cache_uses_shape_identity() -> None:
-    model = ArticulatedObject("cache", units="meters")
-    left = model.part("left", box())
-    right = model.part("right", box())
-    model.fixed("left_to_right", left, right, frame=Frame(xyz=(3.0, 0.0, 0.0)))
+def test_exact_checks_target_named_shapes() -> None:
+    model = ArticulatedObject("exact")
+    root = model.part("root")
+    add_box(root, "outer", size=3.0)
+    add_box(root, "left", size=0.5, x=-1.0)
+    add_box(root, "left_copy", size=0.5, x=-1.0)
+    add_box(root, "right", size=0.5, x=1.0)
     ctx = TestContext(model)
 
-    assert ctx.expect_no_collision("left", "right")
-
-    right.shape = box(6.0)
-
-    assert ctx.expect_collision("left", "right")
+    assert ctx.expect_within("root", "root", inner_shape="left", outer_shape="outer", axes="xyz")
+    assert ctx.expect_distance("root", "root", shape_a="left", shape_b="right", min_distance=1.49)
+    assert ctx.expect_no_collision("root", "root", shape_a="left", shape_b="right")
+    assert ctx.expect_collision("root", "root", shape_a="left", shape_b="left_copy")
     assert ctx.report().passed
 
 
-def test_expect_gap_and_within_use_mesh_vertex_projections() -> None:
-    model = ArticulatedObject("projections", units="meters")
-    outer = model.part("outer", box(3.0))
-    inner = model.part("inner", box(1.0))
-    right = model.part("right", box(1.0))
-    model.fixed("outer_to_inner", outer, inner)
-    model.fixed("outer_to_right", outer, right, frame=Frame(xyz=(2.0, 0.0, 0.0)))
+def test_shape_scoped_projection_checks_have_distinct_default_names() -> None:
+    model = ArticulatedObject("named_checks")
+    root = model.part("root")
+    add_box(root, "left", size=0.5, x=-1.0)
+    add_box(root, "center", size=0.5, x=0.0)
+    add_box(root, "right", size=0.5, x=1.0)
     ctx = TestContext(model)
 
-    assert ctx.expect_within("inner", "outer", axes="xyz")
-    assert ctx.expect_gap("right", "inner", axis="x", min_gap=0.99, max_gap=1.01)
+    assert not ctx.expect_gap(
+        "root",
+        "root",
+        axis="x",
+        positive_shape="left",
+        negative_shape="center",
+        min_gap=0.1,
+    )
+    assert not ctx.expect_gap(
+        "root",
+        "root",
+        axis="x",
+        positive_shape="center",
+        negative_shape="right",
+        min_gap=0.1,
+    )
 
-    assert ctx.report().passed
+    names = [failure.name for failure in ctx.report().failures]
+    assert len(set(names)) == 2
+    assert "positive_shape=left" in names[0]
+    assert "positive_shape=center" in names[1]
 
 
-def test_pose_rejects_unknown_joint_name() -> None:
-    model = ArticulatedObject("pose", units="meters")
-    model.part("base", box())
-    ctx = TestContext(model)
-
-    with pytest.raises(ValidationError, match="Unknown joint"), ctx.pose(missing=1.0):
-        pass
-
-
-def test_pose_context_changes_mesh_collision_state_and_restores() -> None:
-    model = ArticulatedObject("pose", units="meters")
-    base = model.part("base", box())
-    slider = model.part("slider", box())
-    model.prismatic(
-        "base_to_slider",
+def test_pose_changes_prismatic_part_transform_and_restores() -> None:
+    model = ArticulatedObject("pose")
+    base = model.part("base")
+    add_box(base, "body")
+    slider = model.part("slider")
+    add_box(slider, "body")
+    model.articulation(
+        "slide",
+        ArticulationType.PRISMATIC,
         base,
         slider,
+        origin=Origin(xyz=(2.0, 0.0, 0.0)),
         axis=(1.0, 0.0, 0.0),
-        limits=(-1.5, 0.0),
-        frame=Frame(xyz=(2.0, 0.0, 0.0)),
+        motion_limits=MotionLimits(lower=-1.5, upper=0.0),
     )
     ctx = TestContext(model)
 
-    assert ctx.expect_no_collision("base", "slider")
-    rest_position = ctx.part_world_position("slider")
-    with ctx.pose({"base_to_slider": -1.25}):
-        posed_position = ctx.part_world_position("slider")
-        assert ctx.expect_collision("base", "slider")
-    restored_position = ctx.part_world_position("slider")
-
-    assert rest_position == restored_position
-    assert posed_position is not None and rest_position is not None
-    assert posed_position[0] < rest_position[0]
-    assert ctx.report().passed
+    rest = ctx.part_world_position("slider")
+    with ctx.pose({"slide": -1.25}):
+        posed = ctx.part_world_position("slider")
+        assert ctx.expect_collision("base", "slider", shape_a="body", shape_b="body")
+    assert ctx.part_world_position("slider") == rest
+    assert posed[0] < rest[0]
 
 
-def test_baseline_collision_check_uses_fcl_broadphase_manager(monkeypatch) -> None:
-    real_manager = collision_kernel.fcl.DynamicAABBTreeCollisionManager
-    calls = {"created": 0, "collide": 0}
+def test_pose_rejects_an_unknown_articulation() -> None:
+    model = ArticulatedObject("pose")
+    base = model.part("base")
+    add_box(base, "body")
+    with pytest.raises(ValidationError, match="unknown articulation"):
+        with TestContext(model).pose(missing=1.0):
+            pass
 
-    class SpyManager:
-        def __init__(self) -> None:
-            calls["created"] += 1
-            self._inner = real_manager()
 
-        def registerObjects(self, objects):
-            return self._inner.registerObjects(objects)
-
-        def setup(self):
-            return self._inner.setup()
-
-        def collide(self, data, callback):
-            calls["collide"] += 1
-            return self._inner.collide(data, callback)
-
-    monkeypatch.setattr(collision_kernel.fcl, "DynamicAABBTreeCollisionManager", SpyManager)
-
-    model = ArticulatedObject("manager", units="meters")
-    root = model.part("root", Box(3.0, 3.0, 0.1))
-    part_a = model.part("part_a", box())
-    part_b = model.part("part_b", box())
-    model.fixed("root_to_a", root, part_a, frame=Frame(xyz=(0.0, 0.0, 0.55)))
-    model.fixed("root_to_b", root, part_b, frame=Frame(xyz=(0.0, 0.0, 0.55)))
+def test_scoped_allowance_does_not_hide_another_shape_pair() -> None:
+    model = ArticulatedObject("allowance")
+    parent = model.part("parent")
+    add_box(parent, "allowed_parent", x=-1.0)
+    add_box(parent, "blocked_parent", x=1.0)
+    child = model.part("child")
+    add_box(child, "allowed_child", x=-1.0)
+    add_box(child, "blocked_child", x=1.0)
+    fixed(model, "mount", parent, child)
     ctx = TestContext(model)
-
-    assert not ctx.fail_if_parts_collide_in_current_pose()
-
-    assert calls == {"created": 1, "collide": 1}
-    assert "part_a" in ctx.report().failures[0].details
-    assert "part_b" in ctx.report().failures[0].details
-
-
-def test_allow_overlap_suppresses_only_baseline_collision() -> None:
-    model = ArticulatedObject("allowance", units="meters")
-    root = model.part("root", Box(3.0, 3.0, 0.1))
-    shaft = model.part("shaft", box())
-    hub = model.part("hub", box())
-    model.fixed("root_to_shaft", root, shaft, frame=Frame(xyz=(0.0, 0.0, 0.55)))
-    model.fixed("root_to_hub", root, hub, frame=Frame(xyz=(0.0, 0.0, 0.55)))
-    ctx = TestContext(model)
-
-    ctx.allow_overlap("shaft", "hub", reason="captured shaft")
-    assert ctx.fail_if_parts_collide_in_current_pose()
-    assert not ctx.expect_no_collision("shaft", "hub")
-
-    report = ctx.report()
-    assert not report.passed
-    assert report.failures[0].name == "expect_no_collision(shaft,hub)"
-
-
-def test_fail_if_part_contains_disconnected_geometry_islands_records_failure() -> None:
-    model = ArticulatedObject("disconnected", units="meters")
-    model.part("base", compound_boxes(1.2))
-    ctx = TestContext(model)
-
-    assert not ctx.fail_if_part_contains_disconnected_geometry_islands()
-
-    report = ctx.report()
-    assert not report.passed
-    assert report.failures[0].name == (
-        "fail_if_part_contains_disconnected_geometry_islands(contact_tol=1e-06)"
+    ctx.allow_overlap(
+        parent,
+        child,
+        shape_a="allowed_parent",
+        shape_b="allowed_child",
+        reason="captured insert",
     )
-    assert "Disconnected geometry islands detected" in report.failures[0].details
-    assert "part='base' connected=1/2" in report.failures[0].details
-    assert "solid_002 nearest=solid_001 distance=0.2" in report.failures[0].details
+
+    assert not ctx.fail_if_parts_overlap_in_current_pose(overlap_tol=0.001)
+    failure = ctx.report().failures[0]
+    assert "blocked_parent" in failure.details
+    assert "blocked_child" in failure.details
 
 
-def test_fail_if_part_contains_disconnected_geometry_islands_allows_contacting_solids() -> None:
-    model = ArticulatedObject("connected", units="meters")
-    model.part("base", compound_boxes(1.0))
+def test_adjacent_contact_and_tiny_penetration_pass_physical_thresholds() -> None:
+    for offset in (1.0, 0.996):
+        model = ArticulatedObject(f"contact_{offset}")
+        parent = model.part("parent")
+        add_box(parent, "body")
+        child = model.part("child")
+        add_box(child, "body")
+        fixed(model, "mount", parent, child, xyz=(0.0, 0.0, offset))
+
+        assert TestContext(model).fail_if_parts_overlap_in_current_pose()
+
+
+def test_adjacent_large_penetration_blocks() -> None:
+    model = ArticulatedObject("penetration")
+    parent = model.part("parent")
+    add_box(parent, "body")
+    child = model.part("child")
+    add_box(child, "body")
+    fixed(model, "mount", parent, child, xyz=(0.0, 0.0, 0.98))
+
+    ctx = TestContext(model)
+    assert not ctx.fail_if_parts_overlap_in_current_pose()
+    assert "shape_a='body'" in ctx.report().failures[0].details
+
+
+def test_physical_isolation_ignores_the_articulation_graph() -> None:
+    model = ArticulatedObject("isolated")
+    base = model.part("base")
+    add_box(base, "body")
+    floating = model.part("floating")
+    add_box(floating, "body")
+    fixed(model, "mount", base, floating, xyz=(3.0, 0.0, 0.0))
+
+    ctx = TestContext(model)
+    assert not ctx.fail_if_isolated_parts()
+    assert "floating_group=['floating']" in ctx.report().failures[0].details
+
+
+def test_an_entire_floating_group_must_be_allowed() -> None:
+    model = ArticulatedObject("floating_group")
+    base = model.part("base")
+    add_box(base, "body")
+    first = model.part("first")
+    add_box(first, "body")
+    second = model.part("second")
+    add_box(second, "body")
+    fixed(model, "base_to_first", base, first, xyz=(3.0, 0.0, 0.0))
+    fixed(model, "first_to_second", first, second, xyz=(1.0, 0.0, 0.0))
+
+    partial = TestContext(model)
+    partial.allow_isolated_part("first", reason="display group")
+    assert not partial.fail_if_isolated_parts()
+    assert "nearest_root_part='base' nearest_gap=2m" in partial.report().failures[0].details
+
+    complete = TestContext(model)
+    complete.allow_isolated_part("first", reason="display group")
+    complete.allow_isolated_part("second", reason="display group")
+    assert complete.fail_if_isolated_parts()
+    assert complete.report().warnings
+
+
+def test_disconnected_geometry_warns_by_default_and_can_be_authored_as_blocking() -> None:
+    model = ArticulatedObject("disconnected")
+    base = model.part("base")
+    add_box(base, "left", x=-1.0)
+    add_box(base, "right", x=1.0)
+
+    warning_ctx = TestContext(model)
+    assert warning_ctx.warn_if_part_contains_disconnected_geometry_islands()
+    assert warning_ctx.report().passed
+    assert "Disconnected geometry islands" in warning_ctx.report().warnings[0]
+
+    blocking_ctx = TestContext(model)
+    assert not blocking_ctx.fail_if_part_contains_disconnected_geometry_islands()
+    assert not blocking_ctx.report().passed
+
+
+def test_nested_solid_shapes_are_connected_geometry() -> None:
+    model = ArticulatedObject("nested")
+    base = model.part("base")
+    add_box(base, "outer", size=2.0)
+    add_box(base, "insert", size=0.5)
     ctx = TestContext(model)
 
-    assert ctx.fail_if_part_contains_disconnected_geometry_islands()
+    assert ctx.warn_if_part_contains_disconnected_geometry_islands()
+    assert ctx.report().warnings == ()
+
+
+def test_absurd_dimensions_and_scale_outliers_are_warnings() -> None:
+    model = ArticulatedObject("scale")
+    base = model.part("base")
+    add_box(base, "normal", size=1.0)
+    add_box(base, "absurd", size=2001.0, x=3000.0)
+    ctx = TestContext(model)
+
+    assert ctx.warn_if_absurd_dimensions()
     assert ctx.report().passed
+    assert "absurd dimension" in ctx.report().warnings[0]
+
+    relative = ArticulatedObject("relative_scale")
+    detailed = relative.part("body")
+    add_box(detailed, "detail_a", size=0.001, x=-1.0)
+    add_box(detailed, "detail_b", size=0.001, x=1.0)
+    add_box(detailed, "body", size=0.2)
+    relative_ctx = TestContext(relative)
+
+    assert relative_ctx.warn_if_absurd_dimensions()
+    assert "extreme scale outlier" in relative_ctx.report().warnings[0]

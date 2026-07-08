@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
 from typing import TypeAlias
 
@@ -8,42 +9,80 @@ from build123d.topology import Shape
 
 from mini_articraft.errors import ValidationError
 from mini_articraft.sdk.joints import (
-    ContinuousLimits,
-    Frame,
-    Joint,
-    JointLimits,
-    JointType,
+    Articulation,
+    ArticulationType,
+    MotionLimits,
+    Origin,
     Vec3,
-    as_position_limits,
-    coerce_part_name,
+    _as_name,
+    _coerce_part_name,
 )
+from mini_articraft.sdk.mesh import MeshGeometry
 
-Build123dShape: TypeAlias = Shape
+Geometry: TypeAlias = Shape | MeshGeometry
 Color: TypeAlias = tuple[float, float, float, float]
-ColorLike: TypeAlias = tuple[float, float, float] | Color
-UNITS_TO_METERS = {
-    "meters": 1.0,
-    "centimeters": 0.01,
-    "millimeters": 0.001,
-    "inches": 0.0254,
-    "feet": 0.3048,
-}
+
+
+@dataclass(frozen=True, slots=True)
+class _ShapeData:
+    name: str
+    geometry: Geometry
+    color: Color | None
 
 
 @dataclass
 class Part:
     name: str
-    shape: Build123dShape
-    color: Color | None = None
+    _shapes: dict[str, _ShapeData] = field(default_factory=dict, init=False, repr=False)
 
     def __post_init__(self) -> None:
-        self.name = str(self.name).strip()
-        if not self.name:
-            raise ValidationError("part name must be non-empty")
-        if not isinstance(self.shape, Shape):
-            raise ValidationError(f"part {self.name!r} shape must be a build123d Shape")
-        if self.color is not None:
-            self.color = _as_color(self.color, field=f"part {self.name!r} color")
+        self.name = _as_name(self.name, field_name="part name")
+
+    def add(
+        self,
+        shape: Geometry,
+        *,
+        name: str,
+        color: Sequence[float] | None = None,
+    ) -> Geometry:
+        """Add named geometry in this part's local frame."""
+
+        shape_name = _as_name(name, field_name=f"shape name on part {self.name!r}")
+        if shape_name in self._shapes:
+            raise ValidationError(f"duplicate shape name {shape_name!r} on part {self.name!r}")
+        _validate_geometry(shape, context=f"part {self.name!r} shape {shape_name!r}")
+        normalized_color = (
+            None
+            if color is None
+            else _as_color(color, field_name=f"part {self.name!r} shape {shape_name!r} color")
+        )
+        self._shapes[shape_name] = _ShapeData(
+            name=shape_name,
+            geometry=shape,
+            color=normalized_color,
+        )
+        return shape
+
+    def get_shape(self, name: str) -> Geometry:
+        shape_name = _as_name(name, field_name="shape name")
+        entry = self._shapes.get(shape_name)
+        if entry is None:
+            raise ValidationError(f"unknown shape {shape_name!r} on part {self.name!r}")
+        return entry.geometry
+
+    def _iter_shapes(self) -> Iterator[_ShapeData]:
+        return iter(self._shapes.values())
+
+    def validate(self) -> None:
+        self.name = _as_name(self.name, field_name="part name")
+        if not self._shapes:
+            raise ValidationError(f"part {self.name!r} must contain at least one shape")
+        for name, entry in self._shapes.items():
+            if name != entry.name:
+                raise ValidationError(f"part {self.name!r} contains an invalid shape name")
+            _validate_geometry(entry.geometry, context=f"part {self.name!r} shape {name!r}")
+            if entry.color is not None:
+                _as_color(entry.color, field_name=f"part {self.name!r} shape {name!r} color")
 
 
 PartRef: TypeAlias = str | Part
@@ -52,165 +91,115 @@ PartRef: TypeAlias = str | Part
 @dataclass
 class ArticulatedObject:
     name: str
-    units: str | None = None
-    parts: list[Part] = field(default_factory=list)
-    joints: list[Joint] = field(default_factory=list)
+    parts: list[Part] = field(default_factory=list, init=False)
+    articulations: list[Articulation] = field(default_factory=list, init=False)
 
     def __post_init__(self) -> None:
-        self.name = str(self.name).strip()
-        if not self.name:
-            raise ValidationError("object name must be non-empty")
-        self.units = _normalize_units(self.units)
+        self.name = _as_name(self.name, field_name="object name")
 
     @property
     def meters_per_unit(self) -> float:
-        assert self.units is not None  # normalized by __post_init__
-        return UNITS_TO_METERS[self.units]
+        return 1.0
 
-    def part(self, name: str, shape: Build123dShape, *, color: ColorLike | None = None) -> Part:
-        rgba = None if color is None else _as_color(color, field=f"part {name!r} color")
-        part = Part(name=name, shape=shape, color=rgba)
+    def part(self, name: str) -> Part:
+        part = Part(name=name)
         if any(existing.name == part.name for existing in self.parts):
             raise ValidationError(f"duplicate part name: {part.name!r}")
         self.parts.append(part)
         return part
 
-    def _add_joint(
+    def articulation(
         self,
         name: str,
-        joint_type: JointType,
+        articulation_type: ArticulationType | str,
         parent: PartRef,
         child: PartRef,
         *,
-        frame: Frame | None = None,
+        origin: Origin | None = None,
         axis: Vec3 = (0.0, 0.0, 1.0),
-        limits: JointLimits | ContinuousLimits | None = None,
-    ) -> Joint:
-        joint = Joint(
+        motion_limits: MotionLimits | None = None,
+    ) -> Articulation:
+        parent_name = _coerce_part_name(parent, field_name="parent")
+        child_name = _coerce_part_name(child, field_name="child")
+        self.get_part(parent_name)
+        self.get_part(child_name)
+        articulation = Articulation(
             name=name,
-            type=joint_type,
-            parent=coerce_part_name(parent, field="parent"),
-            child=coerce_part_name(child, field="child"),
-            frame=frame or Frame(),
+            articulation_type=articulation_type,
+            parent=parent_name,
+            child=child_name,
+            origin=Origin() if origin is None else origin,
             axis=axis,
-            limits=limits,
+            motion_limits=motion_limits,
         )
-        joint.validate()
-        self.get_part(joint.parent)
-        self.get_part(joint.child)
-        if any(existing.name == joint.name for existing in self.joints):
-            raise ValidationError(f"duplicate joint name: {joint.name!r}")
-        self.joints.append(joint)
-        return joint
-
-    def fixed(
-        self,
-        name: str,
-        parent: PartRef,
-        child: PartRef,
-        *,
-        frame: Frame | None = None,
-    ) -> Joint:
-        return self._add_joint(name, JointType.FIXED, parent, child, frame=frame)
-
-    def revolute(
-        self,
-        name: str,
-        parent: PartRef,
-        child: PartRef,
-        *,
-        axis: Vec3 = (0.0, 0.0, 1.0),
-        limits: tuple[float, float],
-        frame: Frame | None = None,
-    ) -> Joint:
-        return self._add_joint(
-            name,
-            JointType.REVOLUTE,
-            parent,
-            child,
-            frame=frame,
-            axis=axis,
-            limits=as_position_limits(limits, field=f"revolute joint {name!r} limits"),
-        )
-
-    def prismatic(
-        self,
-        name: str,
-        parent: PartRef,
-        child: PartRef,
-        *,
-        axis: Vec3 = (1.0, 0.0, 0.0),
-        limits: tuple[float, float],
-        frame: Frame | None = None,
-    ) -> Joint:
-        return self._add_joint(
-            name,
-            JointType.PRISMATIC,
-            parent,
-            child,
-            frame=frame,
-            axis=axis,
-            limits=as_position_limits(limits, field=f"prismatic joint {name!r} limits"),
-        )
-
-    def continuous(
-        self,
-        name: str,
-        parent: PartRef,
-        child: PartRef,
-        *,
-        axis: Vec3 = (0.0, 0.0, 1.0),
-        frame: Frame | None = None,
-    ) -> Joint:
-        return self._add_joint(
-            name,
-            JointType.CONTINUOUS,
-            parent,
-            child,
-            frame=frame,
-            axis=axis,
-            limits=ContinuousLimits(),
-        )
+        if any(existing.name == articulation.name for existing in self.articulations):
+            raise ValidationError(f"duplicate articulation name: {articulation.name!r}")
+        self.articulations.append(articulation)
+        return articulation
 
     def get_part(self, part: PartRef) -> Part:
-        name = coerce_part_name(part, field="part")
+        name = _coerce_part_name(part, field_name="part")
         for existing in self.parts:
             if existing.name == name:
                 return existing
         raise ValidationError(f"unknown part: {name!r}")
 
+    def get_articulation(self, name: str | Articulation) -> Articulation:
+        key = (
+            name.name
+            if isinstance(name, Articulation)
+            else _as_name(name, field_name="articulation name")
+        )
+        for articulation in self.articulations:
+            if articulation.name == key:
+                return articulation
+        raise ValidationError(f"unknown articulation: {key!r}")
+
     def validate(self) -> None:
+        self.name = _as_name(self.name, field_name="object name")
         if not self.parts:
             raise ValidationError("object must contain at least one part")
 
-        part_names = {part.name for part in self.parts}
-        joint_names = {joint.name for joint in self.joints}
-        if len(part_names) != len(self.parts):
+        if any(not isinstance(part, Part) for part in self.parts):
+            raise ValidationError("object parts must be Part instances")
+        for part in self.parts:
+            part.validate()
+        part_names = [part.name for part in self.parts]
+        if len(set(part_names)) != len(part_names):
             raise ValidationError("part names must be unique")
-        if len(joint_names) != len(self.joints):
-            raise ValidationError("joint names must be unique")
 
-        child_parent: dict[str, str] = {}
-        children: dict[str, list[str]] = {name: [] for name in part_names}
-        for joint in self.joints:
-            joint.validate()
-            for role, part in (("parent", joint.parent), ("child", joint.child)):
-                if part not in part_names:
-                    raise ValidationError(
-                        f"joint {joint.name!r} references missing {role} part {part!r}"
-                    )
-            if joint.child in child_parent:
+        if any(not isinstance(articulation, Articulation) for articulation in self.articulations):
+            raise ValidationError("object articulations must be Articulation instances")
+        for articulation in self.articulations:
+            articulation.validate()
+        articulation_names = [articulation.name for articulation in self.articulations]
+        if len(set(articulation_names)) != len(articulation_names):
+            raise ValidationError("articulation names must be unique")
+
+        part_name_set = set(part_names)
+        child_to_articulation: dict[str, Articulation] = {}
+        children: dict[str, list[str]] = {name: [] for name in part_name_set}
+        for articulation in self.articulations:
+            if articulation.parent not in part_name_set:
                 raise ValidationError(
-                    f"part {joint.child!r} has multiple parent joints: "
-                    f"{child_parent[joint.child]!r} and {joint.name!r}"
+                    f"articulation {articulation.name!r} references missing parent part "
+                    f"{articulation.parent!r}"
                 )
-            child_parent[joint.child] = joint.name
-            children[joint.parent].append(joint.child)
+            if articulation.child not in part_name_set:
+                raise ValidationError(
+                    f"articulation {articulation.name!r} references missing child part "
+                    f"{articulation.child!r}"
+                )
+            previous = child_to_articulation.get(articulation.child)
+            if previous is not None:
+                raise ValidationError(
+                    f"part {articulation.child!r} has multiple parent articulations: "
+                    f"{previous.name!r} and {articulation.name!r}"
+                )
+            child_to_articulation[articulation.child] = articulation
+            children[articulation.parent].append(articulation.child)
 
-        if len(part_names) <= 1:
-            return
-
-        roots = sorted(part_names - set(child_parent))
+        roots = sorted(part_name_set - set(child_to_articulation))
         if not roots:
             raise ValidationError("object has no root part")
         if len(roots) > 1:
@@ -219,40 +208,50 @@ class ArticulatedObject:
         visited: set[str] = set()
         stack = roots[:]
         while stack:
-            part = stack.pop()
-            if part in visited:
+            part_name = stack.pop()
+            if part_name in visited:
                 continue
-            visited.add(part)
-            stack.extend(children[part])
-
-        if visited != part_names:
+            visited.add(part_name)
+            stack.extend(children[part_name])
+        if visited != part_name_set:
             raise ValidationError(
-                f"object contains unreachable parts: {sorted(part_names - visited)}"
+                f"object contains unreachable parts: {sorted(part_name_set - visited)}"
             )
 
 
-def _normalize_units(value: str | None) -> str:
-    if value is None or not str(value).strip():
-        raise ValidationError("ArticulatedObject must declare units")
-    units = str(value).strip().lower()
-    if units not in UNITS_TO_METERS:
-        supported = ", ".join(sorted(UNITS_TO_METERS))
-        raise ValidationError(f"unsupported units {value!r}; expected one of: {supported}")
-    return units
+def _validate_geometry(shape: object, *, context: str) -> None:
+    if isinstance(shape, Shape):
+        is_null = shape.is_null
+        if is_null() if callable(is_null) else is_null:
+            raise ValidationError(f"{context} must be non-empty")
+        is_valid = shape.is_valid
+        if not (is_valid() if callable(is_valid) else is_valid):
+            raise ValidationError(f"{context} must be a valid build123d Shape")
+        return
+    if isinstance(shape, MeshGeometry):
+        try:
+            shape.validate()
+        except (ValidationError, TypeError, ValueError, OverflowError) as exc:
+            raise ValidationError(f"{context} is not valid mesh geometry: {exc}") from exc
+        if not shape.vertices or not shape.faces:
+            raise ValidationError(f"{context} must be non-empty")
+        return
+    raise ValidationError(f"{context} must be a build123d Shape or MeshGeometry")
 
 
-def _as_color(value: ColorLike, *, field: str) -> Color:
+def _as_color(value: Sequence[float], *, field_name: str) -> Color:
+    if isinstance(value, (str, bytes)):
+        raise ValidationError(f"{field_name} must have 3 or 4 numeric values")
     try:
         raw = tuple(float(component) for component in value)
-    except (TypeError, ValueError) as exc:
-        raise ValidationError(f"{field} must have 3 or 4 numeric values") from exc
-
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValidationError(f"{field_name} must have 3 or 4 numeric values") from exc
     if len(raw) == 3:
         raw = (*raw, 1.0)
     if len(raw) != 4:
-        raise ValidationError(f"{field} must have 3 or 4 numeric values")
+        raise ValidationError(f"{field_name} must have 3 or 4 numeric values")
     if any(not math.isfinite(component) for component in raw):
-        raise ValidationError(f"{field} values must be finite")
+        raise ValidationError(f"{field_name} values must be finite")
     if any(component < 0.0 or component > 1.0 for component in raw):
-        raise ValidationError(f"{field} values must be between 0.0 and 1.0")
+        raise ValidationError(f"{field_name} values must be between 0.0 and 1.0")
     return raw

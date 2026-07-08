@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -10,120 +11,158 @@ from mini_articraft.errors import ValidationError
 Vec3: TypeAlias = tuple[float, float, float]
 
 
-class JointType(StrEnum):
+class ArticulationType(StrEnum):
     FIXED = "fixed"
     REVOLUTE = "revolute"
     CONTINUOUS = "continuous"
     PRISMATIC = "prismatic"
 
 
-def as_vec3(value: Sequence[float], *, field: str) -> Vec3:
+def _as_vec3(value: Sequence[float], *, field_name: str) -> Vec3:
+    if isinstance(value, (str, bytes)):
+        raise ValidationError(f"{field_name} must have 3 numeric values")
     try:
-        x, y, z = value
-        return (float(x), float(y), float(z))
-    except (TypeError, ValueError) as exc:
-        raise ValidationError(f"{field} must have 3 numeric values") from exc
+        values = tuple(float(component) for component in value)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValidationError(f"{field_name} must have 3 numeric values") from exc
+    if len(values) != 3:
+        raise ValidationError(f"{field_name} must have 3 numeric values")
+    if any(not math.isfinite(component) for component in values):
+        raise ValidationError(f"{field_name} values must be finite")
+    return values
 
 
-def coerce_part_name(value: str | object, *, field: str) -> str:
-    name = value if isinstance(value, str) else getattr(value, "name", None)
-    if not isinstance(name, str):
-        raise ValidationError(f"{field} must be a part name or Part")
-
-    name = name.strip()
+def _as_name(value: object, *, field_name: str) -> str:
+    if not isinstance(value, str):
+        raise ValidationError(f"{field_name} must be a string")
+    name = value.strip()
     if not name:
-        raise ValidationError(f"{field} must be non-empty")
+        raise ValidationError(f"{field_name} must be non-empty")
     return name
 
 
-@dataclass
-class Frame:
+def _coerce_part_name(value: object, *, field_name: str) -> str:
+    if isinstance(value, str):
+        return _as_name(value, field_name=field_name)
+    return _as_name(getattr(value, "name", None), field_name=field_name)
+
+
+def _coerce_articulation_type(value: ArticulationType | str) -> ArticulationType:
+    if isinstance(value, ArticulationType):
+        return value
+    try:
+        return ArticulationType(str(value))
+    except ValueError as exc:
+        raise ValidationError(f"unknown articulation type: {value!r}") from exc
+
+
+@dataclass(frozen=True)
+class Origin:
+    """An articulation frame in its parent part, in meters and radians."""
+
     xyz: Vec3 = (0.0, 0.0, 0.0)
     rpy: Vec3 = (0.0, 0.0, 0.0)
 
     def __post_init__(self) -> None:
-        self.xyz = as_vec3(self.xyz, field="frame.xyz")
-        self.rpy = as_vec3(self.rpy, field="frame.rpy")
+        object.__setattr__(self, "xyz", _as_vec3(self.xyz, field_name="origin.xyz"))
+        object.__setattr__(self, "rpy", _as_vec3(self.rpy, field_name="origin.rpy"))
 
 
-@dataclass
-class JointLimits:
-    lower: float
-    upper: float
+@dataclass(frozen=True)
+class MotionLimits:
+    """Limits for one rotational or linear degree of freedom."""
+
     effort: float = 1.0
     velocity: float = 1.0
+    lower: float | None = None
+    upper: float | None = None
 
     def __post_init__(self) -> None:
-        self.lower = float(self.lower)
-        self.upper = float(self.upper)
-        self.effort = _positive(self.effort, "joint limit effort")
-        self.velocity = _positive(self.velocity, "joint limit velocity")
-        if self.lower > self.upper:
-            raise ValidationError("joint limit lower value cannot exceed upper value")
-
-
-@dataclass
-class ContinuousLimits:
-    effort: float = 1.0
-    velocity: float = 1.0
-
-    def __post_init__(self) -> None:
-        self.effort = _positive(self.effort, "continuous joint effort")
-        self.velocity = _positive(self.velocity, "continuous joint velocity")
-
-
-def as_position_limits(value: tuple[float, float], *, field: str) -> JointLimits:
-    if not isinstance(value, tuple) or len(value) != 2:
-        raise ValidationError(f"{field} must be a (lower, upper) tuple")
-    lower, upper = value
-    return JointLimits(lower=lower, upper=upper)
+        effort = _positive_finite(self.effort, field_name="motion limit effort")
+        velocity = _positive_finite(self.velocity, field_name="motion limit velocity")
+        lower = _optional_finite(self.lower, field_name="motion limit lower")
+        upper = _optional_finite(self.upper, field_name="motion limit upper")
+        if lower is not None and upper is not None and lower > upper:
+            raise ValidationError("motion limit lower value cannot exceed upper value")
+        object.__setattr__(self, "effort", effort)
+        object.__setattr__(self, "velocity", velocity)
+        object.__setattr__(self, "lower", lower)
+        object.__setattr__(self, "upper", upper)
 
 
 @dataclass(eq=False)
-class Joint:
+class Articulation:
     name: str
-    type: JointType
+    articulation_type: ArticulationType | str
     parent: str
     child: str
-    frame: Frame = field(default_factory=Frame)
+    origin: Origin = field(default_factory=Origin)
     axis: Vec3 = (0.0, 0.0, 1.0)
-    limits: JointLimits | ContinuousLimits | None = None
+    motion_limits: MotionLimits | None = None
 
     def __post_init__(self) -> None:
-        self.name = str(self.name).strip()
-        if not self.name:
-            raise ValidationError("joint name must be non-empty")
-        if not isinstance(self.frame, Frame):
-            raise ValidationError("joint frame must be a Frame")
-        if not isinstance(self.type, JointType):
-            raise ValidationError("joint type must be a JointType")
-
-        self.parent = coerce_part_name(self.parent, field="parent")
-        self.child = coerce_part_name(self.child, field="child")
-        self.axis = as_vec3(self.axis, field="joint.axis")
+        self.validate()
 
     def validate(self) -> None:
+        self.name = _as_name(self.name, field_name="articulation name")
+        self.articulation_type = _coerce_articulation_type(self.articulation_type)
+        self.parent = _coerce_part_name(self.parent, field_name="parent")
+        self.child = _coerce_part_name(self.child, field_name="child")
         if self.parent == self.child:
-            raise ValidationError(f"joint {self.name!r} parent and child cannot match")
-        if self.type == JointType.FIXED:
-            if self.limits is not None:
-                raise ValidationError(f"fixed joint {self.name!r} cannot have limits")
+            raise ValidationError(f"articulation {self.name!r} parent and child cannot be the same")
+        if not isinstance(self.origin, Origin):
+            raise ValidationError(f"articulation {self.name!r} origin must be an Origin")
+        self.axis = _as_vec3(self.axis, field_name=f"articulation {self.name!r} axis")
+        if self.motion_limits is not None and not isinstance(self.motion_limits, MotionLimits):
+            raise ValidationError(
+                f"articulation {self.name!r} motion_limits must be MotionLimits or None"
+            )
+
+        if self.articulation_type == ArticulationType.FIXED:
+            if self.motion_limits is not None:
+                raise ValidationError(
+                    f"fixed articulation {self.name!r} cannot include motion limits"
+                )
             return
 
-        if not any(self.axis):
-            raise ValidationError(f"joint {self.name!r} axis must be non-zero")
-        if self.type == JointType.CONTINUOUS:
-            if not isinstance(self.limits, ContinuousLimits):
-                raise ValidationError(f"continuous joint {self.name!r} must use ContinuousLimits")
+        if math.hypot(*self.axis) == 0.0:
+            raise ValidationError(f"articulation {self.name!r} axis must be non-zero")
+
+        if self.motion_limits is None:
+            raise ValidationError(
+                f"articulation {self.name!r} must include motion_limits=MotionLimits(...)"
+            )
+        if self.articulation_type == ArticulationType.CONTINUOUS:
+            if self.motion_limits.lower is not None or self.motion_limits.upper is not None:
+                raise ValidationError(
+                    f"continuous articulation {self.name!r} cannot include lower or upper limits"
+                )
             return
-        if not isinstance(self.limits, JointLimits):
-            raise ValidationError(f"joint {self.name!r} must include limits")
+
+        if self.motion_limits.lower is None or self.motion_limits.upper is None:
+            raise ValidationError(
+                f"articulation {self.name!r} requires lower and upper motion limits"
+            )
 
 
-def _positive(value: object, field: str) -> float:
-    if not isinstance(value, (int, float, str)):
-        raise ValidationError(f"{field} must be a positive number")
-    number = float(value)
-    if number <= 0.0:
-        raise ValidationError(f"{field} must be positive")
-    return number
+def _optional_finite(value: object | None, *, field_name: str) -> float | None:
+    if value is None:
+        return None
+    return _finite(value, field_name=field_name)
+
+
+def _positive_finite(value: object, *, field_name: str) -> float:
+    result = _finite(value, field_name=field_name)
+    if result <= 0.0:
+        raise ValidationError(f"{field_name} must be positive")
+    return result
+
+
+def _finite(value: object, *, field_name: str) -> float:
+    try:
+        result = float(value)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValidationError(f"{field_name} must be numeric") from exc
+    if not math.isfinite(result):
+        raise ValidationError(f"{field_name} must be finite")
+    return result

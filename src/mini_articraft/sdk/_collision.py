@@ -5,15 +5,18 @@ from dataclasses import dataclass
 from typing import TypeAlias
 
 import fcl
+import manifold3d
 import numpy as np
 import trimesh
 from build123d.topology import Shape
 
 from mini_articraft.errors import ValidationError
-from mini_articraft.sdk.joints import Frame, Joint, JointType
-from mini_articraft.sdk.object import ArticulatedObject, Build123dShape
+from mini_articraft.sdk.joints import Articulation, ArticulationType, Origin
+from mini_articraft.sdk.mesh import MeshGeometry
+from mini_articraft.sdk.object import ArticulatedObject, Geometry
 
 Vec3: TypeAlias = tuple[float, float, float]
+Bounds: TypeAlias = tuple[Vec3, Vec3]
 Mat4: TypeAlias = np.ndarray
 
 
@@ -29,14 +32,16 @@ class CollisionQuery:
     part_a: str
     part_b: str
     collided: bool
+    shape_a: str | None = None
+    shape_b: str | None = None
     contacts: tuple[ContactInfo, ...] = ()
+    overlap_depth: Vec3 | None = None
+    overlap_volume: float = 0.0
 
     @property
     def max_depth(self) -> float | None:
         depths = [contact.depth for contact in self.contacts if contact.depth is not None]
-        if not depths:
-            return None
-        return max(depths)
+        return max(depths) if depths else None
 
 
 @dataclass(frozen=True)
@@ -45,6 +50,8 @@ class DistanceQuery:
     part_b: str
     distance: float
     collided: bool
+    shape_a: str | None = None
+    shape_b: str | None = None
     nearest_a: Vec3 | None = None
     nearest_b: Vec3 | None = None
     contacts: tuple[ContactInfo, ...] = ()
@@ -60,21 +67,26 @@ class GeometryConnectivityFinding:
 
 
 @dataclass(frozen=True)
-class _PartMesh:
+class _LocalMesh:
     mesh: trimesh.Trimesh
     fcl_model: object
 
 
 @dataclass(frozen=True)
-class _GeometryComponent:
-    name: str
-    shape: Shape
+class _CollisionEntry:
+    part_name: str
+    shape_name: str
+    obj: object
+    bounds: Bounds
+    world_vertices: np.ndarray
+    world_mesh: trimesh.Trimesh
 
 
 @dataclass(frozen=True)
-class _CollisionEntry:
-    part_name: str
+class _GeometryComponent:
+    name: str
     obj: object
+    mesh: trimesh.Trimesh
 
 
 class MeshCollisionKernel:
@@ -83,51 +95,57 @@ class MeshCollisionKernel:
             raise ValidationError("mesh_tolerance must be a positive finite number")
         self.model = model
         self.mesh_tolerance = float(mesh_tolerance)
-        self._part_mesh_cache: dict[tuple[str, int, float], _PartMesh] = {}
-        self._component_cache: dict[tuple[str, int, float], tuple[_GeometryComponent, ...]] = {}
+        self._mesh_cache: dict[tuple[object, ...], _LocalMesh] = {}
 
-    def part_world_position(
-        self,
-        part_name: str,
-        pose: dict[str, float],
-    ) -> Vec3 | None:
-        transform = self.world_transforms(pose).get(part_name)
-        if transform is None:
-            return None
-        return _array_to_vec3(transform[:3, 3])
-
-    def part_world_vertices(self, part_name: str, pose: dict[str, float]) -> np.ndarray:
-        mesh = self._part_mesh(part_name).mesh
+    def part_world_position(self, part_name: str, pose: dict[str, float]) -> Vec3:
         transform = self.world_transforms(pose).get(part_name)
         if transform is None:
             raise ValidationError(f"unknown part: {part_name!r}")
-        return _transform_points(np.asarray(mesh.vertices, dtype=np.float64), transform)
+        return _array_to_vec3(transform[:3, 3]) or (0.0, 0.0, 0.0)
+
+    def part_world_vertices(self, part_name: str, pose: dict[str, float]) -> np.ndarray:
+        entries = self._selector_entries(part_name, None, pose)
+        vertices = [entry.world_vertices for entry in entries]
+        if not vertices:
+            raise ValidationError(f"part {part_name!r} has no geometry")
+        # Bounds vertices are sufficient for all projection and bounds checks.
+        return np.concatenate(vertices, axis=0)
+
+    def part_world_bounds(self, part_name: str, pose: dict[str, float]) -> Bounds:
+        return _points_bounds(self.part_world_vertices(part_name, pose))
+
+    def shape_world_bounds(
+        self,
+        part_name: str,
+        shape_name: str,
+        pose: dict[str, float],
+    ) -> Bounds:
+        return self._selector_entries(part_name, shape_name, pose)[0].bounds
 
     def world_transforms(self, pose: dict[str, float]) -> dict[str, Mat4]:
         parts = {part.name: part for part in self.model.parts}
-        child_joints: dict[str, list[Joint]] = {name: [] for name in parts}
+        children: dict[str, list[Articulation]] = {name: [] for name in parts}
         child_names: set[str] = set()
-        for joint in self.model.joints:
-            if joint.parent in parts and joint.child in parts:
-                child_joints[joint.parent].append(joint)
-                child_names.add(joint.child)
+        for articulation in self.model.articulations:
+            if articulation.parent in parts and articulation.child in parts:
+                children[articulation.parent].append(articulation)
+                child_names.add(articulation.child)
 
         roots = [name for name in parts if name not in child_names]
         transforms: dict[str, Mat4] = {}
         stack = [(root, _identity()) for root in roots]
         while stack:
             part_name, transform = stack.pop()
+            if part_name in transforms:
+                continue
             transforms[part_name] = transform
-            for joint in child_joints.get(part_name, []):
+            for articulation in children.get(part_name, []):
                 child_transform = (
                     transform
-                    @ _frame_matrix(joint.frame)
-                    @ _motion_matrix(
-                        joint,
-                        float(pose.get(joint.name, 0.0)),
-                    )
+                    @ _origin_matrix(articulation.origin)
+                    @ _motion_matrix(articulation, float(pose.get(articulation.name, 0.0)))
                 )
-                stack.append((joint.child, child_transform))
+                stack.append((articulation.child, child_transform))
         return transforms
 
     def collision_between(
@@ -136,12 +154,25 @@ class MeshCollisionKernel:
         part_b: str,
         pose: dict[str, float],
         *,
+        shape_a: str | None = None,
+        shape_b: str | None = None,
         max_contacts: int = 16,
     ) -> CollisionQuery:
-        transforms = self.world_transforms(pose)
-        entry_a = self._collision_entry(part_a, transforms)
-        entry_b = self._collision_entry(part_b, transforms)
-        return _collide_entries(entry_a, entry_b, max_contacts=max_contacts)
+        pairs = self._entry_pairs(part_a, part_b, shape_a, shape_b, pose)
+        collisions = [
+            result
+            for entry_a, entry_b in pairs
+            if (result := _collide_entries(entry_a, entry_b, max_contacts=max_contacts)).collided
+        ]
+        if collisions:
+            return max(collisions, key=_collision_rank)
+        return CollisionQuery(
+            part_a=part_a,
+            part_b=part_b,
+            shape_a=shape_a,
+            shape_b=shape_b,
+            collided=False,
+        )
 
     def distance_between(
         self,
@@ -149,12 +180,18 @@ class MeshCollisionKernel:
         part_b: str,
         pose: dict[str, float],
         *,
+        shape_a: str | None = None,
+        shape_b: str | None = None,
         max_contacts: int = 16,
     ) -> DistanceQuery:
-        transforms = self.world_transforms(pose)
-        entry_a = self._collision_entry(part_a, transforms)
-        entry_b = self._collision_entry(part_b, transforms)
-        return _distance_entries(entry_a, entry_b, max_contacts=max_contacts)
+        pairs = self._entry_pairs(part_a, part_b, shape_a, shape_b, pose)
+        distances = [
+            _distance_entries(entry_a, entry_b, max_contacts=max_contacts)
+            for entry_a, entry_b in pairs
+        ]
+        if not distances:
+            raise ValidationError("geometry selectors must identify two different shapes")
+        return min(distances, key=lambda item: item.distance)
 
     def pair_distances(
         self,
@@ -162,65 +199,47 @@ class MeshCollisionKernel:
         *,
         max_contacts: int = 16,
     ) -> list[DistanceQuery]:
-        transforms = self.world_transforms(pose)
-        entries = [self._collision_entry(part.name, transforms) for part in self.model.parts]
+        parts = [part.name for part in self.model.parts]
         return [
-            _distance_entries(entry_a, entry_b, max_contacts=max_contacts)
-            for index, entry_a in enumerate(entries)
-            for entry_b in entries[index + 1 :]
+            self.distance_between(part_a, part_b, pose, max_contacts=max_contacts)
+            for index, part_a in enumerate(parts)
+            for part_b in parts[index + 1 :]
         ]
 
-    def colliding_pairs(
+    def meaningful_overlaps(
         self,
         pose: dict[str, float],
         *,
-        allowed_pairs: set[tuple[str, str]] | None = None,
+        overlap_tol: float,
+        overlap_volume_tol: float,
         max_contacts: int = 16,
     ) -> list[CollisionQuery]:
-        transforms = self.world_transforms(pose)
-        entries = [self._collision_entry(part.name, transforms) for part in self.model.parts]
-        manager = fcl.DynamicAABBTreeCollisionManager()
-        manager.registerObjects([entry.obj for entry in entries])
-        manager.setup()
-
-        by_id = {id(entry.obj): entry for entry in entries}
-        seen: set[tuple[str, str]] = set()
+        entries = self._all_entries(pose)
         found: list[CollisionQuery] = []
-        allowed = allowed_pairs or set()
-        unmapped_callback_pair = False
-
-        def callback(obj_a: object, obj_b: object, _data: object) -> bool:
-            nonlocal unmapped_callback_pair
-            entry_a = _entry_for_object(obj_a, entries=entries, by_id=by_id)
-            entry_b = _entry_for_object(obj_b, entries=entries, by_id=by_id)
-            if entry_a is None or entry_b is None:
-                unmapped_callback_pair = True
-                return False
-            if entry_a.part_name == entry_b.part_name:
-                return False
-            key = _pair_key(entry_a.part_name, entry_b.part_name)
-            if key in seen or key in allowed:
-                return False
-            seen.add(key)
-            query = _collide_entries(entry_a, entry_b, max_contacts=max_contacts)
-            if query.collided:
-                found.append(query)
-            return False
-
-        manager.collide(None, callback)
-        if unmapped_callback_pair:
-            # python-fcl may hand callbacks wrapper objects that cannot be mapped
-            # back to the registered Python objects. Keep the manager call for
-            # parity with the FCL path, then recover exact details directly.
-            for index, entry_a in enumerate(entries):
-                for entry_b in entries[index + 1 :]:
-                    key = _pair_key(entry_a.part_name, entry_b.part_name)
-                    if key in seen or key in allowed:
-                        continue
-                    seen.add(key)
-                    query = _collide_entries(entry_a, entry_b, max_contacts=max_contacts)
-                    if query.collided:
-                        found.append(query)
+        for index, entry_a in enumerate(entries):
+            for entry_b in entries[index + 1 :]:
+                if entry_a.part_name == entry_b.part_name:
+                    continue
+                overlap_depth = _bounds_overlap_depth(entry_a.bounds, entry_b.bounds)
+                overlap_volume = math.prod(overlap_depth)
+                if not all(depth > overlap_tol for depth in overlap_depth):
+                    continue
+                if overlap_volume <= overlap_volume_tol:
+                    continue
+                query = _collide_entries(entry_a, entry_b, max_contacts=max_contacts)
+                if query.collided:
+                    found.append(
+                        CollisionQuery(
+                            part_a=query.part_a,
+                            part_b=query.part_b,
+                            shape_a=query.shape_a,
+                            shape_b=query.shape_b,
+                            collided=True,
+                            contacts=query.contacts,
+                            overlap_depth=overlap_depth,
+                            overlap_volume=overlap_volume,
+                        )
+                    )
         return found
 
     def disconnected_geometry_islands(
@@ -233,7 +252,6 @@ class MeshCollisionKernel:
             components = self._geometry_components(part.name)
             if len(components) <= 1:
                 continue
-
             groups, nearest = _component_connectivity(components, contact_tol=contact_tol)
             largest = max(groups, key=lambda group: (len(group), -min(group)))
             if len(largest) == len(components):
@@ -246,12 +264,11 @@ class MeshCollisionKernel:
                 nearest_index, distance = nearest.get(index, (None, None))
                 if nearest_index is None or distance is None:
                     disconnected.append(component.name)
-                    continue
-                disconnected.append(
-                    f"{component.name} nearest={components[nearest_index].name} "
-                    f"distance={distance:.6g}"
-                )
-
+                else:
+                    disconnected.append(
+                        f"{component.name} nearest={components[nearest_index].name} "
+                        f"distance={distance:.6g}"
+                    )
             findings.append(
                 GeometryConnectivityFinding(
                     part=part.name,
@@ -263,46 +280,103 @@ class MeshCollisionKernel:
             )
         return findings
 
-    def _collision_entry(self, part_name: str, transforms: dict[str, Mat4]) -> _CollisionEntry:
-        part_mesh = self._part_mesh(part_name)
-        transform = transforms.get(part_name)
-        if transform is None:
-            raise ValidationError(f"unknown part: {part_name!r}")
-        obj = fcl.CollisionObject(part_mesh.fcl_model, _fcl_transform(transform))
-        return _CollisionEntry(part_name=part_name, obj=obj)
+    def _all_entries(self, pose: dict[str, float]) -> list[_CollisionEntry]:
+        transforms = self.world_transforms(pose)
+        return [
+            self._entry(part.name, shape.name, shape.geometry, transforms[part.name])
+            for part in self.model.parts
+            for shape in part._iter_shapes()
+        ]
 
-    def _part_mesh(self, part_name: str) -> _PartMesh:
+    def _selector_entries(
+        self,
+        part_name: str,
+        shape_name: str | None,
+        pose: dict[str, float],
+    ) -> list[_CollisionEntry]:
         part = self.model.get_part(part_name)
-        cache_key = (part.name, id(part.shape), self.mesh_tolerance)
-        cached = self._part_mesh_cache.get(cache_key)
+        transform = self.world_transforms(pose).get(part.name)
+        if transform is None:
+            raise ValidationError(f"unknown part: {part.name!r}")
+        if shape_name is not None:
+            shape_name = str(shape_name).strip()
+            geometry = part.get_shape(shape_name)
+            return [self._entry(part.name, shape_name, geometry, transform)]
+        return [
+            self._entry(part.name, shape.name, shape.geometry, transform)
+            for shape in part._iter_shapes()
+        ]
+
+    def _entry_pairs(
+        self,
+        part_a: str,
+        part_b: str,
+        shape_a: str | None,
+        shape_b: str | None,
+        pose: dict[str, float],
+    ) -> list[tuple[_CollisionEntry, _CollisionEntry]]:
+        entries_a = self._selector_entries(part_a, shape_a, pose)
+        entries_b = self._selector_entries(part_b, shape_b, pose)
+        return [
+            (entry_a, entry_b)
+            for entry_a in entries_a
+            for entry_b in entries_b
+            if not (
+                entry_a.part_name == entry_b.part_name and entry_a.shape_name == entry_b.shape_name
+            )
+        ]
+
+    def _entry(
+        self,
+        part_name: str,
+        shape_name: str,
+        geometry: Geometry,
+        transform: Mat4,
+    ) -> _CollisionEntry:
+        local_mesh = self._local_mesh(geometry)
+        world_vertices = _transform_points(
+            np.asarray(local_mesh.mesh.vertices, dtype=np.float64), transform
+        )
+        world_mesh = trimesh.Trimesh(
+            vertices=world_vertices,
+            faces=np.asarray(local_mesh.mesh.faces, dtype=np.int64),
+            process=False,
+        )
+        return _CollisionEntry(
+            part_name=part_name,
+            shape_name=shape_name,
+            obj=fcl.CollisionObject(local_mesh.fcl_model, _fcl_transform(transform)),
+            bounds=_points_bounds(world_vertices),
+            world_vertices=world_vertices,
+            world_mesh=world_mesh,
+        )
+
+    def _local_mesh(self, geometry: Geometry) -> _LocalMesh:
+        cache_key = _geometry_cache_key(geometry, self.mesh_tolerance)
+        cached = self._mesh_cache.get(cache_key)
         if cached is not None:
             return cached
-
-        shape = _build123d_shape(part.shape)
-        mesh = _shape_to_mesh(shape, self.mesh_tolerance)
-        bvh = _mesh_to_bvh(mesh)
-        cached = _PartMesh(mesh=mesh, fcl_model=bvh)
-        self._part_mesh_cache[cache_key] = cached
+        mesh = _geometry_to_mesh(geometry, self.mesh_tolerance)
+        cached = _LocalMesh(mesh=mesh, fcl_model=_mesh_to_bvh(mesh))
+        self._mesh_cache[cache_key] = cached
         return cached
 
     def _geometry_components(self, part_name: str) -> tuple[_GeometryComponent, ...]:
         part = self.model.get_part(part_name)
-        cache_key = (part.name, id(part.shape), self.mesh_tolerance)
-        cached = self._component_cache.get(cache_key)
-        if cached is not None:
-            return cached
-
         components: list[_GeometryComponent] = []
-        for index, shape in enumerate(_build123d_components(part.shape), start=1):
-            components.append(
-                _GeometryComponent(
-                    name=f"solid_{index:03d}",
-                    shape=shape,
+        for shape in part._iter_shapes():
+            mesh = self._local_mesh(shape.geometry).mesh
+            split = _split_mesh(mesh)
+            for index, component in enumerate(split, start=1):
+                suffix = "" if len(split) == 1 else f"#{index:03d}"
+                components.append(
+                    _GeometryComponent(
+                        name=f"{shape.name}{suffix}",
+                        obj=fcl.CollisionObject(_mesh_to_bvh(component), fcl.Transform()),
+                        mesh=component,
+                    )
                 )
-            )
-        cached = tuple(components)
-        self._component_cache[cache_key] = cached
-        return cached
+        return tuple(components)
 
 
 def _component_connectivity(
@@ -315,8 +389,12 @@ def _component_connectivity(
     for index, component in enumerate(components):
         for other_index in range(index + 1, len(components)):
             other = components[other_index]
-            distance = float(component.shape.distance(other.shape))
-            if distance <= contact_tol:
+            collided, distance = _object_distance(component.obj, other.obj)
+            if not collided and _meshes_have_overlapping_bounds(component.mesh, other.mesh):
+                solid_intersection = _mesh_intersection_volume(component.mesh, other.mesh)
+                if solid_intersection is not None and solid_intersection > 0.0:
+                    collided, distance = True, 0.0
+            if collided or distance <= contact_tol:
                 adjacency[index].add(other_index)
                 adjacency[other_index].add(index)
             _remember_nearest(nearest, index, other_index, distance)
@@ -333,10 +411,9 @@ def _component_connectivity(
             current = stack.pop()
             group.add(current)
             for neighbor in sorted(adjacency[current]):
-                if neighbor not in remaining:
-                    continue
-                remaining.remove(neighbor)
-                stack.append(neighbor)
+                if neighbor in remaining:
+                    remaining.remove(neighbor)
+                    stack.append(neighbor)
         groups.append(group)
     return groups, nearest
 
@@ -364,12 +441,20 @@ def _collide_entries(
     )
     result = fcl.CollisionResult()
     collided = int(fcl.collide(entry_a.obj, entry_b.obj, request, result)) > 0
+    overlap_depth = _bounds_overlap_depth(entry_a.bounds, entry_b.bounds)
+    if not collided and all(depth > 0.0 for depth in overlap_depth):
+        solid_intersection = _solid_intersection_volume(entry_a, entry_b)
+        collided = solid_intersection is not None and solid_intersection > 0.0
     contacts = tuple(_contact_info(contact) for contact in getattr(result, "contacts", []) or [])
     return CollisionQuery(
         part_a=entry_a.part_name,
         part_b=entry_b.part_name,
+        shape_a=entry_a.shape_name,
+        shape_b=entry_b.shape_name,
         collided=collided,
         contacts=contacts,
+        overlap_depth=overlap_depth,
+        overlap_volume=math.prod(overlap_depth),
     )
 
 
@@ -384,6 +469,8 @@ def _distance_entries(
         return DistanceQuery(
             part_a=entry_a.part_name,
             part_b=entry_b.part_name,
+            shape_a=entry_a.shape_name,
+            shape_b=entry_b.shape_name,
             distance=0.0,
             collided=True,
             contacts=collision.contacts,
@@ -401,6 +488,8 @@ def _distance_entries(
     return DistanceQuery(
         part_a=entry_a.part_name,
         part_b=entry_b.part_name,
+        shape_a=entry_a.shape_name,
+        shape_b=entry_b.shape_name,
         distance=distance,
         collided=False,
         nearest_a=nearest_a,
@@ -408,50 +497,99 @@ def _distance_entries(
     )
 
 
-def _entry_for_object(
-    obj: object,
-    *,
-    entries: list[_CollisionEntry],
-    by_id: dict[int, _CollisionEntry],
-) -> _CollisionEntry | None:
-    entry = by_id.get(id(obj))
-    if entry is not None:
-        return entry
-    for candidate in entries:
-        if candidate.obj is obj or candidate.obj == obj:
-            return candidate
-    return None
+def _object_distance(obj_a: object, obj_b: object) -> tuple[bool, float]:
+    collision_result = fcl.CollisionResult()
+    collided = int(fcl.collide(obj_a, obj_b, fcl.CollisionRequest(), collision_result)) > 0
+    if collided:
+        return True, 0.0
+    distance_result = fcl.DistanceResult()
+    distance = float(fcl.distance(obj_a, obj_b, fcl.DistanceRequest(), distance_result))
+    return False, distance
 
 
-def _build123d_shape(model: Build123dShape) -> Shape:
-    if isinstance(model, Shape):
-        return model
-    raise ValidationError("Unsupported build123d model type. Expected build123d Shape.")
+def _solid_intersection_volume(
+    entry_a: _CollisionEntry,
+    entry_b: _CollisionEntry,
+) -> float | None:
+    return _mesh_intersection_volume(entry_a.world_mesh, entry_b.world_mesh)
 
 
-def _build123d_components(model: Build123dShape) -> list[Shape]:
-    shape = _build123d_shape(model)
+def _meshes_have_overlapping_bounds(a: trimesh.Trimesh, b: trimesh.Trimesh) -> bool:
+    overlap = np.minimum(a.bounds[1], b.bounds[1]) - np.maximum(a.bounds[0], b.bounds[0])
+    return bool(np.all(overlap > 0.0))
+
+
+def _mesh_intersection_volume(
+    mesh_a: trimesh.Trimesh,
+    mesh_b: trimesh.Trimesh,
+) -> float | None:
+    if not mesh_a.is_watertight or not mesh_b.is_watertight:
+        return None
     try:
-        solids: list[Shape] = [solid for solid in shape.solids() if solid is not None]
+        manifold_a = manifold3d.Manifold(
+            manifold3d.Mesh(
+                np.asarray(mesh_a.vertices, dtype=np.float32),
+                np.asarray(mesh_a.faces, dtype=np.uint32),
+            )
+        )
+        manifold_b = manifold3d.Manifold(
+            manifold3d.Mesh(
+                np.asarray(mesh_b.vertices, dtype=np.float32),
+                np.asarray(mesh_b.faces, dtype=np.uint32),
+            )
+        )
+        if (
+            manifold_a.status() != manifold3d.Error.NoError
+            or manifold_b.status() != manifold3d.Error.NoError
+        ):
+            return None
+        intersection = manifold_a ^ manifold_b
+        if intersection.status() != manifold3d.Error.NoError or intersection.is_empty():
+            return 0.0
+        return abs(float(intersection.volume()))
     except Exception:
-        solids = []
-    if solids:
-        return solids
-    return [shape]
+        return None
 
 
-def _shape_to_mesh(shape: Shape, tolerance: float) -> trimesh.Trimesh:
-    vertices, faces = shape.tessellate(tolerance)
-    if not vertices or not faces:
-        raise ValidationError("build123d shape produced an empty collision mesh")
-    mesh = trimesh.Trimesh(
-        vertices=np.asarray([[v.X, v.Y, v.Z] for v in vertices], dtype=np.float64),
-        faces=np.asarray(faces, dtype=np.int32),
-        process=False,
-    )
+def _geometry_to_mesh(geometry: Geometry, tolerance: float) -> trimesh.Trimesh:
+    if isinstance(geometry, Shape):
+        vertices, faces = geometry.tessellate(tolerance)
+        if not vertices or not faces:
+            raise ValidationError("build123d shape produced an empty mesh")
+        raw_vertices = np.asarray([[v.X, v.Y, v.Z] for v in vertices], dtype=np.float64)
+        raw_faces = np.asarray(faces, dtype=np.int32)
+    elif isinstance(geometry, MeshGeometry):
+        geometry.validate()
+        raw_vertices = np.asarray(geometry.vertices, dtype=np.float64)
+        raw_faces = np.asarray(geometry.faces, dtype=np.int32)
+    else:
+        raise ValidationError("geometry must be a build123d Shape or MeshGeometry")
+    mesh = trimesh.Trimesh(vertices=raw_vertices, faces=raw_faces, process=False)
+    mesh.merge_vertices()
+    mesh.remove_unreferenced_vertices()
     if mesh.vertices.size == 0 or mesh.faces.size == 0:
-        raise ValidationError("build123d shape produced an empty collision mesh")
+        raise ValidationError("geometry produced an empty mesh")
     return mesh
+
+
+def _geometry_cache_key(geometry: Geometry, tolerance: float) -> tuple[object, ...]:
+    if isinstance(geometry, MeshGeometry):
+        return (
+            "mesh",
+            id(geometry),
+            hash(tuple(tuple(float(value) for value in vertex) for vertex in geometry.vertices)),
+            hash(tuple(tuple(int(value) for value in face) for face in geometry.faces)),
+            tolerance,
+        )
+    return ("build123d", id(geometry), hash(geometry), tolerance)
+
+
+def _split_mesh(mesh: trimesh.Trimesh) -> list[trimesh.Trimesh]:
+    try:
+        split = list(mesh.split(only_watertight=False))
+    except Exception:
+        split = []
+    return split or [mesh]
 
 
 def _mesh_to_bvh(mesh: trimesh.Trimesh) -> object:
@@ -468,17 +606,17 @@ def _identity() -> Mat4:
     return np.identity(4, dtype=np.float64)
 
 
-def _frame_matrix(frame: Frame) -> Mat4:
-    matrix = _rpy_matrix(frame.rpy)
-    matrix[:3, 3] = np.asarray(frame.xyz, dtype=np.float64)
+def _origin_matrix(origin: Origin) -> Mat4:
+    matrix = _rpy_matrix(origin.rpy)
+    matrix[:3, 3] = np.asarray(origin.xyz, dtype=np.float64)
     return matrix
 
 
-def _motion_matrix(joint: Joint, value: float) -> Mat4:
-    if joint.type == JointType.FIXED:
+def _motion_matrix(articulation: Articulation, value: float) -> Mat4:
+    if articulation.articulation_type == ArticulationType.FIXED:
         return _identity()
-    axis = _normalize(joint.axis)
-    if joint.type == JointType.PRISMATIC:
+    axis = _normalize(articulation.axis)
+    if articulation.articulation_type == ArticulationType.PRISMATIC:
         matrix = _identity()
         matrix[:3, 3] = axis * value
         return matrix
@@ -490,18 +628,9 @@ def _rpy_matrix(rpy: Vec3) -> Mat4:
     cx, sx = math.cos(roll), math.sin(roll)
     cy, sy = math.cos(pitch), math.sin(pitch)
     cz, sz = math.cos(yaw), math.sin(yaw)
-    rx = np.array(
-        [[1.0, 0.0, 0.0], [0.0, cx, -sx], [0.0, sx, cx]],
-        dtype=np.float64,
-    )
-    ry = np.array(
-        [[cy, 0.0, sy], [0.0, 1.0, 0.0], [-sy, 0.0, cy]],
-        dtype=np.float64,
-    )
-    rz = np.array(
-        [[cz, -sz, 0.0], [sz, cz, 0.0], [0.0, 0.0, 1.0]],
-        dtype=np.float64,
-    )
+    rx = np.array([[1.0, 0.0, 0.0], [0.0, cx, -sx], [0.0, sx, cx]])
+    ry = np.array([[cy, 0.0, sy], [0.0, 1.0, 0.0], [-sy, 0.0, cy]])
+    rz = np.array([[cz, -sz, 0.0], [sz, cz, 0.0], [0.0, 0.0, 1.0]])
     matrix = _identity()
     matrix[:3, :3] = rz @ ry @ rx
     return matrix
@@ -512,7 +641,8 @@ def _axis_angle_matrix(axis: np.ndarray, angle: float) -> Mat4:
     c = math.cos(angle)
     s = math.sin(angle)
     one_c = 1.0 - c
-    rotation = np.array(
+    matrix = _identity()
+    matrix[:3, :3] = np.array(
         [
             [c + x * x * one_c, x * y * one_c - z * s, x * z * one_c + y * s],
             [y * x * one_c + z * s, c + y * y * one_c, y * z * one_c - x * s],
@@ -520,29 +650,46 @@ def _axis_angle_matrix(axis: np.ndarray, angle: float) -> Mat4:
         ],
         dtype=np.float64,
     )
-    matrix = _identity()
-    matrix[:3, :3] = rotation
     return matrix
 
 
 def _normalize(axis: Vec3) -> np.ndarray:
     vector = np.asarray(axis, dtype=np.float64)
-    length = float(np.linalg.norm(vector))
+    length = math.hypot(*axis)
     if length <= 0.0:
-        raise ValidationError("joint axis must be non-zero")
+        raise ValidationError("articulation axis must be non-zero")
     return vector / length
 
 
 def _fcl_transform(matrix: Mat4) -> object:
-    rotation = np.ascontiguousarray(matrix[:3, :3], dtype=np.float64)
-    translation = np.ascontiguousarray(matrix[:3, 3], dtype=np.float64)
-    return fcl.Transform(rotation, translation)
+    return fcl.Transform(
+        np.ascontiguousarray(matrix[:3, :3], dtype=np.float64),
+        np.ascontiguousarray(matrix[:3, 3], dtype=np.float64),
+    )
 
 
 def _transform_points(points: np.ndarray, matrix: Mat4) -> np.ndarray:
-    hom = np.column_stack([points, np.ones(len(points), dtype=np.float64)])
-    transformed = hom @ matrix.T
-    return np.asarray(transformed[:, :3], dtype=np.float64)
+    homogeneous = np.column_stack([points, np.ones(len(points), dtype=np.float64)])
+    return np.asarray((homogeneous @ matrix.T)[:, :3], dtype=np.float64)
+
+
+def _points_bounds(points: np.ndarray) -> Bounds:
+    minimum = np.min(points, axis=0)
+    maximum = np.max(points, axis=0)
+    return (
+        (float(minimum[0]), float(minimum[1]), float(minimum[2])),
+        (float(maximum[0]), float(maximum[1]), float(maximum[2])),
+    )
+
+
+def _bounds_overlap_depth(bounds_a: Bounds, bounds_b: Bounds) -> Vec3:
+    return tuple(
+        max(
+            0.0,
+            min(bounds_a[1][axis], bounds_b[1][axis]) - max(bounds_a[0][axis], bounds_b[0][axis]),
+        )
+        for axis in range(3)
+    )  # type: ignore[return-value]
 
 
 def _contact_info(contact: object) -> ContactInfo:
@@ -569,9 +716,12 @@ def _optional_float(value: object) -> float | None:
         number = float(value)
     except ValueError:
         return None
-    if not math.isfinite(number):
-        return None
-    return number
+    return number if math.isfinite(number) else None
+
+
+def _collision_rank(query: CollisionQuery) -> tuple[float, float]:
+    overlap = query.overlap_depth or (0.0, 0.0, 0.0)
+    return (min(overlap), query.overlap_volume)
 
 
 def _pair_key(part_a: str, part_b: str) -> tuple[str, str]:
