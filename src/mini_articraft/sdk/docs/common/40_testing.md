@@ -1,13 +1,9 @@
-# Testing
+# Testing geometry and assemblies
 
-## Scope
+`TestContext` records checks against an `ArticulatedObject`. The checks use the same named
+shapes, part transforms, and meter scale that the USDZ exporter uses.
 
-Every generated `main.py` must define `run_tests() -> TestReport`.
-
-Use `run_tests()` for prompt specific checks. Compile adds baseline checks after
-the authored report is returned.
-
-## Required pattern
+Every `main.py` must define `run_tests()` and return a `TestReport`.
 
 ```python
 from mini_articraft.sdk import TestContext, TestReport
@@ -15,354 +11,379 @@ from mini_articraft.sdk import TestContext, TestReport
 
 def run_tests() -> TestReport:
     ctx = TestContext(object_model)
+    ctx.expect_contact("base", "arm", shape_a="mount", shape_b="post")
+    ctx.expect_gap(
+        "shade",
+        "bulb",
+        axis="z",
+        positive_shape="rim",
+        negative_shape="glass",
+        min_gap=0.002,
+        max_gap=0.008,
+    )
     return ctx.report()
 ```
 
-## `TestContext`
+Use authored checks for facts that are important to the requested object. The compiler adds the
+baseline checks described below. See [USDZ export](50_usdz_export.md) for the output that a
+passing report can produce.
+
+## Units and geometry
+
+All positions, distances, gaps, tolerances, and prismatic pose values use meters. Revolute and
+continuous pose values use radians.
+
+Collision and distance checks convert each shape to a triangle mesh. `MeshGeometry` uses its
+authored vertices and faces. A build123d shape is tessellated with the context's
+`mesh_tolerance`, which defaults to `0.001` meter.
+
+World bounds are axis aligned. Projection checks therefore measure world bounds, not the exact
+curved surface between those bounds.
+
+## Creating a context
 
 ```python
-ctx = TestContext(
-    model: ArticulatedObject,
-    seed: int = 0,
-    mesh_tolerance: float = 0.001,
+ctx = TestContext(object_model, mesh_tolerance=0.001)
+```
+
+`model` must be an `ArticulatedObject`. `mesh_tolerance` must be positive and finite.
+
+Part arguments accept a `Part` or its name. Shape arguments use the unique shape name within the
+given part. A missing part or shape raises `ValidationError`.
+
+## Reports
+
+### `TestFailure`
+
+```python
+TestFailure(name: str, details: str)
+```
+
+Each blocking failure has the recorded check name and a detail string.
+
+### `AllowedOverlap`
+
+```python
+AllowedOverlap(
+    part_a: str,
+    part_b: str,
+    reason: str,
+    shape_a: str | None = None,
+    shape_b: str | None = None,
 )
 ```
 
-`model` must be an `ArticulatedObject`.
+The report uses this record for each overlap allowance. The context sorts the two part names so
+the same pair has one stable representation. It swaps the shape names at the same time.
 
-`mesh_tolerance` controls build123d tessellation for mesh tests. It must be a
-positive finite number. Smaller values create denser meshes and slower checks.
-
-The default `mesh_tolerance` is `0.001`.
-
-## Report helpers
-
-### `ctx.report()`
+### `DistanceFinding`
 
 ```python
+DistanceFinding(
+    part_a: str,
+    part_b: str,
+    shape_a: str | None,
+    shape_b: str | None,
+    distance: float,
+    nearest_a: tuple[float, float, float] | None = None,
+    nearest_b: tuple[float, float, float] | None = None,
+    collided: bool = False,
+)
+```
+
+`distance_between()` returns this record. A collision has distance zero. The nearest points can
+be absent when the mesh collision library does not provide them.
+
+Collision assertion methods return `bool`. They put collision details in the
+recorded failure instead of returning another result type.
+
+### `TestReport`
+
+```python
+TestReport(
+    passed: bool,
+    checks_run: int,
+    checks: tuple[str, ...],
+    failures: tuple[TestFailure, ...],
+    warnings: tuple[str, ...] = (),
+    allowances: tuple[str, ...] = (),
+    allowed_isolated_parts: tuple[str, ...] = (),
+    allowed_overlaps: tuple[AllowedOverlap, ...] = (),
+)
+```
+
+`passed` is true when there are no blocking failures. Warnings and allowances do not make a
+report fail. `checks_run` counts recorded checks. Calling `warn()` or an allowance method does
+not increase that count.
+
+### Reporting methods
+
+```python
+ctx.check(name, ok, details="")
+ctx.fail(name, details)
+ctx.warn(text)
 report = ctx.report()
 ```
 
-Returns a `TestReport`.
+`check()` records a blocking failure when `ok` is false. `fail()` always records a blocking
+failure and returns false. `warn()` records a nonblocking message and ignores an exact duplicate.
+`report()` returns the checks recorded so far.
 
-Call this once at the end of `run_tests()`.
+## Poses
 
-### `ctx.check(...)`
-
-```python
-ctx.check(name: str, ok: bool, details: str = "") -> bool
-```
-
-Records a custom check. Returns `ok`.
-
-### `ctx.fail(...)`
+Use `pose()` to apply temporary articulation positions.
 
 ```python
-ctx.fail(name: str, details: str) -> bool
+rest = ctx.part_world_position("slider")
+with ctx.pose({slide: 0.12}):
+    extended = ctx.part_world_position("slider")
+    ctx.expect_gap("slider", "stop", axis="x", min_gap=0.003)
+
+assert ctx.part_world_position("slider") == rest
 ```
 
-Records a failed check. Returns `False`.
-
-### `ctx.warn(...)`
+The signature is:
 
 ```python
-ctx.warn(text: str) -> None
+ctx.pose(
+    articulation_positions: Mapping[object, float] | None = None,
+    **positions: float,
+)
 ```
 
-Records a warning. Warnings do not fail compile.
+Mapping keys can be articulation objects or articulation names. Keyword names are articulation
+names. Every value must be finite. A prismatic value translates along its authored axis. A
+revolute or continuous value rotates around its authored axis. A fixed articulation ignores its
+value.
+
+The context restores the previous pose when the `with` block ends. Nested pose blocks therefore
+restore the pose that was active before each block.
+
+`pose()` does not clamp values to `MotionLimits`. Use positions that are valid for the design.
+
+## World inspection
+
+These methods read the current pose and do not record a check.
+
+### `part_world_position(part) -> Vec3`
+
+Returns the part origin in world coordinates. This is the articulation frame position, not the
+center of the part geometry.
+
+### `part_world_bounds(part) -> tuple[Vec3, Vec3]`
+
+Returns the minimum and maximum world coordinates for all named shapes in the part.
+
+### `shape_world_bounds(part, shape) -> tuple[Vec3, Vec3]`
+
+Returns the world bounds for one named shape.
+
+### `distance_between(part_a, part_b, *, shape_a=None, shape_b=None) -> DistanceFinding`
+
+Returns the smallest mesh distance among the selected shapes. You can scope either side or both
+sides. With no shape names, the query checks every shape pair between the two parts.
+
+The two part arguments can name the same part. The selected sets must contain at least two
+different shapes. Naming both shapes is the clearest form. A query that selects one shape against
+itself raises `ValidationError`.
+
+These methods are useful in a short `exec_command` inspection.
+
+```python
+from main import object_model
+from mini_articraft.sdk import TestContext
+
+ctx = TestContext(object_model)
+print(ctx.shape_world_bounds("housing", "shell"))
+print(ctx.distance_between("housing", "door", shape_a="rim", shape_b="panel"))
+```
+
+## Exact collision and distance checks
+
+Every method in this section records one check and returns true on pass or false on failure. The
+optional `name` replaces the generated check name.
+
+### `expect_no_collision(part_a, part_b, *, shape_a=None, shape_b=None, name=None)`
+
+Passes when the selected triangle meshes do not collide. This is a direct collision test. It does
+not use the compiler's meaningful overlap thresholds.
+
+### `expect_collision(part_a, part_b, *, shape_a=None, shape_b=None, name=None)`
+
+Passes when at least one selected shape pair collides. If several pairs collide, the report uses a
+representative pair with the largest bounds overlap.
+
+### `expect_contact(part_a, part_b, *, shape_a=None, shape_b=None, contact_tol=1e-6, name=None)`
+
+Passes when the selected geometry collides or its minimum distance is at most `contact_tol`.
+`contact_tol` must be nonnegative and uses meters.
+
+### `expect_distance(part_a, part_b, *, shape_a=None, shape_b=None, min_distance=0.0, max_distance=None, name=None)`
+
+Passes when the minimum mesh distance is at least `min_distance` and no more than
+`max_distance`, when an upper bound is provided. Both bounds are inclusive and nonnegative. A
+collision has distance zero. An upper bound below the lower bound records a failed check.
+
+Shape selectors are independent for these methods. For example, `shape_a="shaft"` can be checked
+against every shape in `part_b`.
+
+## Exact bounds checks
+
+These checks use world axis aligned bounds. They do not prove mesh contact or mesh collision.
+
+### `expect_gap(positive_part, negative_part, *, axis, positive_shape=None, negative_shape=None, min_gap=None, max_gap=None, max_penetration=None, name=None)`
+
+The signed gap is:
+
+```text
+positive bounds minimum on axis minus negative bounds maximum on axis
+```
+
+`axis` must be `"x"`, `"y"`, or `"z"`. A positive result is a gap. A negative result is bounds
+penetration.
+
+When `min_gap` is omitted, the lower bound is zero. If `max_penetration` is provided, the lower
+bound is `-max_penetration`. A provided `min_gap` takes precedence. `max_gap` is an optional
+inclusive upper bound. An upper bound below the lower bound records a failed check.
+
+### `expect_within(inner_part, outer_part, *, inner_shape=None, outer_shape=None, axes="xy", margin=0.0, name=None)`
+
+Passes when the inner bounds stay inside the outer bounds on every requested axis. `margin`
+allows the inner bounds to extend that far beyond the outer bounds and must be nonnegative.
+
+### `expect_overlap(part_a, part_b, *, shape_a=None, shape_b=None, axes="xy", min_overlap=0.0, name=None)`
+
+Passes when the projected bounds overlap by at least `min_overlap` on every requested axis. A
+minimum of zero allows exact bounds contact. `min_overlap` must be nonnegative.
+
+For `axes`, use a string such as `"xy"` or a sequence such as `("x", "z")`. Repeated axes are
+ignored. At least one axis is required.
+
+`expect_overlap()` proves projected overlap only. It does not declare an allowance and does not
+suppress the compiler's mesh overlap check.
 
 ## Allowances
 
-### `ctx.allow_overlap(...)`
+Allowances describe intentional exceptions to compiler owned physical checks. Each reason must be
+nonempty.
+
+### `allow_overlap(part_a, part_b, *, reason, shape_a, shape_b)`
+
+Both shape names are required. The allowance covers only that exact named shape
+pair.
 
 ```python
 ctx.allow_overlap(
-    link_a: str | part_handle,
-    link_b: str | part_handle,
-    *,
-    reason: str,
-    elem_a: str | None = None,
-    elem_b: str | None = None,
-) -> None
+    "shaft",
+    "hub",
+    shape_a="steel_shaft",
+    shape_b="bore_liner",
+    reason="The shaft is captured inside the bearing liner.",
+)
 ```
 
-Allows an intentional baseline collision between two parts.
+An allowance does not hide another collision between the same two parts.
 
-Rules:
+An overlap allowance affects only `fail_if_parts_overlap_in_current_pose()`, including the copy of
+that check which the compiler runs. It does not make `expect_no_collision()` or another authored
+check pass.
 
-- `reason` is required and must not be empty.
-- The part pair is stored in sorted order.
-- The allowance suppresses only the baseline collision failure for that pair.
-- The allowance does not make `ctx.expect_no_collision(...)` pass.
-- `elem_a` and `elem_b` are stored in the report but are not enforced in the current mini SDK.
+Pair an allowance with an exact check that explains the intended relationship. For a captured
+shaft, an `expect_contact()`, `expect_within()`, or bounds gap check can provide that evidence.
 
-### `ctx.allow_isolated_part(...)`
+### `allow_isolated_part(part, *, reason)`
+
+Allows one named part in `fail_if_isolated_parts()`. If several touching parts form one floating
+group, every part in that group must have an allowance. The check still records a nonblocking
+warning that the group was allowed.
+
+An isolation allowance does not affect disconnected shapes inside one rigid part.
+
+## Compiler owned checks
+
+The compile worker runs `run_tests()` first. It then copies authored overlap and isolation
+allowances into a new context and runs these baseline checks before export:
+
+1. `check_model_valid()`
+2. `check_single_root_part()`
+3. `fail_if_isolated_parts()`
+4. `warn_if_part_contains_disconnected_geometry_islands()`
+5. `warn_if_absurd_dimensions()`
+6. `fail_if_parts_overlap_in_current_pose()`
+
+If model validity or the root check fails, the worker stops the rest of the baseline pass. All
+blocking authored and baseline checks must pass before USDZ export starts.
+
+The merged report keeps one copy of each check name. A compiler failure replaces an authored
+failure with the same name. A passing compiler check never erases an authored failure. Exact
+duplicate failures, warnings, and allowance strings are also merged.
+
+### Model validity and root policy
+
+`check_model_valid()` calls `object_model.validate()`. The object must contain valid named
+geometry and form one rooted articulation tree. `check_single_root_part()` records the root policy
+as its own check.
+
+### Physical isolation
+
+`fail_if_isolated_parts(*, contact_tol=1e-6, name=None)` builds a physical contact graph at the
+current pose. Two parts are connected when their meshes collide or their minimum distance is no
+more than `contact_tol`. An articulation by itself does not count as physical support.
+
+The graph starts at the root part from the articulation tree. A physically separate group fails
+unless every part in that group has an isolation allowance. Parent and child parts are checked in
+the same way as any other pair.
+
+### Disconnected geometry within a part
+
+`warn_if_part_contains_disconnected_geometry_islands(*, contact_tol=1e-6, name=None)` splits all
+named shapes into mesh components. Components are connected when they collide or are within the
+contact tolerance. The compiler records a warning when one rigid part contains more than one
+physical group.
+
+Disconnected geometry is nonblocking in the baseline pass. Use the blocking form when one of your
+design requirements needs it:
 
 ```python
-ctx.allow_isolated_part(
-    part: str | part_handle,
-    *,
-    reason: str,
-) -> None
+ctx.fail_if_part_contains_disconnected_geometry_islands(contact_tol=1e-6)
 ```
 
-Allows one intentionally isolated part in the baseline isolated part check.
+Nested closed solids with positive volume intersection count as connected geometry.
 
-`reason` is required and must not be empty.
+### Scale warnings
 
-## Pose helpers
+`warn_if_absurd_dimensions(*, max_dimension=1000.0, outlier_ratio=100.0, name=None)` checks the
+largest world bounds span of every named shape. It warns when a shape is larger than
+`max_dimension` meters. It also warns when a shape is more than
+`outlier_ratio` times the median positive shape span.
 
-### `ctx.pose(...)`
+This check is always nonblocking.
 
-```python
-with ctx.pose({"joint_name": value}):
-    ...
+### Meaningful overlap
 
-with ctx.pose(joint_name=value):
-    ...
-```
+`fail_if_parts_overlap_in_current_pose(*, overlap_tol=0.005, overlap_volume_tol=5e-7, name=None)`
+checks every named shape pair from different parts at the current pose, including adjacent parent
+and child parts.
 
-Temporarily applies joint positions inside the context manager.
+A pair is a blocking overlap only when all of these facts are true:
 
-Keys may be joint name strings or joint handles.
+1. Its world bounds overlap by more than `overlap_tol` on all three axes.
+2. Its bounds overlap volume is greater than `overlap_volume_tol` cubic meters.
+3. The triangle meshes collide.
+4. No matching overlap allowance exists.
 
-Values are floats.
+Mere contact passes. Bounds penetration at or below either physical threshold also passes. A
+shape allowance suppresses only its exact pair. The report includes at most one representative
+unallowed shape pair for each part pair, chosen by overlap depth and volume.
 
-Unknown joint names raise `ValidationError`.
+The baseline check uses the rest pose. Use `with ctx.pose(...)` and an authored exact check when a
+different pose is important to the requested mechanism.
 
-The previous pose is restored when the context exits.
+## Choosing checks
 
-### `ctx.part_world_position(...)`
+Checks are design evidence. Do not delete or simplify visible geometry only to make a check pass.
 
-```python
-ctx.part_world_position(part: str | part_handle) -> tuple[float, float, float] | None
-```
-
-Returns the world position of the part frame in the current pose.
-
-Returns `None` when the part cannot be resolved in the current world transform
-map.
-
-## Mesh collision checks
-
-Collision and distance checks use `python-fcl` on tessellated build123d meshes.
-
-The SDK uses `trimesh` to prepare triangle meshes and builds FCL BVH models.
-
-Bounding boxes are not the source of truth for these checks.
-
-FCL may use its own internal acceleration structures.
-
-### `ctx.expect_no_collision(...)`
-
-```python
-ctx.expect_no_collision(
-    link_a: str | part_handle,
-    link_b: str | part_handle,
-    *,
-    name: str | None = None,
-) -> bool
-```
-
-Passes when FCL reports no mesh collision between the two parts.
-
-Fails when FCL reports a collision.
-
-### `ctx.expect_collision(...)`
-
-```python
-ctx.expect_collision(
-    link_a: str | part_handle,
-    link_b: str | part_handle,
-    *,
-    name: str | None = None,
-) -> bool
-```
-
-Passes when FCL reports a mesh collision between the two parts.
-
-### `ctx.expect_contact(...)`
-
-```python
-ctx.expect_contact(
-    link_a: str | part_handle,
-    link_b: str | part_handle,
-    *,
-    contact_tol: float = 1e-6,
-    name: str | None = None,
-) -> bool
-```
-
-Passes when the parts collide or when their FCL distance is less than or equal
-to `contact_tol`.
-
-`contact_tol` must be finite and non-negative.
-
-### `ctx.expect_distance(...)`
-
-```python
-ctx.expect_distance(
-    link_a: str | part_handle,
-    link_b: str | part_handle,
-    *,
-    min_distance: float = 0.0,
-    max_distance: float | None = None,
-    name: str | None = None,
-) -> bool
-```
-
-Checks the FCL mesh distance between two parts.
-
-Passes when the distance is greater than or equal to `min_distance`.
-
-Also requires distance to be less than or equal to `max_distance` when
-`max_distance` is provided.
-
-`min_distance` and `max_distance` must be finite and non-negative.
-
-`max_distance` must be greater than or equal to `min_distance`.
-
-## Projection checks
-
-Projection checks use tessellated mesh vertices in the current pose.
-
-They are not collision checks.
-
-Use them for directional clearance and containment checks.
-
-### `ctx.expect_gap(...)`
-
-```python
-ctx.expect_gap(
-    positive_link: str | part_handle,
-    negative_link: str | part_handle,
-    *,
-    axis: str,
-    min_gap: float | None = None,
-    max_gap: float | None = None,
-    max_penetration: float | None = None,
-    name: str | None = None,
-) -> bool
-```
-
-Computes:
-
-```text
-min coordinate of positive_link on axis
-minus max coordinate of negative_link on axis
-```
-
-`axis` must be `"x"`, `"y"`, or `"z"`.
-
-If `min_gap` is omitted, the lower bound is `-max_penetration`.
-
-If both `min_gap` and `max_gap` are provided, `max_gap` must be greater than or
-equal to `min_gap`.
-
-### `ctx.expect_within(...)`
-
-```python
-ctx.expect_within(
-    inner_link: str | part_handle,
-    outer_link: str | part_handle,
-    *,
-    axes: str | Sequence[str] = "xy",
-    margin: float = 0.0,
-    name: str | None = None,
-) -> bool
-```
-
-Passes when the projected mesh interval of `inner_link` is within the projected
-mesh interval of `outer_link` on every requested axis, with the given margin.
-
-`axes` may be a string such as `"xy"` or a sequence such as `("x", "y")`.
-
-`margin` must be finite and non-negative.
-
-### `ctx.expect_overlap(...)`
-
-```python
-ctx.expect_overlap(
-    link_a: str | part_handle,
-    link_b: str | part_handle,
-    *,
-    axes: str | Sequence[str] = "xy",
-    min_overlap: float = 0.0,
-    name: str | None = None,
-) -> bool
-```
-
-Passes when the projected mesh intervals overlap by at least `min_overlap` on
-every requested axis.
-
-`min_overlap` must be finite and non-negative.
-
-## Baseline checks
-
-Compile runs these checks after authored tests:
-
-```python
-ctx.check_model_valid()
-ctx.check_single_root_part()
-ctx.fail_if_isolated_parts()
-ctx.fail_if_parts_collide_in_current_pose()
-```
-
-Authored code may call these methods too, but this is not required.
-
-### `ctx.check_model_valid()`
-
-Runs `model.validate()` and records the result.
-
-### `ctx.check_single_root_part()`
-
-Passes when exactly one part has no parent joint.
-
-### `ctx.fail_if_isolated_parts(...)`
-
-```python
-ctx.fail_if_isolated_parts(
-    *,
-    contact_tol: float = 1e-6,
-    name: str | None = None,
-) -> bool
-```
-
-Builds contact groups using FCL collision and FCL distance.
-
-Fails when a part or group has no contact path to the root part.
-
-`allow_isolated_part(...)` suppresses matching isolated part failures.
-
-### `ctx.fail_if_parts_collide_in_current_pose(...)`
-
-```python
-ctx.fail_if_parts_collide_in_current_pose(
-    *,
-    ignore_adjacent: bool = True,
-    name: str | None = None,
-) -> bool
-```
-
-Uses FCL broadphase collision management for candidate pairs and FCL mesh
-collision for the result.
-
-When `ignore_adjacent` is `True`, parent and child pairs connected by a joint
-are ignored.
-
-`allow_overlap(...)` suppresses matching baseline failures.
-
-## Example
-
-```python
-def run_tests() -> TestReport:
-    ctx = TestContext(object_model)
-
-    ctx.expect_contact("base", "lid")
-
-    with ctx.pose(base_to_lid=0.9):
-        ctx.expect_no_collision("base", "lid")
-        ctx.expect_gap("lid", "base", axis="z", min_gap=0.01)
-
-    return ctx.report()
-```
+Use shape names when a part contains unrelated regions. Use a small number of checks that prove
+the important support, clearance, insertion, or motion. If a check finds a real defect, repair the
+geometry, articulation, pose, or exact selector. Add an allowance only when the physical
+relationship is intentional.

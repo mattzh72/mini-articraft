@@ -1,193 +1,257 @@
-# ArticulatedObject
+# Articulated objects and parts
 
-## Scope
-
-`ArticulatedObject` is the object model that `main.py` must export as
-`object_model`.
-
-Use it to register build123d parts and connect those parts with SDK joints.
-Compile reads this object, runs tests, and exports the result.
-
-## Constructor
+`ArticulatedObject` is the root model. It owns rigid parts and the
+articulations that connect them.
 
 ```python
-model = ArticulatedObject(name: str, *, units: str)
+from mini_articraft.sdk import ArticulatedObject
 ```
 
-`name` must be a non-empty string.
+## Construction
 
-`units` is required. Supported values are `"meters"`, `"centimeters"`,
-`"millimeters"`, `"inches"`, and `"feet"`.
+```python
+ArticulatedObject(name: str)
+```
 
-Create one `ArticulatedObject` per generated script.
+The name must be a nonempty string. Leading and trailing whitespace is removed.
+There is no `units` argument. The model always uses meters, and
+`model.meters_per_unit` is always `1.0`.
+
+`model.parts` and `model.articulations` are public lists for inspection. Use
+the authoring helpers below instead of appending to them directly.
+
+## The authoring order
+
+Build a model in this order:
+
+1. Create the `ArticulatedObject`.
+2. Create every rigid `Part` with `model.part(...)`.
+3. Add one or more named shapes to each part.
+4. Add articulations between parts.
+5. Add design checks and call `model.validate()` before export.
+
+Parent and child parts must already exist when an articulation is added.
 
 ## `model.part(...)`
 
 ```python
-part = model.part(
-    name: str,
-    shape: build123d.Shape,
+model.part(name: str) -> Part
+```
+
+This method creates a `Part`, appends it to `model.parts`, and returns it. Part
+names must be unique within the model.
+
+```python
+body = model.part("body")
+head = model.part("head")
+```
+
+An empty part is allowed while the model is being built. Full model validation
+requires every part to contain at least one named shape.
+
+## `Part`
+
+```python
+Part(name: str)
+```
+
+Each part is one rigid body. Put geometry that must move together in the same
+part. A decorative trim piece should stay in the same part as its housing when
+they never move relative to each other.
+
+Create a separate part only when the geometry needs a separate rigid motion.
+
+### `part.add(...)`
+
+```python
+part.add(
+    shape: build123d.Shape | MeshGeometry,
     *,
-    color: tuple[float, float, float] | tuple[float, float, float, float] | None = None,
-)
-```
-
-Creates a named part and returns a part handle.
-
-Rules:
-
-- `name` must be a non-empty string.
-- `name` must be unique within the model.
-- `shape` must be a build123d `Shape`.
-- `color` must have three or four values from `0.0` to `1.0` when provided.
-- A part is the unit used by joints, export, and collision tests.
-
-Part color is optional visual styling for exported artifacts and previews.
-
-Example:
-
-```python
-base = model.part(
-    "base",
-    Box(0.3, 0.2, 0.04),
-    color=(0.55, 0.57, 0.60),
-)
-lid = model.part(
-    "lid",
-    Pos(0.0, 0.0, 0.04) * Box(0.28, 0.18, 0.018),
-    color=(0.20, 0.36, 0.70),
-)
-```
-
-If you use a `BuildPart` context, pass `builder.part` to `model.part(...)`.
-
-```python
-with BuildPart() as bracket_builder:
-    Box(0.08, 0.04, 0.01)
-    Cylinder(0.006, 0.02, mode=Mode.SUBTRACT)
-
-bracket = model.part("bracket", bracket_builder.part)
-```
-
-Keep motion in the SDK joint graph. Do not use build123d joints or a build123d
-assembly tree to describe moving mini-articraft parts.
-
-## Part references
-
-Methods that accept a part reference accept either:
-
-- The part name as `str`.
-- The part handle returned by `model.part(...)`.
-
-Both forms are valid:
-
-```python
-model.fixed("base_to_foot", "base", "foot")
-model.fixed("base_to_lid_stop", base, lid_stop)
-```
-
-## Fixed joints
-
-```python
-joint = model.fixed(
     name: str,
-    parent: str | part_handle,
-    child: str | part_handle,
-    *,
-    frame: Frame | None = None,
-)
+    color: Sequence[float] | None = None,
+) -> build123d.Shape | MeshGeometry
 ```
 
-Use `fixed` when the child part does not move relative to the parent part.
+`name` is required and must be unique within this part. The same shape name may
+be used on a different part. The method returns the exact geometry object that
+was passed in.
 
-Fixed joints still connect the part graph.
-
-## Revolute joints
+The optional color has three RGB values or four RGBA values. Values range from
+zero through one. RGB gets an alpha value of one.
 
 ```python
-joint = model.revolute(
-    name: str,
-    parent: str | part_handle,
-    child: str | part_handle,
-    *,
-    axis: tuple[float, float, float] = (0.0, 0.0, 1.0),
-    limits: tuple[float, float],
-    frame: Frame | None = None,
-)
+from build123d import Box, Cylinder, Pos
+
+
+body = model.part("body")
+shell = Box(0.30, 0.22, 0.28)
+trim = Pos(Z=0.15) * Cylinder(0.09, 0.02)
+
+body.add(shell, name="shell", color=(0.70, 0.10, 0.10))
+body.add(trim, name="top_trim", color=(0.80, 0.80, 0.82, 0.70))
 ```
 
-Use `revolute` for bounded rotation.
+This creates one rigid part with two named shapes and two colors. It does not
+create two rigid bodies.
 
-`limits` is required and is `(lower, upper)` in radians.
+### Build123d placement
 
-## Continuous joints
+A build123d shape keeps its current build123d location. Apply `Pos`, `Rot`, or
+another build123d `Location` before adding it.
 
 ```python
-joint = model.continuous(
-    name: str,
-    parent: str | part_handle,
-    child: str | part_handle,
-    *,
-    axis: tuple[float, float, float] = (0.0, 0.0, 1.0),
-    frame: Frame | None = None,
-)
+from build123d import Box, Pos, Rot
+
+
+handle = Pos(X=0.12, Z=0.04) * Rot(Y=20.0) * Box(0.08, 0.02, 0.02)
+body.add(handle, name="handle")
 ```
 
-Use `continuous` for unbounded rotation.
+The `Pos` values are treated as meters by Mini Articraft. Build123d `Rot` uses
+degrees. There is no second per shape transform in `Part`.
 
-Continuous joints do not take position limits.
+### Mesh geometry
 
-## Prismatic joints
+`MeshGeometry` uses the same part local frame.
 
 ```python
-joint = model.prismatic(
-    name: str,
-    parent: str | part_handle,
-    child: str | part_handle,
-    *,
-    axis: tuple[float, float, float] = (1.0, 0.0, 0.0),
-    limits: tuple[float, float],
-    frame: Frame | None = None,
-)
+from mini_articraft.sdk import BoxGeometry
+
+
+badge = BoxGeometry((0.05, 0.002, 0.02)).translate(0.0, -0.111, 0.03)
+body.add(badge, name="badge", color=(0.85, 0.65, 0.12))
 ```
 
-Use `prismatic` for bounded translation.
+The part stores the mesh object itself. If you edit that mesh later, the part
+sees the edit. `model.validate()` validates the edited vertices and faces
+again.
 
-`limits` is required and is `(lower, upper)` in the same unit as the geometry.
+### `part.get_shape(...)`
+
+```python
+part.get_shape(name: str) -> build123d.Shape | MeshGeometry
+```
+
+This method returns the named geometry object. It raises `ValidationError` when
+the name is empty or unknown.
+
+```python
+housing = model.get_part("body").get_shape("shell")
+```
+
+Use the part and shape name together when a test or inspection command must
+target one feature.
+
+## Local and world coordinates
+
+Every shape on a part uses that part's local coordinates.
+
+The root part frame is the world frame at rest. A child part frame comes from
+its parent articulation. At a zero motion value, the child frame is the
+articulation `Origin` relative to the parent.
+
+Do not place child geometry twice. Author the child around its own local frame,
+then use the articulation origin to place that frame on the parent.
+
+The transform details are in [articulations](35_joints.md).
 
 ## `model.get_part(...)`
 
 ```python
-part = model.get_part(part: str | part_handle)
+model.get_part(part: str | Part) -> Part
 ```
 
-Returns the matching part handle.
+Pass a part name or a `Part`. The method resolves the name against this model
+and returns the stored part. It raises `ValidationError` for an unknown part.
 
-Raises `ValidationError` when the part does not exist.
+## `model.get_articulation(...)`
+
+```python
+model.get_articulation(name: str | Articulation) -> Articulation
+```
+
+Pass an articulation name or an `Articulation`. The method returns the stored
+articulation with that name. It raises `ValidationError` when no match exists.
 
 ## `model.validate()`
 
 ```python
-model.validate()
+model.validate() -> None
 ```
 
-Validates the part and joint graph.
+Validation does not return a repaired model. It returns `None` on success and
+raises `ValidationError` on failure.
 
-Validation requires:
+Validation checks all of these rules:
 
-- Units must be declared on the object.
-- At least one part.
-- Unique part names.
-- Unique joint names.
-- Every joint parent and child must exist.
-- A joint cannot connect a part to itself.
-- A child part cannot have more than one parent joint.
-- A model with more than one part must have exactly one root part.
-- Every part must be reachable from the root.
-- Revolute, continuous, and prismatic axes must be non-zero.
-- Revolute and prismatic joints must have valid lower and upper limits.
+- The model has at least one part.
+- Every entry in `model.parts` is a `Part`.
+- Every part has a nonempty unique name.
+- Every part has at least one named nonempty shape.
+- Every build123d shape is nonempty and valid.
+- Every `MeshGeometry` has valid finite vertices and triangle indices.
+- Every shape color has three or four values in the allowed range.
+- Part names are unique.
+- Every entry in `model.articulations` is an `Articulation`.
+- Articulation names are unique.
+- Every articulation satisfies its type and limit rules.
+- Every parent and child name refers to a part in this model.
+- A part has at most one parent articulation.
+- The model has exactly one root part.
+- Every part is reachable from that root, so cycles and detached branches are
+  invalid.
 
-Compile runs validation through the baseline tests.
+A model with one part and no articulation is valid. That part is the root.
 
-Generated scripts may call `model.validate()` in helper code when early failure
-is useful.
+Validation checks the authored connection tree. Compile time geometry checks
+also look for physically isolated parts and unintended overlaps. See [testing
+geometry and assemblies](40_testing.md) for those checks.
+
+## Naming rules
+
+Object, part, shape, and articulation names must be strings. The SDK removes
+leading and trailing whitespace and rejects an empty result.
+
+Uniqueness has these scopes:
+
+- Part names are unique within one model.
+- Articulation names are unique within one model.
+- Shape names are unique within one part.
+
+Use short stable names because test failures, compile signals, JSON records,
+and USD metadata report them.
+
+## Export layout
+
+Each part exports as one USD rigid body. Each named shape exports as a child
+mesh with its own name and color.
+
+```text
+/World/<object>/parts/<part>/shapes/<shape>
+```
+
+An articulation targets the parent and child part bodies, not their individual
+shape meshes. The USD stage uses meters and Z up.
+
+## Complete mixed geometry example
+
+```python
+from build123d import Box
+
+from mini_articraft.sdk import ArticulatedObject, BoxGeometry
+
+
+model = ArticulatedObject("mixed_body")
+body = model.part("body")
+
+body.add(Box(0.30, 0.20, 0.08), name="housing", color=(0.25, 0.30, 0.36))
+
+feet = BoxGeometry((0.24, 0.14, 0.02)).translate(0.0, 0.0, -0.05)
+body.add(feet, name="feet", color=(0.05, 0.05, 0.06))
+
+model.validate()
+object_model = model
+```
+
+See `docs/sdk/examples/mixed_articulated_assembly.py` for a model with a moving
+mesh part.

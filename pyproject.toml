@@ -55,6 +55,8 @@ mini_articraft = [
     "py.typed",
     "prompts/*.md",
     "sdk/docs/common/*.md",
+    "sdk/docs/examples/*.py",
+    "sdk/docs/mesh/*.md",
     "sdk/docs/build123d/*.md",
     "sdk/docs/build123d/assets/*",
     "sdk/docs/build123d/assets/*/*",
