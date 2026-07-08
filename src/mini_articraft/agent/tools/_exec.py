@@ -1,10 +1,4 @@
-"""Interactive subprocess sessions for the exec_command and write_stdin tools.
-
-This module is deliberately the most production-shaped corner of the repo:
-persistent sessions, bounded output buffers, and process-group signals are
-worth their complexity because interactively probing build123d APIs is a real
-agent workflow that a one-shot runner cannot serve.
-"""
+"""Interactive subprocess sessions for exec_command and write_stdin."""
 
 from __future__ import annotations
 
@@ -86,7 +80,6 @@ class ExecSession:
     stdout: OutputBuffer
     stderr: OutputBuffer
     output_event: asyncio.Event
-    started_at: float
     output_closed: int = 0
 
     def alive(self) -> bool:
@@ -99,13 +92,18 @@ class ExecManager:
         self._sessions: dict[int, ExecSession] = {}
 
     async def start(self, context: ToolContext, args: dict[str, Any]) -> ExecSession:
+        live_sessions = self.live_session_ids(context)
+        if live_sessions:
+            raise ValueError(
+                "an exec_command session is already running; finish it with write_stdin "
+                f"before starting another command (session_id={live_sessions[0]})"
+            )
         cwd = _cwd(context, args.get("cwd"))
         command = [
             _shell(args.get("shell")),
             "-lc" if _bool(args.get("login"), default=True) else "-c",
             str(args["command"]),
         ]
-        (context.run_dir / ".tmp").mkdir(exist_ok=True)
         proc = await asyncio.create_subprocess_exec(
             *command,
             cwd=cwd,
@@ -122,17 +120,36 @@ class ExecManager:
             stdout=OutputBuffer(),
             stderr=OutputBuffer(),
             output_event=asyncio.Event(),
-            started_at=time.perf_counter(),
         )
         self._sessions[session.session_id] = session
         assert proc.stdout is not None
         assert proc.stderr is not None
-
         # Known fire-and-forget leak; the exec reactor refactor (PR #9) stores
         # these tasks on the session and cancels them in aclose().
         asyncio.create_task(_read_stream(session, proc.stdout, session.stdout))  # noqa: RUF006
         asyncio.create_task(_read_stream(session, proc.stderr, session.stderr))  # noqa: RUF006
+        asyncio.create_task(_stop_descendants_after_exit(session))  # noqa: RUF006
         return session
+
+    def live_session_ids(self, context: ToolContext) -> tuple[int, ...]:
+        run_dir = context.run_dir.resolve()
+        return tuple(
+            session_id
+            for session_id, session in sorted(self._sessions.items())
+            if session.run_dir == run_dir and session.alive()
+        )
+
+    def has_live_session(self, context: ToolContext) -> bool:
+        return bool(self.live_session_ids(context))
+
+    async def terminate(self, context: ToolContext) -> None:
+        run_dir = context.run_dir.resolve()
+        sessions = [session for session in self._sessions.values() if session.run_dir == run_dir]
+        for session in sessions:
+            if session.alive():
+                _kill_process_group(session.proc)
+                await session.proc.wait()
+            self.release(session)
 
     def get(self, context: ToolContext, session_id: int) -> ExecSession:
         session = self._sessions.get(session_id)
@@ -165,6 +182,8 @@ async def collect(session: ExecSession, args: dict[str, Any]) -> dict[str, Any]:
             stdout.append(out)
             stderr.append(err)
             omitted += out_omitted + err_omitted
+            if time.perf_counter() >= deadline:
+                break
             continue
         if not session.alive() and session.output_closed == 2:
             break
@@ -239,6 +258,13 @@ async def _read_stream(
         session.output_event.set()
 
 
+async def _stop_descendants_after_exit(session: ExecSession) -> None:
+    await session.proc.wait()
+    # Commands may not leave detached work running after the tracked shell exits.
+    # This keeps workspace mutation serialized through exec_command/write_stdin.
+    _kill_process_group(session.proc)
+
+
 def _cwd(context: ToolContext, raw: object) -> Path:
     if raw is None or str(raw).strip() == "":
         return context.workspace.resolve()
@@ -252,7 +278,6 @@ def _env(context: ToolContext, shell: str) -> dict[str, str]:
     env = os.environ.copy()
     env.setdefault("PATH", "/usr/bin:/bin:/usr/sbin:/sbin")
     env["SHELL"] = shell
-    env["TMPDIR"] = str(context.run_dir / ".tmp")
     env["MINI_ARTICRAFT_RUN_DIR"] = str(context.run_dir)
     env["MINI_ARTICRAFT_WORKSPACE_DIR"] = str(context.workspace)
     return env
@@ -296,6 +321,8 @@ def _decode(data: bytes, max_output_tokens: object) -> str:
     budget = _char_budget(max_output_tokens)
     if len(text) <= budget:
         return text
+    if budget == 0:
+        return f"…{len(text)} chars truncated…"
     left = text[: budget // 2]
     right = text[-(budget - len(left)) :]
     return f"{left}…{len(text) - budget} chars truncated…{right}"
