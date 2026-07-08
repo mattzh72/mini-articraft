@@ -59,8 +59,10 @@ def test_part_accepts_multiple_named_shapes_and_preserves_local_placement() -> N
     assert body.add(shell, name="shell", color=(0.7, 0.1, 0.1)) is shell
     body.add(trim, name="trim", color=(0.8, 0.8, 0.8, 0.5))
 
-    assert body.get_shape("shell") is shell
-    assert body.get_shape("shell").bounding_box().min.X == pytest.approx(0.4)
+    stored_shell = body.get_shape("shell")
+    assert stored_shell is shell
+    assert isinstance(stored_shell, Shape)
+    assert pytest.approx(0.4) == stored_shell.bounding_box().min.X
     entries = list(body._iter_shapes())
     assert [entry.name for entry in entries] == ["shell", "trim"]
     assert entries[0].color == (0.7, 0.1, 0.1, 1.0)
@@ -87,7 +89,7 @@ def test_shape_names_are_required_and_unique_within_each_part() -> None:
 
     with pytest.raises(TypeError):
         left.add(box())  # type: ignore[call-arg]
-    with pytest.raises(ValidationError, match="shape name.*non-empty"):
+    with pytest.raises(ValidationError, match=r"shape name.*non-empty"):
         left.add(box(), name="  ")
     with pytest.raises(ValidationError, match="duplicate shape name"):
         left.add(box(), name="body")
@@ -211,7 +213,7 @@ def test_articulation_type_specific_rules_are_validated() -> None:
             axis=(0.0, 0.0, 0.0),
             motion_limits=MotionLimits(lower=0.0, upper=1.0),
         )
-    with pytest.raises(ValidationError, match="continuous.*cannot include"):
+    with pytest.raises(ValidationError, match=r"continuous.*cannot include"):
         model.articulation(
             "rotor",
             ArticulationType.CONTINUOUS,
@@ -219,7 +221,7 @@ def test_articulation_type_specific_rules_are_validated() -> None:
             child,
             motion_limits=MotionLimits(lower=0.0, upper=1.0),
         )
-    with pytest.raises(ValidationError, match="fixed.*cannot include"):
+    with pytest.raises(ValidationError, match=r"fixed.*cannot include"):
         model.articulation(
             "fixed",
             ArticulationType.FIXED,

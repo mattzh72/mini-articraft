@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from typing import Iterable, Sequence
+from typing import TypedDict, Unpack
 
 from mini_articraft.sdk._mesh_core import (
     _EPS,
@@ -71,7 +72,7 @@ def sample_cubic_bezier_spline_3d(
 
 
 def _tuple_distance(a: Sequence[float], b: Sequence[float]) -> float:
-    return math.sqrt(sum((left - right) ** 2 for left, right in zip(a, b)))
+    return math.sqrt(sum((left - right) ** 2 for left, right in zip(a, b, strict=True)))
 
 
 def _catmull_interpolate(
@@ -80,7 +81,7 @@ def _catmull_interpolate(
     if abs(tb - ta) <= _EPS:
         return tuple(a)
     amount = (value - ta) / (tb - ta)
-    return tuple(left + (right - left) * amount for left, right in zip(a, b))
+    return tuple(left + (right - left) * amount for left, right in zip(a, b, strict=True))
 
 
 def _catmull_segment(
@@ -154,12 +155,12 @@ def _sample_catmull_rom(
         return [
             tuple(
                 start + (end - start) * index / steps
-                for start, end in zip(deduplicated[0], deduplicated[1])
+                for start, end in zip(deduplicated[0], deduplicated[1], strict=True)
             )
             for index in range(steps + 1)
         ]
-    first = tuple(2.0 * a - b for a, b in zip(deduplicated[0], deduplicated[1]))
-    last = tuple(2.0 * a - b for a, b in zip(deduplicated[-1], deduplicated[-2]))
+    first = tuple(2.0 * a - b for a, b in zip(deduplicated[0], deduplicated[1], strict=True))
+    last = tuple(2.0 * a - b for a, b in zip(deduplicated[-1], deduplicated[-2], strict=True))
     extended = [first, *deduplicated, last]
     result = []
     for index in range(len(deduplicated) - 1):
@@ -223,9 +224,9 @@ def sample_arc_3d(
     angle: float,
     segments: int = 16,
 ) -> list[Vec3]:
-    start = tuple(float(value) for value in start_point)
-    center = tuple(float(value) for value in center)
-    axis = _v_normalize(tuple(float(value) for value in normal))
+    start: Vec3 = (float(start_point[0]), float(start_point[1]), float(start_point[2]))
+    center = (float(center[0]), float(center[1]), float(center[2]))
+    axis = _v_normalize((float(normal[0]), float(normal[1]), float(normal[2])))
     relative = _v_sub(start, center)
     if _v_norm(relative) <= _EPS:
         raise ValueError("arc start_point must differ from center")
@@ -386,13 +387,13 @@ def superellipse_side_loft(
     for index, (y, z0, z1, width) in enumerate(sections):
         low, high = sorted((float(z0), float(z1)))
         height = max(float(min_height), high - low)
-        width = max(float(min_width), float(width))
+        section_width = max(float(min_width), float(width))
         center = 0.5 * (low + high)
         profiles.append(
             [
                 (x, float(y), center + local_z)
                 for x, local_z in superellipse_profile(
-                    width,
+                    section_width,
                     height,
                     max(0.2, exponent_values[index]),
                     segments=max(12, int(segments)),
@@ -402,12 +403,20 @@ def superellipse_side_loft(
     return LoftGeometry(profiles, cap=cap, closed=closed)
 
 
+class _SideLoftKwargs(TypedDict, total=False):
+    segments: int
+    cap: bool
+    closed: bool
+    min_height: float
+    min_width: float
+
+
 def split_superellipse_side_loft(
     sections: Sequence[tuple[float, float, float, float]],
     *,
     split_y: float,
     exponents: float | Sequence[float] = 2.8,
-    **kwargs: object,
+    **kwargs: Unpack[_SideLoftKwargs],
 ) -> tuple[MeshGeometry, MeshGeometry, tuple[float, float, float, float]]:
     exponent_values = (
         [float(exponents)] * len(sections)
@@ -416,9 +425,12 @@ def split_superellipse_side_loft(
     )
     if len(exponent_values) != len(sections):
         raise ValueError("exponents must match the section count")
-    rows_with_exponents = list(zip(sections, exponent_values))
+    rows_with_exponents = list(zip(sections, exponent_values, strict=True))
     rows_with_exponents.sort(key=lambda item: float(item[0][0]))
-    rows = [tuple(float(value) for value in row) for row, _exponent in rows_with_exponents]
+    rows = [
+        (float(row[0]), float(row[1]), float(row[2]), float(row[3]))
+        for row, _exponent in rows_with_exponents
+    ]
     exponent_values = [float(exponent) for _row, exponent in rows_with_exponents]
     split_y = float(split_y)
     if len(rows) < 3 or not rows[0][0] < split_y < rows[-1][0]:
@@ -431,9 +443,11 @@ def split_superellipse_side_loft(
             break
         if index + 1 < len(rows) and row[0] < split_y < rows[index + 1][0]:
             amount = (split_y - row[0]) / (rows[index + 1][0] - row[0])
-            seam = tuple(
-                split_y if axis == 0 else row[axis] + (rows[index + 1][axis] - row[axis]) * amount
-                for axis in range(4)
+            seam = (
+                split_y,
+                row[1] + (rows[index + 1][1] - row[1]) * amount,
+                row[2] + (rows[index + 1][2] - row[2]) * amount,
+                row[3] + (rows[index + 1][3] - row[3]) * amount,
             )
             seam_exponent = (
                 exponent_values[index]
@@ -465,14 +479,19 @@ def resample_side_sections(
     min_height: float = 0.0001,
     min_width: float = 0.0001,
 ) -> list[tuple[float, float, float, float]]:
-    rows = sorted(tuple(float(value) for value in row) for row in sections)
+    rows = sorted((float(row[0]), float(row[1]), float(row[2]), float(row[3])) for row in sections)
     if len(rows) < 2:
         raise ValueError("resample_side_sections requires at least two sections")
     merged: list[tuple[float, float, float, float]] = []
     for row in rows:
         if merged and abs(row[0] - merged[-1][0]) <= 1e-9:
             previous = merged[-1]
-            merged[-1] = (row[0], *((previous[index] + row[index]) * 0.5 for index in range(1, 4)))
+            merged[-1] = (
+                row[0],
+                (previous[1] + row[1]) * 0.5,
+                (previous[2] + row[2]) * 0.5,
+                (previous[3] + row[3]) * 0.5,
+            )
         else:
             merged.append(row)
     spans = max(1, int(samples_per_span))
@@ -481,9 +500,11 @@ def resample_side_sections(
         for sample in range(spans):
             amount = sample / spans
             dense.append(
-                tuple(
-                    merged[index][axis] + (merged[index + 1][axis] - merged[index][axis]) * amount
-                    for axis in range(4)
+                (
+                    merged[index][0] + (merged[index + 1][0] - merged[index][0]) * amount,
+                    merged[index][1] + (merged[index + 1][1] - merged[index][1]) * amount,
+                    merged[index][2] + (merged[index + 1][2] - merged[index][2]) * amount,
+                    merged[index][3] + (merged[index + 1][3] - merged[index][3]) * amount,
                 )
             )
     dense.append(merged[-1])
@@ -493,12 +514,9 @@ def resample_side_sections(
             *[
                 (
                     dense[index][0],
-                    *(
-                        0.25 * dense[index - 1][axis]
-                        + 0.5 * dense[index][axis]
-                        + 0.25 * dense[index + 1][axis]
-                        for axis in range(1, 4)
-                    ),
+                    0.25 * dense[index - 1][1] + 0.5 * dense[index][1] + 0.25 * dense[index + 1][1],
+                    0.25 * dense[index - 1][2] + 0.5 * dense[index][2] + 0.25 * dense[index + 1][2],
+                    0.25 * dense[index - 1][3] + 0.5 * dense[index][3] + 0.25 * dense[index + 1][3],
                 )
                 for index in range(1, len(dense) - 1)
             ],

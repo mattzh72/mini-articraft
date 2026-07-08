@@ -55,7 +55,9 @@ def test_report_records_warnings_and_shape_scoped_allowances() -> None:
     )
 
     with pytest.raises(TypeError, match="shape_a"):
-        ctx.allow_overlap("base", "insert", reason="too broad")
+        ctx.allow_overlap(  # pyright: ignore[reportCallIssue]
+            "base", "insert", reason="too broad"
+        )
 
 
 def test_named_shape_queries_and_world_bounds() -> None:
@@ -163,9 +165,11 @@ def test_pose_rejects_an_unknown_articulation() -> None:
     model = ArticulatedObject("pose")
     base = model.part("base")
     add_box(base, "body")
-    with pytest.raises(ValidationError, match="unknown articulation"):
-        with TestContext(model).pose(missing=1.0):
-            pass
+    with (
+        pytest.raises(ValidationError, match="unknown articulation"),
+        TestContext(model).pose(missing=1.0),
+    ):
+        pass
 
 
 def test_scoped_allowance_does_not_hide_another_shape_pair() -> None:

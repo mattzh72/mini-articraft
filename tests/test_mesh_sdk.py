@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from typing import Any
 
 import pytest
 from build123d import Box, Pos
@@ -396,6 +397,6 @@ def test_shell_partition_and_face_opening_helpers() -> None:
         {"radius": 0.1, "up_hint": (math.nan, 0.0, 1.0)},
     ],
 )
-def test_wire_polyline_rejects_invalid_options(kwargs: dict[str, object]) -> None:
+def test_wire_polyline_rejects_invalid_options(kwargs: dict[str, Any]) -> None:
     with pytest.raises(ValueError):
         WirePolylineGeometry([(0.0, 0.0, 0.0), (0.0, 0.0, 1.0)], **kwargs)

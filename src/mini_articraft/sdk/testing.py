@@ -5,7 +5,7 @@ import statistics
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import ClassVar
+from typing import ClassVar, cast
 
 from mini_articraft.errors import ValidationError
 from mini_articraft.sdk._collision import (
@@ -465,10 +465,8 @@ class TestContext:
                 item
                 for item in distances
                 if (
-                    item.part_a in group
-                    and item.part_b in reachable
-                    or item.part_b in group
-                    and item.part_a in reachable
+                    (item.part_a in group and item.part_b in reachable)
+                    or (item.part_b in group and item.part_a in reachable)
                 )
             ]
             if candidates:
@@ -645,6 +643,8 @@ class TestContext:
         return self._kernel().shape_world_bounds(part_name, shape_name, self._pose)
 
     def _overlap_is_allowed(self, query: CollisionQuery) -> bool:
+        if query.shape_a is None or query.shape_b is None:
+            return False
         part_a, part_b, shape_a, shape_b = _canonical_selectors(
             query.part_a, query.part_b, query.shape_a, query.shape_b
         )
@@ -714,7 +714,7 @@ def _axis_index(axis: str) -> int:
 
 def _finite(value: object, field_name: str) -> float:
     try:
-        result = float(value)
+        result = float(cast(str, value))
     except (TypeError, ValueError) as exc:
         raise ValidationError(f"{field_name} must be numeric") from exc
     if not math.isfinite(result):

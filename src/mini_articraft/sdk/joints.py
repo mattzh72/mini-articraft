@@ -4,7 +4,7 @@ import math
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import TypeAlias
+from typing import TypeAlias, cast
 
 from mini_articraft.errors import ValidationError
 
@@ -160,7 +160,7 @@ def _positive_finite(value: object, *, field_name: str) -> float:
 
 def _finite(value: object, *, field_name: str) -> float:
     try:
-        result = float(value)
+        result = float(cast(str, value))
     except (TypeError, ValueError, OverflowError) as exc:
         raise ValidationError(f"{field_name} must be numeric") from exc
     if not math.isfinite(result):

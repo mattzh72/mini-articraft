@@ -241,7 +241,9 @@ def _assert_joint_frames_meet(stage: Usd.Stage, joint) -> None:
         (joint.GetBody1Rel(), joint.GetLocalPos1Attr(), joint.GetLocalRot1Attr()),
     ):
         body = stage.GetPrimAtPath(relation.GetTargets()[0])
-        body_world = UsdGeom.Xformable(body).ComputeLocalToWorldTransform(Usd.TimeCode.Default())
+        body_world = UsdGeom.Xformable(body).ComputeLocalToWorldTransform(
+            Usd.TimeCode.Default()  # pyright: ignore[reportAttributeAccessIssue]
+        )
         positions.append(body_world.Transform(Gf.Vec3d(position_attr.Get())))
         local_rotation = Gf.Matrix4d(1.0)
         local_rotation.SetRotate(rotation_attr.Get())

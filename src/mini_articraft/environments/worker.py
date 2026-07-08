@@ -10,7 +10,7 @@ import traceback
 from collections.abc import Hashable, Iterable
 from dataclasses import asdict, replace
 from pathlib import Path
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
 
 from mini_articraft.compile_feedback import build_compile_report_from_payload, empty_compile_payload
 from mini_articraft.environments.export import export_object
@@ -183,7 +183,7 @@ def _raise_for_failed_test_report(report: TestReport) -> None:
     if len(report.failures) > 10:
         lines.append(f"... ({len(report.failures) - 10} more)")
     exc = ValueError("\n".join(lines))
-    exc.test_report = report
+    cast(Any, exc).test_report = report
     raise exc
 
 

@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from numbers import Integral
-from typing import TYPE_CHECKING, Iterable, Sequence, TypeAlias
+from typing import TYPE_CHECKING, TypeAlias, cast
 
 import numpy as np
 import trimesh
@@ -11,7 +12,8 @@ import trimesh
 from mini_articraft.errors import ValidationError
 
 if TYPE_CHECKING:
-    from build123d import Shape
+    from build123d.topology import Shape
+    from manifold3d import DoubleNx2
 
 Vec2: TypeAlias = tuple[float, float]
 Vec3: TypeAlias = tuple[float, float, float]
@@ -210,8 +212,14 @@ def _triangulate_with_holes(
     try:
         import manifold3d
 
-        raw = manifold3d.triangulate(rings, epsilon=1e-9)
-        triangles = [tuple(int(value) for value in face) for face in np.asarray(raw)]
+        polygons = cast(
+            "list[DoubleNx2[int]]",
+            [np.asarray(ring, dtype=np.float64) for ring in rings],
+        )
+        raw = manifold3d.triangulate(polygons, epsilon=1e-9)
+        triangles: list[Face] = [
+            (int(face[0]), int(face[1]), int(face[2])) for face in np.asarray(raw)
+        ]
         return flat, triangles
     except ImportError:
         pass
@@ -274,8 +282,10 @@ class MeshGeometry:
             mesh = mesh.copy()
             mesh.process(validate=True)
         return cls(
-            vertices=[tuple(float(value) for value in vertex[:3]) for vertex in mesh.vertices],
-            faces=[tuple(int(value) for value in face) for face in mesh.faces],
+            vertices=[
+                (float(vertex[0]), float(vertex[1]), float(vertex[2])) for vertex in mesh.vertices
+            ],
+            faces=[(int(face[0]), int(face[1]), int(face[2])) for face in mesh.faces],
         )
 
     def to_trimesh(self, *, process: bool = False) -> trimesh.Trimesh:
@@ -294,8 +304,16 @@ class MeshGeometry:
         self.validate()
         values = np.asarray(self.vertices, dtype=np.float64)
         return (
-            tuple(float(value) for value in values.min(axis=0)),
-            tuple(float(value) for value in values.max(axis=0)),
+            (
+                float(values[:, 0].min()),
+                float(values[:, 1].min()),
+                float(values[:, 2].min()),
+            ),
+            (
+                float(values[:, 0].max()),
+                float(values[:, 1].max()),
+                float(values[:, 2].max()),
+            ),
         )
 
     @property
@@ -502,9 +520,9 @@ class DomeGeometry(MeshGeometry):
                         radii[2] * math.cos(phi),
                     )
                 )
-        faces: list[Face] = []
-        for column in range(radial_segments):
-            faces.append((0, 1 + column, 1 + (column + 1) % radial_segments))
+        faces: list[Face] = [
+            (0, 1 + column, 1 + (column + 1) % radial_segments) for column in range(radial_segments)
+        ]
         for row in range(height_segments - 1):
             start = 1 + row * radial_segments
             following_start = start + radial_segments
@@ -520,8 +538,10 @@ class DomeGeometry(MeshGeometry):
             center = len(vertices)
             vertices.append((0.0, 0.0, 0.0))
             start = 1 + (height_segments - 1) * radial_segments
-            for column in range(radial_segments):
-                faces.append((center, start + (column + 1) % radial_segments, start + column))
+            faces.extend(
+                (center, start + (column + 1) % radial_segments, start + column)
+                for column in range(radial_segments)
+            )
         super().__init__(vertices, faces)
 
 
@@ -660,7 +680,11 @@ class LoftGeometry(MeshGeometry):
             raise ValueError("loft profiles must have the same point count")
 
         def ring_center(ring: Sequence[Vec3]) -> Vec3:
-            return tuple(sum(point[axis] for point in ring) / len(ring) for axis in range(3))
+            return (
+                sum(point[0] for point in ring) / len(ring),
+                sum(point[1] for point in ring) / len(ring),
+                sum(point[2] for point in ring) / len(ring),
+            )
 
         def ring_normal(ring: Sequence[Vec3]) -> Vec3:
             center = ring_center(ring)
@@ -713,10 +737,13 @@ class LoftGeometry(MeshGeometry):
                 ring = rings[ring_index]
                 normal = _v_cross(_v_sub(ring[1], ring[0]), _v_sub(ring[2], ring[0]))
                 axis = max(range(3), key=lambda index: abs(normal[index]))
-                projected = [
-                    tuple(value for index, value in enumerate(point) if index != axis)
-                    for point in ring
-                ]
+                projected: list[Vec2]
+                if axis == 0:
+                    projected = [(point[1], point[2]) for point in ring]
+                elif axis == 1:
+                    projected = [(point[0], point[2]) for point in ring]
+                else:
+                    projected = [(point[0], point[1]) for point in ring]
                 order = list(range(count))
                 if _polygon_area(projected) < 0.0:
                     order.reverse()
@@ -724,10 +751,8 @@ class LoftGeometry(MeshGeometry):
                     (order[a], order[b], order[c])
                     for a, b, c in _triangulate_simple([projected[index] for index in order])
                 ]
-                center = tuple(sum(point[axis] for point in ring) / count for axis in range(3))
-                neighbor = tuple(
-                    sum(point[axis] for point in rings[neighbor_index]) / count for axis in range(3)
-                )
+                center = ring_center(ring)
+                neighbor = ring_center(rings[neighbor_index])
                 outward = _v_sub(center, neighbor)
                 for a, b, c in triangles:
                     face = (offset + a, offset + b, offset + c)
@@ -813,12 +838,11 @@ class ExtrudeWithHolesGeometry(MeshGeometry):
         bottom_indices: list[int] = []
         top_indices: list[int] = []
         for ring, inward in ((outer, False), *((hole, True) for hole in holes)):
-            if inward:
-                ring = list(reversed(ring))
+            oriented_ring = list(reversed(ring)) if inward else ring
             start = len(vertices)
-            vertices.extend((x, y, z0) for x, y in ring)
-            vertices.extend((x, y, z1) for x, y in ring)
-            count = len(ring)
+            vertices.extend((x, y, z0) for x, y in oriented_ring)
+            vertices.extend((x, y, z1) for x, y in oriented_ring)
+            count = len(oriented_ring)
             bottom_indices.extend(range(start, start + count))
             top_indices.extend(range(start + count, start + 2 * count))
             for index in range(count):
@@ -845,7 +869,7 @@ def build123d_to_mesh(
 ) -> MeshGeometry:
     """Tessellate a build123d shape, including its current Location, into a mesh."""
 
-    from build123d import Shape
+    from build123d.topology import Shape
 
     if not isinstance(shape, Shape):
         raise TypeError("shape must be a build123d Shape")

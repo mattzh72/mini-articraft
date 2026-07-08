@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, replace
-from typing import Literal
+from typing import Any, Literal, cast
 
 from mini_articraft.errors import ValidationError
 from mini_articraft.sdk.mesh import (
@@ -124,10 +124,10 @@ def _region_box(
         if center_gap <= 0.0:
             raise ValidationError("center_gap must be positive for a center region")
         lows[0], highs[0] = max(lows[0], -center_gap * 0.5), min(highs[0], center_gap * 0.5)
-    if any(low >= high for low, high in zip(lows, highs)):
+    if any(low >= high for low, high in zip(lows, highs, strict=True)):
         raise ValidationError(f"partition region {region.name!r} has empty bounds")
-    return BoxGeometry(tuple(high - low for low, high in zip(lows, highs))).translate(
-        *((low + high) * 0.5 for low, high in zip(lows, highs))
+    return BoxGeometry(tuple(high - low for low, high in zip(lows, highs, strict=True))).translate(
+        *((low + high) * 0.5 for low, high in zip(lows, highs, strict=True))
     )
 
 
@@ -139,7 +139,7 @@ def partition_shell(
     else:
         if "regions" not in overrides:
             raise ValidationError("partition_shell(shell, ...) requires regions")
-        value = ShellPartitionSpec(shell=spec, **overrides)
+        value = ShellPartitionSpec(shell=spec, **cast(dict[str, Any], overrides))
     working = value.shell.copy()
     for splitter in value.splitters:
         working = boolean_difference(working, splitter)

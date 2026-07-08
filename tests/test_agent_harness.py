@@ -518,11 +518,16 @@ def test_agent_cancellation_terminates_a_live_exec_session(tmp_path) -> None:
     command = f"{shlex.quote(sys.executable)} -c 'import time; time.sleep(60)'"
 
     class BlockingModel(FakeModel):
-        def __init__(self):
+        def __init__(self) -> None:
             super().__init__([])
             self.waiting = asyncio.Event()
 
-        async def query(self, messages, *, tools=None):
+        async def query(
+            self,
+            messages: list[dict[str, Any]],
+            *,
+            tools: list[dict[str, Any]] | None = None,
+        ) -> dict[str, Any]:
             self.calls.append({"messages": list(messages), "tools": list(tools or [])})
             if len(self.calls) == 1:
                 return {
@@ -536,7 +541,9 @@ def test_agent_cancellation_terminates_a_live_exec_session(tmp_path) -> None:
                     ],
                 }
             self.waiting.set()
-            await asyncio.Future()
+            pending: asyncio.Future[None] = asyncio.Future()
+            await pending
+            raise AssertionError("blocking query unexpectedly completed")
 
     async def exercise() -> None:
         env = LocalEnvironment(output_dir=tmp_path)

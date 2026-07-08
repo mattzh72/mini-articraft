@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from typing import Iterable, Sequence
+from collections.abc import Iterable, Sequence
 
 from mini_articraft.sdk._mesh_core import (
     _EPS,
@@ -219,11 +219,16 @@ def _rounded_centerline(
                 amount = sample / max(2, int(segments))
                 inverse = 1.0 - amount
                 output.append(
-                    tuple(
-                        inverse**2 * before[axis]
-                        + 2.0 * inverse * amount * corner[axis]
-                        + amount**2 * after[axis]
-                        for axis in range(3)
+                    (
+                        inverse**2 * before[0]
+                        + 2.0 * inverse * amount * corner[0]
+                        + amount**2 * after[0],
+                        inverse**2 * before[1]
+                        + 2.0 * inverse * amount * corner[1]
+                        + amount**2 * after[1],
+                        inverse**2 * before[2]
+                        + 2.0 * inverse * amount * corner[2]
+                        + amount**2 * after[2],
                     )
                 )
     if not closed:
@@ -439,7 +444,7 @@ def tube_network_from_paths(
         raise ValueError(
             "tube and node radii must be finite and non-negative, with a positive tube radius"
         )
-    solids = [
+    solids: list[MeshGeometry] = [
         WirePolylineGeometry(
             path,
             radius=radius,
@@ -457,7 +462,11 @@ def tube_network_from_paths(
     step = max(float(min_segment_length), _EPS)
     for path in path_values:
         for point in path:
-            key = tuple(round(value / step) for value in point)
+            key = (
+                round(point[0] / step),
+                round(point[1] / step),
+                round(point[2] / step),
+            )
             previous = nodes.get(key)
             nodes[key] = (point, 1 if previous is None else previous[1] + 1)
     for point, occurrences in nodes.values():

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, replace
-from typing import Literal, Sequence
+from itertools import pairwise
+from typing import Literal, cast
 
 import numpy as np
 import trimesh
@@ -80,7 +82,9 @@ def _coerce_spec(
         return value
     return SectionLoftSpec(
         sections=tuple(
-            section if isinstance(section, LoftSection) else LoftSection(tuple(section))
+            section
+            if isinstance(section, LoftSection)
+            else LoftSection(cast(tuple[Vec3, ...], tuple(section)))
             for section in value
         )
     )
@@ -91,7 +95,7 @@ def _resample_loop(points: Sequence[Vec3], count: int) -> list[Vec3]:
         return list(points)
     closed = [*points, points[0]]
     lengths = [0.0]
-    for start, end in zip(closed, closed[1:]):
+    for start, end in pairwise(closed):
         lengths.append(lengths[-1] + float(np.linalg.norm(np.subtract(end, start))))
     total = lengths[-1]
     if total <= 1e-12:
@@ -104,10 +108,12 @@ def _resample_loop(points: Sequence[Vec3], count: int) -> list[Vec3]:
             edge += 1
         span = lengths[edge + 1] - lengths[edge]
         amount = 0.0 if span <= 1e-12 else (target - lengths[edge]) / span
+        start, end = closed[edge], closed[edge + 1]
         result.append(
-            tuple(
-                closed[edge][axis] + (closed[edge + 1][axis] - closed[edge][axis]) * amount
-                for axis in range(3)
+            (
+                start[0] + (end[0] - start[0]) * amount,
+                start[1] + (end[1] - start[1]) * amount,
+                start[2] + (end[2] - start[2]) * amount,
             )
         )
     return result
@@ -116,7 +122,7 @@ def _resample_loop(points: Sequence[Vec3], count: int) -> list[Vec3]:
 def _loop_normal(points: Sequence[Vec3]) -> np.ndarray:
     center = np.mean(np.asarray(points, dtype=np.float64), axis=0)
     normal = np.zeros(3, dtype=np.float64)
-    for start, end in zip(points, [*points[1:], points[0]]):
+    for start, end in pairwise([*points, points[0]]):
         normal += np.cross(np.subtract(start, center), np.subtract(end, center))
     length = float(np.linalg.norm(normal))
     if length <= 1e-12:
@@ -141,7 +147,7 @@ def _align_loop(reference: Sequence[Vec3], candidate: Sequence[Vec3]) -> list[Ve
 
 def _sample_polyline(points: Sequence[Vec3], amount: float) -> Vec3:
     lengths = [0.0]
-    for start, end in zip(points, points[1:]):
+    for start, end in pairwise(points):
         lengths.append(lengths[-1] + float(np.linalg.norm(np.subtract(end, start))))
     target = lengths[-1] * amount
     index = 0
@@ -149,9 +155,11 @@ def _sample_polyline(points: Sequence[Vec3], amount: float) -> Vec3:
         index += 1
     span = lengths[index + 1] - lengths[index]
     local = 0.0 if span <= 1e-12 else (target - lengths[index]) / span
-    return tuple(
-        points[index][axis] + (points[index + 1][axis] - points[index][axis]) * local
-        for axis in range(3)
+    start, end = points[index], points[index + 1]
+    return (
+        start[0] + (end[0] - start[0]) * local,
+        start[1] + (end[1] - start[1]) * local,
+        start[2] + (end[2] - start[2]) * local,
     )
 
 

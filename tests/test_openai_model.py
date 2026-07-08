@@ -74,7 +74,9 @@ def patch_websocket(monkeypatch: pytest.MonkeyPatch, socket: FakeWebSocket) -> N
 
 
 def openai_model(**kwargs: Any) -> OpenAIModel:
-    return OpenAIModel(Settings(openai_api_key="sk-test", _env_file=None, **kwargs))
+    kwargs.setdefault("openai_model", "gpt-5.5-2026-04-23")
+    kwargs.setdefault("openai_reasoning_effort", "high")
+    return OpenAIModel(Settings(openai_api_key="sk-test", **kwargs))
 
 
 def test_openai_model_uses_websocket(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Iterable
+from collections.abc import Iterable
 
 import manifold3d
 import numpy as np
@@ -43,8 +43,8 @@ def _from_manifold(manifold: manifold3d.Manifold) -> MeshGeometry:
     vertices = np.asarray(mesh.vert_properties, dtype=np.float64)
     faces = np.asarray(mesh.tri_verts, dtype=np.int64)
     return MeshGeometry(
-        vertices=[tuple(float(value) for value in vertex[:3]) for vertex in vertices],
-        faces=[tuple(int(value) for value in face) for face in faces],
+        vertices=[(float(vertex[0]), float(vertex[1]), float(vertex[2])) for vertex in vertices],
+        faces=[(int(face[0]), int(face[1]), int(face[2])) for face in faces],
     )
 
 

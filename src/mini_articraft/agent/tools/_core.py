@@ -144,7 +144,7 @@ def workspace_digest(workspace: Path) -> str:
             relative = relative_path.as_posix().encode("utf-8", errors="surrogateescape")
             if entry.is_symlink():
                 digest.update(b"L\0" + relative + b"\0")
-                digest.update(os.readlink(path).encode("utf-8", errors="surrogateescape"))
+                digest.update(str(path.readlink()).encode("utf-8", errors="surrogateescape"))
                 digest.update(b"\0")
                 target = path.resolve(strict=True)
                 if not target.is_file():

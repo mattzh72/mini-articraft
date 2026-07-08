@@ -6,6 +6,7 @@ import tempfile
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 from pxr import Gf, Sdf, Tf, Usd, UsdGeom, UsdPhysics, UsdUtils, UsdValidation
 
@@ -187,7 +188,7 @@ def _set_articulation_frames(
 def _articulation_attrs(prim: Usd.Prim, articulation: Articulation) -> None:
     values: dict[str, object] = {
         "name": articulation.name,
-        "articulationType": articulation.articulation_type.value,
+        "articulationType": cast(ArticulationType, articulation.articulation_type).value,
         "parent": articulation.parent,
         "child": articulation.child,
         "axis": Gf.Vec3d(*articulation.axis),
@@ -224,7 +225,7 @@ def _mesh(
         raise TypeError("shape produced no USD mesh triangles")
     return (
         [Gf.Vec3f(float(x), float(y), float(z)) for x, y, z in mesh.vertices],
-        [tuple(int(index) for index in face) for face in mesh.faces],
+        [(int(face[0]), int(face[1]), int(face[2])) for face in mesh.faces],
     )
 
 
@@ -251,7 +252,7 @@ def _object_to_payload(obj: ArticulatedObject) -> dict[str, object]:
         "articulations": [
             {
                 "name": item.name,
-                "type": item.articulation_type.value,
+                "type": cast(ArticulationType, item.articulation_type).value,
                 "parent": item.parent,
                 "child": item.child,
                 "origin": {"xyz": item.origin.xyz, "rpy": item.origin.rpy},
