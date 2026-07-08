@@ -7,11 +7,11 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
-from pxr import Gf, Sdf, Tf, Usd, UsdGeom, UsdPhysics, UsdUtils
+from pxr import Gf, Sdf, Tf, Usd, UsdGeom, UsdPhysics, UsdUtils, UsdValidation
 
-from mini_articraft.sdk._collision import MeshCollisionKernel, _build123d_shape, _rpy_matrix
-from mini_articraft.sdk.joints import ContinuousLimits, Joint, JointLimits, JointType
-from mini_articraft.sdk.object import ArticulatedObject, Part
+from mini_articraft.sdk._collision import MeshCollisionKernel, _geometry_to_mesh, _rpy_matrix
+from mini_articraft.sdk.joints import Articulation, ArticulationType, MotionLimits
+from mini_articraft.sdk.object import ArticulatedObject, Geometry
 from mini_articraft.sdk.testing import DEFAULT_MESH_TOLERANCE
 
 
@@ -33,16 +33,24 @@ def export_object(
     obj.validate()
 
     usdz = _next_usdz_path(root / "usdz")
-    _write_usdz(obj, usdz, mesh_tolerance)
-
     manifest = root / "model.json"
     payload = _object_to_payload(obj) | {"files": {"usdz": usdz.relative_to(root).as_posix()}}
-    manifest.write_text(json.dumps(payload, indent=2) + "\n")
+    manifest_temp = manifest.with_name(f".{manifest.name}.tmp")
+    try:
+        _write_usdz(obj, usdz, mesh_tolerance)
+        manifest_temp.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+        manifest_temp.replace(manifest)
+    except BaseException:
+        usdz.unlink(missing_ok=True)
+        raise
+    finally:
+        manifest_temp.unlink(missing_ok=True)
     return ExportResult(root=root, manifest=manifest, usdz=usdz)
 
 
 def _next_usdz_path(usdz_dir: Path) -> Path:
-    return usdz_dir / f"{len(list(usdz_dir.glob('*.usdz'))):04d}.usdz"
+    indexes = [int(path.stem) for path in usdz_dir.glob("*.usdz") if path.stem.isdigit()]
+    return usdz_dir / f"{(max(indexes) + 1) if indexes else 0:04d}.usdz"
 
 
 def _write_usdz(obj: ArticulatedObject, path: Path, mesh_tolerance: float) -> None:
@@ -52,7 +60,7 @@ def _write_usdz(obj: ArticulatedObject, path: Path, mesh_tolerance: float) -> No
     with tempfile.TemporaryDirectory(prefix="mini-articraft-usd-") as temp_dir:
         stage_path = Path(temp_dir) / "model.usdc"
         stage = Usd.Stage.CreateNew(str(stage_path))
-        UsdGeom.SetStageMetersPerUnit(stage, obj.meters_per_unit)
+        UsdGeom.SetStageMetersPerUnit(stage, 1.0)
         UsdGeom.SetStageUpAxis(stage, UsdGeom.Tokens.z)
 
         world = UsdGeom.Xform.Define(stage, "/World")
@@ -61,18 +69,21 @@ def _write_usdz(obj: ArticulatedObject, path: Path, mesh_tolerance: float) -> No
         object_path = f"/World/{_safe_name(obj.name)}"
         object_prim = UsdGeom.Xform.Define(stage, object_path).GetPrim()
         UsdPhysics.ArticulationRootAPI.Apply(object_prim)
-        _attrs(object_prim, {"name": obj.name, "units": obj.units})
+        _attrs(object_prim, {"name": obj.name, "units": "meters"})
 
         part_paths = _write_parts(stage, f"{object_path}/parts", obj, mesh_tolerance)
-        _write_joints(stage, f"{object_path}/joints", obj, part_paths)
+        _write_articulations(stage, f"{object_path}/joints", obj, part_paths)
 
         path.parent.mkdir(parents=True, exist_ok=True)
         stage.GetRootLayer().Save()
-        temp_path = path.with_name(f".{path.name}.tmp")
+        _validate_stage(stage)
+
+        temp_path = path.with_name(f".{path.stem}.tmp.usdz")
         temp_path.unlink(missing_ok=True)
         try:
             if not UsdUtils.CreateNewUsdzPackage(str(stage_path), str(temp_path)):
                 raise RuntimeError(f"failed to create USDZ package: {path}")
+            _validate_usdz(temp_path)
             temp_path.replace(path)
         finally:
             temp_path.unlink(missing_ok=True)
@@ -86,96 +97,111 @@ def _write_parts(
 ) -> dict[str, str]:
     UsdGeom.Scope.Define(stage, scope_path)
     transforms = MeshCollisionKernel(obj, mesh_tolerance=mesh_tolerance).world_transforms({})
-    safe_names = _safe_name_map(part.name for part in obj.parts)
+    safe_part_names = _safe_name_map(part.name for part in obj.parts)
     paths: dict[str, str] = {}
 
     for part in obj.parts:
-        path = f"{scope_path}/{safe_names[part.name]}"
-        paths[part.name] = path
-        points, faces = _mesh(part, mesh_tolerance)
-        mesh = UsdGeom.Mesh.Define(stage, path)
-        mesh.CreatePointsAttr(points)
-        mesh.CreateFaceVertexCountsAttr([3] * len(faces))
-        mesh.CreateFaceVertexIndicesAttr([i for face in faces for i in face])
-        mesh.CreateSubdivisionSchemeAttr(UsdGeom.Tokens.none)
-        mesh.CreateExtentAttr(UsdGeom.Mesh.ComputeExtent(points))
-        if part.color:
-            mesh.CreateDisplayColorAttr([Gf.Vec3f(*part.color[:3])])
-            mesh.CreateDisplayOpacityAttr([part.color[3]])
+        part_path = f"{scope_path}/{safe_part_names[part.name]}"
+        paths[part.name] = part_path
+        part_prim = UsdGeom.Xform.Define(stage, part_path).GetPrim()
+        _attrs(part_prim, {"name": part.name})
+        UsdPhysics.RigidBodyAPI.Apply(part_prim)
+        UsdGeom.Xformable(part_prim).AddTransformOp().Set(_gf_matrix(transforms[part.name]))
 
-        prim = mesh.GetPrim()
-        _attrs(prim, {"name": part.name})
-        UsdPhysics.RigidBodyAPI.Apply(prim)
-        UsdGeom.Xformable(prim).AddTransformOp().Set(_gf_matrix(transforms[part.name]))
+        shapes_path = f"{part_path}/shapes"
+        UsdGeom.Scope.Define(stage, shapes_path)
+        shape_entries = list(part._iter_shapes())
+        safe_shape_names = _safe_name_map(shape.name for shape in shape_entries)
+        for shape in shape_entries:
+            mesh_path = f"{shapes_path}/{safe_shape_names[shape.name]}"
+            points, faces = _mesh(shape.geometry, mesh_tolerance)
+            mesh = UsdGeom.Mesh.Define(stage, mesh_path)
+            mesh.CreatePointsAttr(points)
+            mesh.CreateFaceVertexCountsAttr([3] * len(faces))
+            mesh.CreateFaceVertexIndicesAttr([index for face in faces for index in face])
+            mesh.CreateSubdivisionSchemeAttr(UsdGeom.Tokens.none)
+            mesh.CreateExtentAttr(UsdGeom.Mesh.ComputeExtent(points))
+            if shape.color is not None:
+                mesh.CreateDisplayColorAttr([Gf.Vec3f(*shape.color[:3])])
+                mesh.CreateDisplayOpacityAttr([shape.color[3]])
+            _attrs(mesh.GetPrim(), {"name": shape.name})
     return paths
 
 
-def _write_joints(
+def _write_articulations(
     stage: Usd.Stage,
     scope_path: str,
     obj: ArticulatedObject,
     part_paths: dict[str, str],
 ) -> None:
     UsdGeom.Scope.Define(stage, scope_path)
-    safe_names = _safe_name_map(joint.name for joint in obj.joints)
-    for joint in obj.joints:
-        schema = _joint_schema(stage, f"{scope_path}/{safe_names[joint.name]}", joint)
-        schema.CreateBody0Rel().SetTargets([part_paths[joint.parent]])
-        schema.CreateBody1Rel().SetTargets([part_paths[joint.child]])
-        _joint_attrs(schema.GetPrim(), joint)
+    safe_names = _safe_name_map(item.name for item in obj.articulations)
+    for articulation in obj.articulations:
+        schema = _articulation_schema(
+            stage, f"{scope_path}/{safe_names[articulation.name]}", articulation
+        )
+        schema.CreateBody0Rel().SetTargets([part_paths[articulation.parent]])
+        schema.CreateBody1Rel().SetTargets([part_paths[articulation.child]])
+        _articulation_attrs(schema.GetPrim(), articulation)
 
 
-def _joint_schema(stage: Usd.Stage, path: str, joint: Joint):
-    if joint.type == JointType.FIXED:
+def _articulation_schema(stage: Usd.Stage, path: str, articulation: Articulation):
+    if articulation.articulation_type == ArticulationType.FIXED:
         schema = UsdPhysics.FixedJoint.Define(stage, path)
-        _set_joint_frames(schema, joint)
+        _set_articulation_frames(schema, articulation)
         return schema
 
     schema_type = (
-        UsdPhysics.PrismaticJoint if joint.type == JointType.PRISMATIC else UsdPhysics.RevoluteJoint
+        UsdPhysics.PrismaticJoint
+        if articulation.articulation_type == ArticulationType.PRISMATIC
+        else UsdPhysics.RevoluteJoint
     )
     schema = schema_type.Define(stage, path)
     schema.CreateAxisAttr("X")
-    _set_joint_frames(schema, joint, rotate_axis=True)
-    if isinstance(joint.limits, JointLimits):
-        lower, upper = joint.limits.lower, joint.limits.upper
-        if joint.type == JointType.REVOLUTE:
-            # USD Physics revolute limits are degrees. The SDK stores radians.
+    _set_articulation_frames(schema, articulation, rotate_axis=True)
+    limits = articulation.motion_limits
+    if limits is not None and limits.lower is not None and limits.upper is not None:
+        lower, upper = limits.lower, limits.upper
+        if articulation.articulation_type == ArticulationType.REVOLUTE:
             lower, upper = math.degrees(lower), math.degrees(upper)
         schema.CreateLowerLimitAttr(lower)
         schema.CreateUpperLimitAttr(upper)
     return schema
 
 
-def _set_joint_frames(schema, joint: Joint, *, rotate_axis: bool = False) -> None:
-    axis = _axis_matrix(joint.axis) if rotate_axis else Gf.Matrix4d(1.0)
-    # Gf.Matrix4d composes in row-vector order, while the SDK transform stack is
-    # column-vector order. Reverse composition so USD's X axis becomes the SDK
-    # joint axis after the joint frame rotation.
-    frame = axis * _gf_matrix(_rpy_matrix(joint.frame.rpy))
-    schema.CreateLocalPos0Attr(Gf.Vec3f(*joint.frame.xyz))
+def _set_articulation_frames(
+    schema,
+    articulation: Articulation,
+    *,
+    rotate_axis: bool = False,
+) -> None:
+    axis = _axis_matrix(articulation.axis) if rotate_axis else Gf.Matrix4d(1.0)
+    # Gf uses row-vector composition while the SDK uses column vectors.
+    frame = axis * _gf_matrix(_rpy_matrix(articulation.origin.rpy))
+    schema.CreateLocalPos0Attr(Gf.Vec3f(*articulation.origin.xyz))
     schema.CreateLocalRot0Attr(_quat(frame))
     schema.CreateLocalPos1Attr(Gf.Vec3f(0.0, 0.0, 0.0))
     schema.CreateLocalRot1Attr(_quat(axis))
 
 
-def _joint_attrs(prim: Usd.Prim, joint: Joint) -> None:
-    values = {
-        "name": joint.name,
-        "jointType": joint.type.value,
-        "parent": joint.parent,
-        "child": joint.child,
-        "axis": Gf.Vec3d(*joint.axis),
-        "frame:xyz": Gf.Vec3d(*joint.frame.xyz),
-        "frame:rpy": Gf.Vec3d(*joint.frame.rpy),
+def _articulation_attrs(prim: Usd.Prim, articulation: Articulation) -> None:
+    values: dict[str, object] = {
+        "name": articulation.name,
+        "articulationType": articulation.articulation_type.value,
+        "parent": articulation.parent,
+        "child": articulation.child,
+        "axis": Gf.Vec3d(*articulation.axis),
+        "origin:xyz": Gf.Vec3d(*articulation.origin.xyz),
+        "origin:rpy": Gf.Vec3d(*articulation.origin.rpy),
     }
-    if joint.limits:
+    limits = articulation.motion_limits
+    if limits is not None:
         values |= {
-            "limits:effort": joint.limits.effort,
-            "limits:velocity": joint.limits.velocity,
+            "limits:effort": limits.effort,
+            "limits:velocity": limits.velocity,
         }
-    if isinstance(joint.limits, JointLimits):
-        values |= {"limits:lower": joint.limits.lower, "limits:upper": joint.limits.upper}
+        if limits.lower is not None and limits.upper is not None:
+            values |= {"limits:lower": limits.lower, "limits:upper": limits.upper}
     _attrs(prim, values)
 
 
@@ -189,59 +215,74 @@ def _attrs(prim: Usd.Prim, values: dict[str, object]) -> None:
         prim.CreateAttribute(f"mini_articraft:{name}", types[type(value)], custom=True).Set(value)
 
 
-def _mesh(part: Part, tolerance: float) -> tuple[list[Gf.Vec3f], list[tuple[int, int, int]]]:
-    vertices, faces = _build123d_shape(part.shape).tessellate(tolerance)
-    if not vertices or not faces:
-        raise TypeError(f"part {part.name!r} produced no USD mesh triangles")
+def _mesh(
+    geometry: Geometry,
+    tolerance: float,
+) -> tuple[list[Gf.Vec3f], list[tuple[int, int, int]]]:
+    mesh = _geometry_to_mesh(geometry, tolerance)
+    if mesh.vertices.size == 0 or mesh.faces.size == 0:
+        raise TypeError("shape produced no USD mesh triangles")
     return (
-        [Gf.Vec3f(float(v.X), float(v.Y), float(v.Z)) for v in vertices],
-        [(int(a), int(b), int(c)) for a, b, c in faces],
+        [Gf.Vec3f(float(x), float(y), float(z)) for x, y, z in mesh.vertices],
+        [tuple(int(index) for index in face) for face in mesh.faces],
     )
 
 
 def _object_to_payload(obj: ArticulatedObject) -> dict[str, object]:
     return {
         "name": obj.name,
-        "units": obj.units,
-        "meters_per_unit": obj.meters_per_unit,
+        "units": "meters",
+        "meters_per_unit": 1.0,
         "up_axis": "Z",
         "parts": [
-            {"name": p.name, "shape_type": type(p.shape).__name__, "color": p.color}
-            for p in obj.parts
-        ],
-        "joints": [
             {
-                "name": j.name,
-                "type": j.type.value,
-                "parent": j.parent,
-                "child": j.child,
-                "frame": {"xyz": j.frame.xyz, "rpy": j.frame.rpy},
-                "axis": j.axis,
-                "limits": _limits(j.limits),
+                "name": part.name,
+                "shapes": [
+                    {
+                        "name": shape.name,
+                        "geometry_type": type(shape.geometry).__name__,
+                        "color": shape.color,
+                    }
+                    for shape in part._iter_shapes()
+                ],
             }
-            for j in obj.joints
+            for part in obj.parts
+        ],
+        "articulations": [
+            {
+                "name": item.name,
+                "type": item.articulation_type.value,
+                "parent": item.parent,
+                "child": item.child,
+                "origin": {"xyz": item.origin.xyz, "rpy": item.origin.rpy},
+                "axis": item.axis,
+                "motion_limits": _limits(item.motion_limits),
+            }
+            for item in obj.articulations
         ],
     }
 
 
-def _limits(limits: JointLimits | ContinuousLimits | None) -> dict[str, float] | None:
+def _limits(limits: MotionLimits | None) -> dict[str, float | None] | None:
     if limits is None:
         return None
-    values = {"effort": limits.effort, "velocity": limits.velocity}
-    if isinstance(limits, JointLimits):
-        values |= {"lower": limits.lower, "upper": limits.upper}
-    return values
+    return {
+        "effort": limits.effort,
+        "velocity": limits.velocity,
+        "lower": limits.lower,
+        "upper": limits.upper,
+    }
 
 
 def _axis_matrix(axis: tuple[float, float, float]) -> Gf.Matrix4d:
-    length = math.sqrt(sum(float(v) ** 2 for v in axis))
+    length = math.hypot(*axis)
     if length <= 0.0:
-        raise ValueError("joint axis must be non-zero")
+        raise ValueError("articulation axis must be non-zero")
     matrix = Gf.Matrix4d(1.0)
     matrix.SetRotate(
         Gf.Rotation(
             Gf.Vec3d(1.0, 0.0, 0.0),
-            Gf.Vec3d(*(float(v) / length for v in axis)),
+            Gf.Vec3d(*(float(value) / length for value in axis)),
         )
     )
     return matrix
@@ -252,11 +293,11 @@ def _quat(matrix: Gf.Matrix4d) -> Gf.Quatf:
 
 
 def _gf_matrix(matrix) -> Gf.Matrix4d:
-    rows = tuple(tuple(float(matrix[col, row]) for col in range(4)) for row in range(4))
+    rows = tuple(tuple(float(matrix[column, row]) for column in range(4)) for row in range(4))
     return Gf.Matrix4d(rows)
 
 
-def _safe_name_map(names: Iterable[object]) -> dict[str, str]:
+def _safe_name_map(names: Iterable[str]) -> dict[str, str]:
     result: dict[str, str] = {}
     used: set[str] = set()
     for raw in names:
@@ -273,3 +314,33 @@ def _safe_name_map(names: Iterable[object]) -> dict[str, str]:
 
 def _safe_name(value: str) -> str:
     return Tf.MakeValidIdentifier(value.strip()) or "item"
+
+
+def _validate_stage(stage: Usd.Stage) -> None:
+    names = [
+        "usdGeomValidators:StageMetadataChecker",
+        "usdValidation:CompositionErrorTest",
+        "usdPhysicsValidators:RigidBodyChecker",
+        "usdPhysicsValidators:PhysicsJointChecker",
+        "usdPhysicsValidators:ArticulationChecker",
+    ]
+    validators = UsdValidation.ValidationRegistry().GetOrLoadValidatorsByName(names)
+    errors = UsdValidation.ValidationContext(validators).Validate(stage)
+    if errors:
+        raise RuntimeError(
+            "OpenUSD validation failed: " + "; ".join(str(error) for error in errors)
+        )
+
+
+def _validate_usdz(path: Path) -> None:
+    stage = Usd.Stage.Open(str(path))
+    if stage is None:
+        raise RuntimeError("OpenUSD could not open the generated USDZ package")
+    validators = UsdValidation.ValidationRegistry().GetOrLoadValidatorsByName(
+        ["usdUtilsValidators:UsdzPackageValidator"]
+    )
+    errors = UsdValidation.ValidationContext(validators).Validate(stage)
+    if errors:
+        raise RuntimeError(
+            "OpenUSD USDZ validation failed: " + "; ".join(str(error) for error in errors)
+        )
