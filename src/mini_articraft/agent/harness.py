@@ -15,10 +15,12 @@ import mini_articraft.agent.tools as tools
 from mini_articraft import Environment, Model, package_dir
 from mini_articraft.agent import events
 from mini_articraft.agent.tools import ToolContext
+from mini_articraft.agent.tools._exec import MANAGER as EXEC_MANAGER
 from mini_articraft.record import Record, append_conversation
 from mini_articraft.settings import DEFAULT_MAX_TURNS
 
 PROMPT_SLUG_MAX_LENGTH = 48
+MAX_CONSECUTIVE_EMPTY_RESPONSES = 3
 
 
 class AgentConfig(BaseModel):
@@ -50,6 +52,12 @@ class Agent:
         run_dir = self.env.create_run(run_id)
         context = ToolContext(self.env, run_dir, run_dir / "workspace")
         conversation_path = run_dir / "conversation.jsonl"
+        record_path = run_dir / "record.json"
+        record = Record.load(record_path)
+        record.status = "running"
+        record.error = ""
+        record.result = ""
+        record.save(record_path)
 
         self.messages = [
             {
@@ -85,52 +93,122 @@ class Agent:
         token_usage: dict[str, int] = {}
         turn = 0
         hit_max_turns = False
-        for turn in range(1, self.config.max_turns + 1):
-            self._emit(events.TurnStarted(turn))
-            response = await self.model.query(self.messages, tools=tools.schemas())
-            cost += _cost(response)
-            response_usage = _token_usage(response)
-            token_usage = _add_token_usage(token_usage, response_usage)
-            _save_cost(run_dir, cost, token_usage)
-            text = str(response.get("text") or "")
-            tool_calls = list(response.get("tool_calls") or [])
-            assistant = {
-                "role": "assistant",
-                "content": text,
-                "tool_calls": tool_calls,
-                "token_usage": response_usage,
-            }
-            self.messages.append(assistant)
-            append_conversation(conversation_path, assistant)
-            self._emit(events.AssistantMessage(turn, text, tool_calls, response_usage))
-
-            if not tool_calls:
-                if context.compile_is_fresh and context.compile_result:
-                    final_text = text
+        termination_error = ""
+        consecutive_empty_responses = 0
+        try:
+            for turn in range(1, self.config.max_turns + 1):
+                self._emit(events.TurnStarted(turn))
+                try:
+                    response = await self.model.query(self.messages, tools=tools.schemas())
+                except Exception as exc:
+                    termination_error = f"model query failed: {type(exc).__name__}: {exc}"
                     break
-                reminder = {"role": "user", "content": "Run compile before the final response."}
-                self.messages.append(reminder)
-                append_conversation(conversation_path, reminder)
-                continue
+                cost += _cost(response)
+                response_usage = _token_usage(response)
+                token_usage = _add_token_usage(token_usage, response_usage)
+                _save_cost(run_dir, cost, token_usage)
+                text = str(response.get("text") or "")
+                tool_calls = list(response.get("tool_calls") or [])
+                assistant = {
+                    "role": "assistant",
+                    "content": text,
+                    "tool_calls": tool_calls,
+                    "token_usage": response_usage,
+                }
+                self.messages.append(assistant)
+                append_conversation(conversation_path, assistant)
+                self._emit(events.AssistantMessage(turn, text, tool_calls, response_usage))
 
-            await self._run_tool_calls(context, tool_calls, conversation_path)
-        else:
-            hit_max_turns = True
+                if not tool_calls:
+                    if text.strip():
+                        consecutive_empty_responses = 0
+                    else:
+                        consecutive_empty_responses += 1
 
-        record = Record.load(run_dir / "record.json")
-        if hit_max_turns:
+                    workspace_is_compiled = _latest_workspace_is_compiled(context)
+                    if text.strip() and workspace_is_compiled:
+                        final_text = text
+                        break
+
+                    if consecutive_empty_responses >= MAX_CONSECUTIVE_EMPTY_RESPONSES:
+                        termination_error = (
+                            "agent returned three consecutive responses with no visible text or "
+                            "tool calls"
+                        )
+                        break
+                    if consecutive_empty_responses == 2:
+                        _append_reminder(
+                            self.messages,
+                            conversation_path,
+                            _empty_response_reminder(
+                                context,
+                                workspace_is_compiled=workspace_is_compiled,
+                            ),
+                        )
+                    elif workspace_is_compiled:
+                        _append_reminder(
+                            self.messages,
+                            conversation_path,
+                            _final_response_required_reminder(),
+                        )
+                    else:
+                        _append_reminder(
+                            self.messages,
+                            conversation_path,
+                            _compile_required_reminder(context),
+                        )
+                    continue
+
+                consecutive_empty_responses = 0
+                await self._run_tool_calls(context, tool_calls, conversation_path)
+            else:
+                hit_max_turns = True
+        finally:
+            await EXEC_MANAGER.terminate(context)
+
+        workspace_is_compiled = _latest_workspace_is_compiled(context)
+        record = Record.load(record_path)
+        if termination_error:
+            record.status = "error"
+            record.error = termination_error
+            record.result = ""
+        elif hit_max_turns:
             record.status = "error"
             record.error = "agent hit max turns limit"
-            record.save(run_dir / "record.json")
+            record.result = ""
+        elif final_text and workspace_is_compiled:
+            try:
+                result_path = _result_path(run_dir, context.successful_compile_result)
+            except ValueError as exc:
+                record.status = "error"
+                record.error = str(exc)
+                record.result = ""
+            else:
+                if result_path and run_dir.joinpath(result_path).is_file():
+                    record.status = "success"
+                    record.error = ""
+                    record.result = result_path
+                else:
+                    record.status = "error"
+                    record.error = "fresh compile did not produce a USDZ result"
+                    record.result = ""
+        else:
+            record.status = "error"
+            record.error = "agent stopped without a visible final response after a fresh compile"
+            record.result = ""
+        record.save(record_path)
 
         data = record.to_dict()
         data["message"] = final_text
         data["run"] = str(run_dir)
-        if context.compile_result and isinstance(
-            context.compile_result.get("compile_report"),
+        compile_result = (
+            context.successful_compile_result if workspace_is_compiled else context.compile_result
+        )
+        if compile_result and isinstance(
+            compile_result.get("compile_report"),
             dict,
         ):
-            data["compile_report"] = context.compile_result["compile_report"]
+            data["compile_report"] = compile_result["compile_report"]
         if self.config.output_path:
             record.save(self.config.output_path)
         self._emit(
@@ -200,10 +278,15 @@ class Agent:
         name = str(call["name"])
         call_id = str(call["id"])
         try:
-            if name != "compile":
-                context.compile_is_fresh = False
+            live_sessions = EXEC_MANAGER.live_session_ids(context)
+            if live_sessions and name != "write_stdin":
+                raise ValueError(
+                    "finish the running exec_command with write_stdin before calling "
+                    f"{name} (session_id={live_sessions[0]})"
+                )
             tool = tools.get(name)
-            payload = {"result": await tool.run(context, _arguments(call))}
+            result = await tool.run(context, _arguments(call))
+            payload = {"result": result}
         except Exception as exc:
             payload = {"error": str(exc)}
         return tools.result_item(call_id, payload)
@@ -219,9 +302,94 @@ def _arguments(call: dict[str, Any]) -> dict[str, Any]:
 
 def _supports_parallel(call: dict[str, Any]) -> bool:
     try:
-        return tools.get(str(call["name"])).supports_parallel
+        name = str(call["name"])
+        return name == "read" and tools.get(name).supports_parallel
     except (KeyError, ValueError):
         return False
+
+
+def _latest_workspace_is_compiled(context: ToolContext) -> bool:
+    if EXEC_MANAGER.has_live_session(context):
+        return False
+    return context.refresh_compile_freshness()
+
+
+def _has_successful_compile(context: ToolContext) -> bool:
+    return context.successful_compile_result is not None
+
+
+def _compile_required_reminder(context: ToolContext) -> str:
+    if live_sessions := EXEC_MANAGER.live_session_ids(context):
+        return (
+            "<compile_required>\n"
+            f"exec_command session {live_sessions[0]} is still running.\n"
+            "Use `write_stdin` until it exits, then run `compile` before concluding.\n"
+            "</compile_required>"
+        )
+    reason = (
+        "The workspace has changed since the last successful compile."
+        if _has_successful_compile(context)
+        else "No successful compile has completed yet."
+    )
+    return f"<compile_required>\n{reason}\nRun `compile` before concluding.\n</compile_required>"
+
+
+def _final_response_required_reminder() -> str:
+    return (
+        "<final_response_required>\n"
+        "The latest workspace has already compiled successfully.\n"
+        "Return a visible final response, or call a tool if further work is needed.\n"
+        "</final_response_required>"
+    )
+
+
+def _empty_response_reminder(
+    context: ToolContext,
+    *,
+    workspace_is_compiled: bool,
+) -> str:
+    if workspace_is_compiled:
+        tag = "final_response_required"
+        state = "The latest workspace has already compiled successfully."
+        action = "Return a visible final response now, or call a tool if further work is needed."
+    elif live_sessions := EXEC_MANAGER.live_session_ids(context):
+        tag = "compile_required"
+        state = f"exec_command session {live_sessions[0]} is still running."
+        action = "Use `write_stdin` until it exits, then run `compile` before concluding."
+    else:
+        tag = "compile_required"
+        state = (
+            "The workspace has changed since the last successful compile."
+            if _has_successful_compile(context)
+            else "No successful compile has completed yet."
+        )
+        action = "Complete the workspace changes and run `compile` before concluding."
+    return (
+        f"<{tag}>\n"
+        "Your previous response produced no visible text and no tool calls.\n"
+        "Do not continue with reasoning-only output.\n"
+        f"{action}\n"
+        f"{state}\n"
+        f"</{tag}>"
+    )
+
+
+def _append_reminder(messages: list[dict[str, Any]], path: Path, content: str) -> None:
+    reminder = {"role": "user", "content": content}
+    messages.append(reminder)
+    append_conversation(path, reminder)
+
+
+def _result_path(run_dir: Path, compile_result: dict[str, Any] | None) -> str:
+    raw = compile_result.get("usdz") if compile_result else None
+    if not raw:
+        return ""
+    path = Path(str(raw))
+    path = path if path.is_absolute() else run_dir / path
+    try:
+        return path.resolve().relative_to(run_dir.resolve()).as_posix()
+    except ValueError as exc:
+        raise ValueError("compiled USDZ path must stay inside the run directory") from exc
 
 
 def _save_cost(run_dir: Path, cost: float, token_usage: dict[str, int]) -> None:
@@ -261,8 +429,8 @@ def _read_sdk_quickstart() -> str:
     return (
         "<sdk_quickstart>\n"
         "This SDK quickstart is preloaded for the run. Use it as the first "
-        "reference. Before writing code, read thoroughly through the routed docs "
-        "and local build123d examples that relate to the current object.\n\n"
+        "reference. Before writing code, read only the routed SDK pages and local "
+        "examples needed for the current geometry and mechanism.\n\n"
         f"{quickstart.rstrip()}\n"
         "</sdk_quickstart>"
     )

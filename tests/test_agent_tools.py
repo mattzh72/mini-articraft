@@ -8,6 +8,7 @@ import sys
 import pytest
 
 from mini_articraft.agent.tools import ToolContext, get, schemas
+from mini_articraft.agent.tools._core import workspace_digest
 from mini_articraft.compile_feedback import build_compile_report_from_payload
 from mini_articraft.environments.local import LocalEnvironment
 
@@ -39,6 +40,8 @@ def test_tool_schemas_include_prompting_guidance() -> None:
         == "Bytes to write to stdin. Defaults to empty, which polls without writing."
     )
     assert "appears exactly once" in edit_props["old_text"]["description"]
+    assert get("read").supports_parallel is True
+    assert get("exec_command").supports_parallel is False
 
 
 def test_read_rejects_path_escape(tmp_path) -> None:
@@ -85,7 +88,7 @@ def test_read_can_open_symlinked_sdk_docs(tmp_path) -> None:
     )
 
     assert result["path"] == "docs/sdk/common/20_core_types.md"
-    assert result["text"] == "L1: # Core types"
+    assert result["text"] == "L1: # Shared units and types"
 
 
 def test_read_can_open_build123d_docs_support_files(tmp_path) -> None:
@@ -195,6 +198,66 @@ def test_create_run_links_sdk_docs(tmp_path) -> None:
     assert link.joinpath("common", "00_quickstart.md").is_file()
 
 
+def test_workspace_digest_ignores_docs_caches_and_temp_files(tmp_path) -> None:
+    ctx = context(tmp_path)
+    baseline = workspace_digest(ctx.workspace)
+
+    for directory in (
+        "__pycache__",
+        ".pytest_cache",
+        ".ruff_cache",
+        ".mypy_cache",
+        ".git",
+    ):
+        path = ctx.workspace / directory
+        path.mkdir()
+        path.joinpath("generated.txt").write_text("ignored", encoding="utf-8")
+    for name in (
+        "helper.pyc",
+        "main.py~",
+        ".main.py.swp",
+        ".#main.py",
+        "#main.py#",
+        ".~lock.main.py#",
+        ".DS_Store",
+    ):
+        ctx.workspace.joinpath(name).write_text("ignored", encoding="utf-8")
+    docs = ctx.workspace / "docs"
+    docs.joinpath("sdk").unlink()
+    docs.rmdir()
+    external_docs = tmp_path / "external-docs"
+    external_docs.mkdir()
+    external_docs.joinpath("changed.txt").write_text("external", encoding="utf-8")
+    docs.symlink_to(external_docs, target_is_directory=True)
+
+    assert workspace_digest(ctx.workspace) == baseline
+
+    ctx.workspace.joinpath("build").mkdir()
+    ctx.workspace.joinpath("build", "generated.py").write_text("authored", encoding="utf-8")
+    assert workspace_digest(ctx.workspace) != baseline
+
+
+def test_workspace_digest_hashes_non_doc_symlink_targets(tmp_path) -> None:
+    ctx = context(tmp_path)
+    target = tmp_path / "shared.py"
+    target.write_text("VALUE = 1\n", encoding="utf-8")
+    ctx.workspace.joinpath("shared.py").symlink_to(target)
+    baseline = workspace_digest(ctx.workspace)
+
+    target.write_text("VALUE = 2\n", encoding="utf-8")
+
+    assert workspace_digest(ctx.workspace) != baseline
+
+
+def test_workspace_digest_is_independent_of_workspace_location(tmp_path) -> None:
+    left = context(tmp_path / "left")
+    right = context(tmp_path / "right")
+    left.workspace.joinpath("helper.py").write_text("VALUE = 1\n", encoding="utf-8")
+    right.workspace.joinpath("helper.py").write_text("VALUE = 1\n", encoding="utf-8")
+
+    assert workspace_digest(left.workspace) == workspace_digest(right.workspace)
+
+
 def test_exec_command_reports_output_and_return_code(tmp_path) -> None:
     ctx = context(tmp_path)
 
@@ -205,6 +268,7 @@ def test_exec_command_reports_output_and_return_code(tmp_path) -> None:
     assert result["returncode"] == 3
     assert result["session_id"] is None
     assert result["running"] is False
+    assert not ctx.run_dir.joinpath(".tmp").exists()
 
 
 def test_exec_command_reports_timeout(tmp_path) -> None:
@@ -244,6 +308,23 @@ def test_exec_command_returns_session_and_write_stdin_polls(tmp_path) -> None:
     assert second["returncode"] == 0
 
 
+def test_exec_command_rejects_a_second_live_session(tmp_path) -> None:
+    ctx = context(tmp_path)
+    command = f"{shlex.quote(sys.executable)} -c 'import time; time.sleep(60)'"
+
+    async def exercise() -> None:
+        first = await get("exec_command").run(ctx, {"command": command, "yield_time_ms": 10})
+        assert first["running"] is True
+        with pytest.raises(ValueError, match="already running"):
+            await get("exec_command").run(ctx, {"command": "printf second"})
+        await get("write_stdin").run(
+            ctx,
+            {"session_id": first["session_id"], "chars": "\x03", "yield_time_ms": 1000},
+        )
+
+    run(exercise())
+
+
 def test_write_stdin_sends_input(tmp_path) -> None:
     ctx = context(tmp_path)
     command = f"{shlex.quote(sys.executable)} -c 'import sys; print(sys.stdin.readline().strip().upper())'"
@@ -275,6 +356,19 @@ def test_exec_command_truncates_output_middle(tmp_path) -> None:
     assert result["stdout"] == "012345…8 chars truncated…efghij"
 
 
+def test_exec_command_zero_output_budget_returns_only_a_truncation_marker(tmp_path) -> None:
+    ctx = context(tmp_path)
+
+    result = run(
+        get("exec_command").run(
+            ctx,
+            {"command": "printf hello", "max_output_tokens": 0},
+        )
+    )
+
+    assert result["stdout"] == "…5 chars truncated…"
+
+
 def test_compile_tool_compiles_workspace(tmp_path) -> None:
     ctx = context(tmp_path)
     ctx.workspace.joinpath("main.py").write_text(
@@ -285,8 +379,9 @@ from mini_articraft.sdk import ArticulatedObject, TestContext, TestReport
 
 
 def build_object_model() -> ArticulatedObject:
-    model = ArticulatedObject("box", units="meters")
-    model.part("base", Box(1, 1, 1))
+    model = ArticulatedObject("box")
+    base = model.part("base")
+    base.add(Box(1, 1, 1), name="body")
     return model
 
 
@@ -302,12 +397,11 @@ def run_tests() -> TestReport:
     result = run(get("compile").run(ctx, {}))
 
     assert result["status"] == "success"
-    assert "entrypoint" not in result
-    assert "manifest" not in result
-    assert "parts" not in result
-    assert result["compile_report"]["status"] == "success"
-    assert "<compile_signals>" in result["compile_report"]["signals_text"]
-    assert ctx.compile_is_fresh is True
+    assert set(result) == {"status", "compile_signals"}
+    assert result["compile_signals"].count("<compile_signals>") == 1
+    assert ctx.compile_result is not None
+    assert ctx.compile_result["compile_report"]["status"] == "success"
+    assert ctx.refresh_compile_freshness()
 
 
 def test_compile_tool_escalates_repeated_failures(tmp_path) -> None:
@@ -317,16 +411,36 @@ def test_compile_tool_escalates_repeated_failures(tmp_path) -> None:
     second = run(get("compile").run(ctx, {}))
     third = run(get("compile").run(ctx, {}))
 
-    assert "matches the previous compile attempt" not in first["compile_report"]["signals_text"]
-    assert "matches the previous compile attempt" in second["compile_report"]["signals_text"]
-    assert "This is compile failure 3 in a row." in third["compile_report"]["signals_text"]
-    assert ctx.compile_is_fresh is False
+    assert "matches the previous compile attempt" not in first["compile_signals"]
+    assert "matches the previous compile attempt" in second["compile_signals"]
+    assert "This is compile failure 3 in a row." in third["compile_signals"]
+    assert "`exec_command` inspection" in third["compile_signals"]
+    assert not ctx.refresh_compile_freshness()
 
 
 def test_compile_tool_resets_failure_streak_on_success(tmp_path) -> None:
     ctx = ToolContext(FakeCompileEnv("error", "success"), tmp_path, tmp_path)
 
     run(get("compile").run(ctx, {}))
+    result = run(get("compile").run(ctx, {}))
+
+    assert result["status"] == "success"
+    assert ctx.last_compile_failure_signature is None
+    assert ctx.consecutive_compile_failures == 0
+
+
+def test_cached_compile_success_resets_failure_streak(tmp_path) -> None:
+    ctx = context(tmp_path)
+    ctx.successful_compile_result = {
+        "status": "success",
+        "compile_report": build_compile_report_from_payload(
+            {"status": "success", "test_report": None}
+        ),
+    }
+    ctx.successful_compile_digest = workspace_digest(ctx.workspace)
+    ctx.last_compile_failure_signature = "previous-failure"
+    ctx.consecutive_compile_failures = 2
+
     result = run(get("compile").run(ctx, {}))
 
     assert result["status"] == "success"

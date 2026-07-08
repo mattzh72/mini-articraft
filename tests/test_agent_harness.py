@@ -2,8 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import json
+import shlex
+import sys
 from datetime import datetime
 from typing import Any
+
+import pytest
 
 import mini_articraft.agent.tools as agent_tools
 from mini_articraft.agent import Agent, events
@@ -13,9 +17,11 @@ from mini_articraft.agent.harness import (
     _read_sdk_quickstart,
     _run_id_for_prompt,
 )
-from mini_articraft.agent.tools import Tool
-from mini_articraft.environments.local import LocalEnvironment
-from mini_articraft.record import Record, append_conversation, read_conversation
+from mini_articraft.agent.tools import Tool, ToolContext
+from mini_articraft.agent.tools._core import workspace_digest
+from mini_articraft.agent.tools._exec import MANAGER as EXEC_MANAGER
+from mini_articraft.environments.local import DEFAULT_MAIN_PY, LocalEnvironment
+from mini_articraft.record import Record, read_conversation
 
 
 def run(awaitable):
@@ -60,18 +66,14 @@ def fake_schema(name: str) -> dict[str, Any]:
 
 def compile_success_tool() -> Tool:
     async def run_compile(context, args):
-        context.compile_result = {"status": "success"}
-        context.compile_is_fresh = True
-        record = Record.load(context.run_dir / "record.json")
-        record.status = "success"
-        record.attempts += 1
-        record.result = "result/model.usdz"
-        record.save(context.run_dir / "record.json")
-        append_conversation(
-            context.run_dir / "conversation.jsonl",
-            {"role": "compiler", "status": "success", "error": ""},
-        )
-        return context.compile_result
+        usdz = context.run_dir / "result" / "usdz" / "0000.usdz"
+        usdz.parent.mkdir(parents=True, exist_ok=True)
+        usdz.write_bytes(b"test-usdz")
+        result = {"status": "success", "usdz": str(usdz)}
+        context.compile_result = result
+        context.successful_compile_result = result
+        context.successful_compile_digest = workspace_digest(context.workspace)
+        return result
 
     return Tool("compile", fake_schema("compile"), run_compile)
 
@@ -83,8 +85,9 @@ from mini_articraft.sdk import ArticulatedObject, TestContext, TestReport
 
 
 def build_object_model() -> ArticulatedObject:
-    model = ArticulatedObject("box", units="meters")
-    model.part("base", Box(1, 1, 1))
+    model = ArticulatedObject("box")
+    base = model.part("base")
+    base.add(Box(1, 1, 1), name="body")
     return model
 
 
@@ -151,13 +154,15 @@ def test_agent_writes_compiles_and_returns_final_response(tmp_path) -> None:
     assert result["compile_report"]["status"] == "success"
     assert tmp_path.joinpath("box", "workspace", "main.py").is_file()
     record = Record.load(tmp_path / "box" / "record.json")
+    assert record.status == "success"
+    assert record.result == "result/usdz/0000.usdz"
     assert record.cost == 1.0
     assert record.token_usage["total_tokens"] == 690
     assert "<sdk_docs>" not in model.calls[0]["messages"][0]["content"]
     first_messages = model.calls[0]["messages"]
     assert [message["role"] for message in first_messages[:3]] == ["system", "user", "user"]
     assert first_messages[1]["content"].startswith("<sdk_quickstart>")
-    assert "## Docs router" in first_messages[1]["content"]
+    assert "docs/sdk/common/30_articulated_object.md" in first_messages[1]["content"]
     assert first_messages[2]["content"].startswith("<task>")
     assert "a box" in first_messages[2]["content"]
     assert {tool["name"] for tool in model.calls[0]["tools"]} == {
@@ -190,16 +195,19 @@ def test_agent_requires_compile_before_final_response(tmp_path) -> None:
     assert result["status"] == "success"
     assert result["message"] == "done"
     assert any(
-        message.get("content") == "Run compile before the final response."
+        "<compile_required>" in str(message.get("content"))
+        and "No successful compile has completed yet." in str(message.get("content"))
         for message in model.calls[2]["messages"]
     )
     conversation = read_conversation(tmp_path / "box" / "conversation.jsonl")
     assert any(
-        event.get("content") == "Run compile before the final response." for event in conversation
+        "<compile_required>" in str(event.get("content"))
+        and "No successful compile has completed yet." in str(event.get("content"))
+        for event in conversation
     )
 
 
-def test_agent_requires_compile_after_any_post_compile_tool_call(
+def test_agent_keeps_compile_fresh_after_read(
     monkeypatch,
     tmp_path,
 ) -> None:
@@ -227,22 +235,350 @@ def test_agent_requires_compile_after_any_post_compile_tool_call(
             },
             {"text": "", "tool_calls": [call("call_2", "compile", {})]},
             {"text": "", "tool_calls": [call("call_3", "read", {"path": "main.py"})]},
-            {"text": "done too early", "tool_calls": []},
-            {"text": "", "tool_calls": [call("call_4", "compile", {})]},
-            {"text": "done", "tool_calls": []},
+            {"text": "done after read", "tool_calls": []},
         ]
     )
     env = LocalEnvironment(output_dir=tmp_path)
-    agent = Agent(model, env, max_turns=6)
+    agent = Agent(model, env, max_turns=4)
 
     result = run(agent.run("a box", run_id="box"))
 
     assert result["status"] == "success"
+    assert result["message"] == "done after read"
+    assert len(model.calls) == 4
+
+
+def test_agent_keeps_compile_fresh_after_inspection_and_noop_edits(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    selected = {name: agent_tools.get(name) for name in ("write", "edit", "exec_command")}
+    monkeypatch.setattr(
+        agent_tools,
+        "TOOLS",
+        selected | {"compile": compile_success_tool()},
+    )
+    model = FakeModel(
+        [
+            {
+                "text": "",
+                "tool_calls": [call("call_1", "write", {"path": "main.py", "content": "x"})],
+            },
+            {"text": "", "tool_calls": [call("call_2", "compile", {})]},
+            {
+                "text": "",
+                "tool_calls": [
+                    call(
+                        "call_3",
+                        "edit",
+                        {"path": "main.py", "old_text": "x", "new_text": "x"},
+                    )
+                ],
+            },
+            {
+                "text": "",
+                "tool_calls": [
+                    call(
+                        "call_4",
+                        "edit",
+                        {"path": "main.py", "old_text": "missing", "new_text": "y"},
+                    )
+                ],
+            },
+            {
+                "text": "",
+                "tool_calls": [call("call_5", "exec_command", {"command": "printf inspected"})],
+            },
+            {"text": "done", "tool_calls": []},
+        ]
+    )
+
+    result = run(Agent(model, LocalEnvironment(output_dir=tmp_path), max_turns=6).run("box"))
+
+    assert result["status"] == "success"
+    assert result["message"] == "done"
+
+
+def test_agent_requires_new_compile_after_real_file_change(monkeypatch, tmp_path) -> None:
+    write_tool = agent_tools.get("write")
+    monkeypatch.setattr(
+        agent_tools,
+        "TOOLS",
+        {"write": write_tool, "compile": compile_success_tool()},
+    )
+    model = FakeModel(
+        [
+            {
+                "text": "",
+                "tool_calls": [call("call_1", "write", {"path": "main.py", "content": "x"})],
+            },
+            {"text": "", "tool_calls": [call("call_2", "compile", {})]},
+            {
+                "text": "",
+                "tool_calls": [call("call_3", "write", {"path": "main.py", "content": "y"})],
+            },
+            {"text": "too early", "tool_calls": []},
+            {"text": "", "tool_calls": [call("call_4", "compile", {})]},
+            {"text": "done", "tool_calls": []},
+        ]
+    )
+
+    result = run(Agent(model, LocalEnvironment(output_dir=tmp_path), max_turns=6).run("box"))
+
+    assert result["status"] == "success"
     assert result["message"] == "done"
     assert any(
-        message.get("content") == "Run compile before the final response."
+        "<compile_required>" in str(message.get("content"))
+        and "changed since the last successful compile" in str(message.get("content"))
         for message in model.calls[4]["messages"]
     )
+
+
+def test_running_exec_session_blocks_compile_and_finalization(monkeypatch, tmp_path) -> None:
+    selected = {name: agent_tools.get(name) for name in ("exec_command", "write_stdin")}
+    monkeypatch.setattr(
+        agent_tools,
+        "TOOLS",
+        selected | {"compile": compile_success_tool()},
+    )
+
+    class SessionModel(FakeModel):
+        async def query(self, messages, *, tools=None):
+            self.calls.append({"messages": list(messages), "tools": list(tools or [])})
+            turn = len(self.calls)
+            if turn == 1:
+                return {
+                    "text": "",
+                    "tool_calls": [
+                        call(
+                            "call_1",
+                            "exec_command",
+                            {
+                                "command": "read value; printf changed > main.py",
+                                "yield_time_ms": 10,
+                            },
+                        )
+                    ],
+                }
+            if turn == 2:
+                return {"text": "", "tool_calls": [call("call_2", "compile", {})]}
+            if turn == 3:
+                return {"text": "too early", "tool_calls": []}
+            if turn == 4:
+                session_id = next(
+                    json.loads(message["output"])["result"]["session_id"]
+                    for message in messages
+                    if message.get("type") == "function_call_output"
+                    and json.loads(message["output"]).get("result", {}).get("session_id")
+                )
+                return {
+                    "text": "",
+                    "tool_calls": [
+                        call(
+                            "call_3",
+                            "write_stdin",
+                            {"session_id": session_id, "chars": "go\n", "yield_time_ms": 1000},
+                        )
+                    ],
+                }
+            if turn == 5:
+                return {"text": "", "tool_calls": [call("call_4", "compile", {})]}
+            return {"text": "done", "tool_calls": []}
+
+    result = run(
+        Agent(
+            SessionModel([]),
+            LocalEnvironment(output_dir=tmp_path),
+            max_turns=6,
+        ).run("box", run_id="box")
+    )
+
+    assert result["status"] == "success"
+    assert result["message"] == "done"
+    conversation = read_conversation(tmp_path / "box" / "conversation.jsonl")
+    assert any(
+        "finish the running exec_command" in str(event.get("output")) for event in conversation
+    )
+    assert any("is still running" in str(event.get("content")) for event in conversation)
+
+
+def test_agent_requires_visible_final_after_fresh_compile(monkeypatch, tmp_path) -> None:
+    write_tool = agent_tools.get("write")
+    monkeypatch.setattr(
+        agent_tools,
+        "TOOLS",
+        {"write": write_tool, "compile": compile_success_tool()},
+    )
+    model = FakeModel(
+        [
+            {
+                "text": "",
+                "tool_calls": [call("call_1", "write", {"path": "main.py", "content": "x"})],
+            },
+            {"text": "", "tool_calls": [call("call_2", "compile", {})]},
+            {"text": "", "tool_calls": []},
+            {"text": "done", "tool_calls": []},
+        ]
+    )
+
+    result = run(Agent(model, LocalEnvironment(output_dir=tmp_path), max_turns=4).run("box"))
+
+    assert result["message"] == "done"
+    assert any(
+        "<final_response_required>" in str(message.get("content"))
+        for message in model.calls[3]["messages"]
+    )
+
+
+def test_agent_does_not_finalize_success_without_a_usdz_result(monkeypatch, tmp_path) -> None:
+    async def run_compile(context, args):
+        result = {"status": "success"}
+        context.compile_result = result
+        context.successful_compile_result = result
+        context.successful_compile_digest = workspace_digest(context.workspace)
+        return result
+
+    monkeypatch.setattr(
+        agent_tools,
+        "TOOLS",
+        {"compile": Tool("compile", fake_schema("compile"), run_compile)},
+    )
+    model = FakeModel(
+        [
+            {"text": "", "tool_calls": [call("call_1", "compile", {})]},
+            {"text": "done", "tool_calls": []},
+        ]
+    )
+
+    result = run(Agent(model, LocalEnvironment(output_dir=tmp_path), max_turns=2).run("box"))
+
+    assert result["status"] == "error"
+    assert result["result"] == ""
+    assert result["error"] == "fresh compile did not produce a USDZ result"
+
+
+def test_cached_success_survives_a_later_failed_compile(monkeypatch, tmp_path) -> None:
+    attempts = 0
+
+    async def run_compile(context, args):
+        nonlocal attempts
+        if context.refresh_compile_freshness():
+            return context.successful_compile_result
+        attempts += 1
+        if attempts == 1:
+            usdz = context.run_dir / "result" / "usdz" / "0000.usdz"
+            usdz.parent.mkdir(parents=True, exist_ok=True)
+            usdz.write_bytes(b"test-usdz")
+            result = {"status": "success", "usdz": str(usdz)}
+            context.compile_result = result
+            context.successful_compile_result = result
+            context.successful_compile_digest = workspace_digest(context.workspace)
+            return result
+        result = {"status": "error", "error": "bad geometry"}
+        context.compile_result = result
+        return result
+
+    monkeypatch.setattr(
+        agent_tools,
+        "TOOLS",
+        {
+            "write": agent_tools.get("write"),
+            "compile": Tool("compile", fake_schema("compile"), run_compile),
+        },
+    )
+    model = FakeModel(
+        [
+            {"text": "", "tool_calls": [call("compile_1", "compile", {})]},
+            {
+                "text": "",
+                "tool_calls": [call("change", "write", {"path": "main.py", "content": "bad"})],
+            },
+            {"text": "", "tool_calls": [call("compile_2", "compile", {})]},
+            {
+                "text": "",
+                "tool_calls": [
+                    call("restore", "write", {"path": "main.py", "content": DEFAULT_MAIN_PY})
+                ],
+            },
+            {"text": "", "tool_calls": [call("compile_3", "compile", {})]},
+            {"text": "done", "tool_calls": []},
+        ]
+    )
+
+    result = run(
+        Agent(model, LocalEnvironment(output_dir=tmp_path), max_turns=6).run("box", run_id="cached")
+    )
+
+    assert attempts == 2
+    assert result["status"] == "success"
+    assert result["result"] == "result/usdz/0000.usdz"
+
+
+def test_agent_cancellation_terminates_a_live_exec_session(tmp_path) -> None:
+    command = f"{shlex.quote(sys.executable)} -c 'import time; time.sleep(60)'"
+
+    class BlockingModel(FakeModel):
+        def __init__(self):
+            super().__init__([])
+            self.waiting = asyncio.Event()
+
+        async def query(self, messages, *, tools=None):
+            self.calls.append({"messages": list(messages), "tools": list(tools or [])})
+            if len(self.calls) == 1:
+                return {
+                    "text": "",
+                    "tool_calls": [
+                        call(
+                            "exec",
+                            "exec_command",
+                            {"command": command, "yield_time_ms": 10},
+                        )
+                    ],
+                }
+            self.waiting.set()
+            await asyncio.Future()
+
+    async def exercise() -> None:
+        env = LocalEnvironment(output_dir=tmp_path)
+        model = BlockingModel()
+        task = asyncio.create_task(Agent(model, env, max_turns=3).run("box", run_id="cancel"))
+        await asyncio.wait_for(model.waiting.wait(), timeout=5)
+        context = ToolContext(env, tmp_path / "cancel", tmp_path / "cancel" / "workspace")
+        assert EXEC_MANAGER.has_live_session(context)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert not EXEC_MANAGER.has_live_session(context)
+
+    run(exercise())
+
+
+def test_agent_fails_third_consecutive_empty_response(tmp_path) -> None:
+    model = FakeModel([{"text": "", "tool_calls": []} for _ in range(3)])
+
+    result = run(Agent(model, LocalEnvironment(output_dir=tmp_path), max_turns=3).run("box"))
+
+    assert result["status"] == "error"
+    assert "three consecutive responses" in result["error"]
+    assert any(
+        "Do not continue with reasoning-only output." in str(message.get("content"))
+        for message in model.calls[2]["messages"]
+    )
+
+
+def test_agent_records_model_query_failure(tmp_path) -> None:
+    class FailingModel(FakeModel):
+        async def query(self, messages, *, tools=None):
+            self.calls.append({"messages": list(messages), "tools": list(tools or [])})
+            raise RuntimeError("socket closed")
+
+    result = run(
+        Agent(FailingModel([]), LocalEnvironment(output_dir=tmp_path), max_turns=3).run("box")
+    )
+
+    assert result["status"] == "error"
+    assert result["result"] == ""
+    assert result["error"] == "model query failed: RuntimeError: socket closed"
 
 
 def test_agent_emits_run_events(tmp_path) -> None:
@@ -351,7 +687,7 @@ def test_agent_serializes_non_parallel_tools(monkeypatch, tmp_path) -> None:
         agent_tools,
         "TOOLS",
         {
-            "write": Tool("write", fake_schema("write"), run_write),
+            "write": Tool("write", fake_schema("write"), run_write, supports_parallel=True),
             "compile": compile_success_tool(),
         },
     )
@@ -382,7 +718,7 @@ def test_sdk_quickstart_user_message_is_preloaded() -> None:
 
     assert content.startswith("<sdk_quickstart>")
     assert "This SDK quickstart is preloaded for the run." in content
-    assert "read thoroughly through the routed docs" in content
+    assert "read only the routed SDK pages" in content
     assert "# SDK quickstart" in content
     assert "`docs/sdk/common/40_testing.md`" in content
     assert content.endswith("</sdk_quickstart>")
