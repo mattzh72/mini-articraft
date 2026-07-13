@@ -60,8 +60,42 @@ def test_renderer_shows_compile_and_errors() -> None:
     renderer.handle(events.ToolFinished("c2", "read", {"error": "file not found"}, 0.0))
 
     out = _text(console)
-    assert "compile error: NameError: foo" in out
+    assert "compile error" in out
+    assert "NameError: foo" in out
+    assert "Traceback" in out
+    assert "boom" in out
     assert "read error: file not found" in out
+
+
+def test_renderer_shows_full_compile_traceback_without_truncation() -> None:
+    renderer, console = _renderer()
+    traceback_lines = ["Traceback (most recent call last):"]
+    traceback_lines.extend(f'  File "main.py", line {line}' for line in range(1, 30))
+    traceback_lines.append("ValueError: " + "bad loft " * 40)
+    traceback_text = "\n".join(traceback_lines)
+
+    renderer.handle(
+        events.ToolFinished(
+            "c1",
+            "compile",
+            {
+                "result": {
+                    "status": "error",
+                    "error": "ValueError: bad loft",
+                    "traceback": traceback_text,
+                    "stderr": "compiler warning on stderr",
+                }
+            },
+            0.1,
+        )
+    )
+
+    out = _text(console)
+    assert "compile error" in out
+    assert 'File "main.py", line 29' in out
+    assert ("bad loft " * 40).strip() in " ".join(out.split())
+    assert "compiler warning on stderr" in out
+    assert "…" not in out
 
 
 def test_renderer_shows_token_usage_bar() -> None:

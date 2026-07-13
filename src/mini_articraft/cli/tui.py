@@ -245,7 +245,12 @@ class RunRenderer:
 
     def _print_tool_result(self, name: str, payload: dict[str, Any]) -> None:
         if "error" in payload:
-            self._print(_indented(f"✗ {name} error: {_clip(str(payload['error']), 200)}", "red"))
+            if name == "compile":
+                self._print_compile("error", str(payload["error"]))
+            else:
+                self._print(
+                    _indented(f"✗ {name} error: {_clip(str(payload['error']), 200)}", "red")
+                )
             return
         result = payload.get("result")
         result = result if isinstance(result, dict) else {}
@@ -256,9 +261,15 @@ class RunRenderer:
             case "read":
                 self._print(_indented(f"✓ {result.get('path', '')}", "green"))
             case "compile":
-                self._print_compile(str(result.get("status") or ""), str(result.get("error") or ""))
-                self._print_compile_signals(result.get("compile_report"))
-                self._print_output(result.get("stderr"))
+                self._print_compile(
+                    str(result.get("status") or ""),
+                    str(result.get("error") or ""),
+                    traceback_text=str(result.get("traceback") or ""),
+                    stderr=str(result.get("stderr") or ""),
+                )
+                self._print_compile_signals(
+                    result.get("compile_report") or result.get("compile_signals")
+                )
             case "exec_command" | "write_stdin":
                 self._print(_indented(self._exec_summary(result), self._exec_style(result)))
                 self._print_output(result.get("stdout"))
@@ -266,17 +277,34 @@ class RunRenderer:
             case _:
                 self._print(_indented(f"✓ {name}", "green"))
 
-    def _print_compile(self, status: str, error: str) -> None:
+    def _print_compile(
+        self,
+        status: str,
+        error: str,
+        *,
+        traceback_text: str = "",
+        stderr: str = "",
+    ) -> None:
         if status == "success":
             self._print(_indented("✓ compile ok", "green"))
-        else:
-            detail = f": {_clip(error, 200)}" if error else ""
-            self._print(_indented(f"✗ compile error{detail}", "red"))
+            return
+
+        self._print(_indented("✗ compile error", "bold red"))
+        detail = traceback_text.strip() or error.strip()
+        if detail:
+            self._print(_indented_block(detail, "red", depth=6))
+        stderr = stderr.strip()
+        if stderr and stderr not in detail:
+            self._print(_indented("stderr", "bold red", depth=6))
+            self._print(_indented_block(stderr, "red", depth=8))
 
     def _print_compile_signals(self, compile_report: Any) -> None:
-        if not isinstance(compile_report, dict):
+        if isinstance(compile_report, dict):
+            signals_text = str(compile_report.get("signals_text") or "")
+        elif isinstance(compile_report, str):
+            signals_text = compile_report
+        else:
             return
-        signals_text = str(compile_report.get("signals_text") or "")
         lines = _compile_signal_lines(signals_text)
         if not lines:
             return
@@ -317,6 +345,15 @@ class RunRenderer:
 
 def _indented(text: str, style: str, *, depth: int = 4) -> Text:
     return Text(" " * depth + text, style=style)
+
+
+def _indented_block(text: str, style: str, *, depth: int) -> Text:
+    block = Text()
+    for index, line in enumerate(text.strip("\n").splitlines()):
+        if index:
+            block.append("\n")
+        block.append(" " * depth + line, style=style)
+    return block
 
 
 def _compile_signal_lines(signals_text: str) -> list[str]:
