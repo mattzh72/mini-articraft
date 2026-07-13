@@ -58,9 +58,11 @@ mini-articraft.
 Use the reference pages for API discovery. Use short `exec_command` inspections after authoring to
 measure bounds, distances, collisions, and posed geometry.
 
-Executable examples are under `docs/sdk/examples/`. Read only the example closest to the current
-task. The set includes a hollow shell, a section loft with a swept wire, and a mixed build123d
-and mesh articulated assembly.
+Read only the executable example closest to the current task:
+
+- Hollow shell: `docs/sdk/examples/hollow_shell.py`.
+- Section loft with a swept wire: `docs/sdk/examples/section_loft_with_wires.py`.
+- Mixed build123d and mesh assembly: `docs/sdk/examples/mixed_articulated_assembly.py`.
 
 Run `compile` after meaningful edits. Treat checks as design evidence. A failed check is not a
 reason to remove or simplify geometry that the prompt requires.
