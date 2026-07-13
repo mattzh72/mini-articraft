@@ -265,11 +265,12 @@ class Agent:
         for call, item, tool_started in zip(tool_calls, items, started, strict=True):
             self.messages.append(item)
             append_conversation(conversation_path, item)
+            payload = json.loads(item["output"])
             self._emit(
                 events.ToolFinished(
                     str(call["id"]),
                     str(call["name"]),
-                    json.loads(item["output"]),
+                    _display_payload(context, str(call["name"]), payload),
                     round(time.perf_counter() - tool_started, 4),
                 )
             )
@@ -290,6 +291,25 @@ class Agent:
         except Exception as exc:
             payload = {"error": str(exc)}
         return tools.result_item(call_id, payload)
+
+
+def _display_payload(
+    context: ToolContext,
+    name: str,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    """Give the TUI full compile details without adding them to model context."""
+    if name != "compile" or "result" not in payload:
+        return payload
+    compact_result = payload["result"]
+    if not isinstance(compact_result, dict):
+        return payload
+    full_result = context.compile_result
+    if compact_result.get("status") == "success":
+        full_result = context.successful_compile_result or full_result
+    if not isinstance(full_result, dict):
+        return payload
+    return {**payload, "result": full_result}
 
 
 def _arguments(call: dict[str, Any]) -> dict[str, Any]:

@@ -624,6 +624,14 @@ def test_agent_emits_run_events(tmp_path) -> None:
     assert write_finished.payload["result"]["path"] == "main.py"
     assert write_finished.payload["result"]["bytes"] > 0
 
+    compile_finished = next(
+        event
+        for event in captured
+        if isinstance(event, events.ToolFinished) and event.name == "compile"
+    )
+    assert "compile_report" in compile_finished.payload["result"]
+    assert "compile_signals" not in compile_finished.payload["result"]
+
     run_finished = captured[-1]
     assert isinstance(run_finished, events.RunFinished)
     assert run_finished.status == "success"
