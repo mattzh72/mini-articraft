@@ -733,7 +733,9 @@ def test_sdk_quickstart_user_message_is_preloaded() -> None:
 
     assert content.startswith("<sdk_quickstart>")
     assert "This SDK quickstart is preloaded for the run." in content
-    assert "read only the routed SDK pages" in content
+    assert "plausible build123d and mesh approaches" in content
+    assert "parallel reads" in content
+    assert "Do not stop at the first workable API" in content
     assert "# SDK quickstart" in content
     assert "`docs/sdk/common/40_testing.md`" in content
     assert content.endswith("</sdk_quickstart>")

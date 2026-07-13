@@ -449,8 +449,10 @@ def _read_sdk_quickstart() -> str:
     return (
         "<sdk_quickstart>\n"
         "This SDK quickstart is preloaded for the run. Use it as the first "
-        "reference. Before writing code, read only the routed SDK pages and local "
-        "examples needed for the current geometry and mechanism.\n\n"
+        "reference. Before writing code, inspect the current script and survey "
+        "the relevant SDK pages across plausible build123d and mesh approaches. "
+        "Use parallel reads when comparing independent references. Do not stop "
+        "at the first workable API.\n\n"
         f"{quickstart.rstrip()}\n"
         "</sdk_quickstart>"
     )

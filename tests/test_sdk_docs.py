@@ -204,4 +204,31 @@ def test_prompt_and_docs_state_the_new_authoring_contract() -> None:
         "unintended overlaps",
     ]:
         assert required.lower() in text.lower()
-    assert "thorough research pass" not in text.lower()
+
+
+def test_prompts_encourage_research_and_mesh_without_a_usage_quota() -> None:
+    system = (package_dir / "prompts" / "system.md").read_text(encoding="utf-8")
+    task = (package_dir / "prompts" / "task.md").read_text(encoding="utf-8")
+    text = f"{system}\n{task}"
+    normalized = " ".join(text.split()).lower()
+
+    for required in [
+        "complementary authoring choices",
+        "Research plausible approaches before you",
+        "Do not stop at the first workable API",
+        "geometry strategy for each major visible form",
+        "A successful compile does not finish the visual design review",
+        "Mesh usage is not a goal by itself",
+    ]:
+        assert required.lower() in normalized
+
+    for forbidden in [
+        "from build123d import *",
+        "must use mesh",
+        "use at least one mesh",
+        "read exactly",
+        "jet engine",
+        "stand mixer",
+        "desk lamp",
+    ]:
+        assert forbidden.lower() not in normalized

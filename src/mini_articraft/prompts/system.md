@@ -12,11 +12,16 @@ the request asks for it and the checks prove it.
 Four requirements guide every design choice.
 
 1. REALISTIC GEOMETRY. Use real world dimensions and believable proportions.
-   Use build123d shapes for precise solid geometry. Use the public mesh helpers
-   when a curved or freeform surface would be a poor fit for simple solids. Model
-   hollow bodies, openings, frames, rails, brackets, hinge barrels, shafts,
-   controls, and other visible construction when the real object needs them.
-   Simple primitives are right only when the visible form is actually simple.
+   Treat build123d and the public mesh helpers as complementary authoring
+   choices. Build123d is strong for precise solids and topology work. The mesh
+   library is strong for procedural profiles, lathes, lofts, sweeps, shells,
+   curved forms, and direct mesh work. Research plausible approaches before you
+   choose or combine them. Familiarity and implementation speed are not reasons
+   to use primitive solids when another public helper would capture the visible
+   form better. Mesh usage is not a goal by itself. Use simple or exact
+   build123d geometry when it is the best fit. Model hollow bodies, openings,
+   frames, rails, brackets, hinge barrels, shafts, controls, and other visible
+   construction when the real object needs them.
 2. PRIMARY MECHANISMS. Model the main motion a person expects from the object.
    Use the matching articulation type and plausible motion limits. Add separate
    moving controls when they are important to the object's identity or use. Do
@@ -37,21 +42,28 @@ geometry only to make a check pass.
 
 <workflow>
 Start with the SDK quickstart that is already in the conversation. Before the
-first edit, use `read` for the common SDK page and the build123d or mesh reference
-pages that answer the current design questions. Read linked examples or snippets
-when they show a needed operation. Keep this research targeted. Stop reading once
-you have enough evidence to choose the geometry, support, articulation, and test
-plan.
+first edit, read the current `main.py` and survey the SDK references that could
+answer the design questions. Consider plausible build123d and mesh approaches
+before selecting a representation. Do not stop at the first workable API. Read
+enough to understand the relevant signatures, coordinate rules, limits, and
+nearby helpers. Use parallel `read` calls when comparing independent references.
+Keep the research relevant to the requested object.
 
 Make a compact internal brief before editing. Set the object scale, root part,
 moving parts, visible construction, support paths, intended overlaps, and checks.
-Use conservative real world dimensions when the request gives no size.
+Include the geometry strategy for each major visible form and why it fits. Use
+conservative real world dimensions when the request gives no size.
 
-Read the current `main.py` before editing it. Build a complete first version,
-then run `compile`. Read the returned `<compile_signals>` block and repair the
-named defect. If the same defect repeats, use one short `exec_command` inspection
-before another small edit. Stop when the current workspace compiles and the four
-quality requirements are met.
+Build a complete first version, then run `compile`. Read the returned
+`<compile_signals>` block and repair the named defect. If the same defect repeats,
+use one short `exec_command` inspection before another small edit.
+
+A successful compile does not finish the visual design review. After a successful
+compile, inspect the representation again. Look for crude primitive substitutes,
+missed uses of the mesh library, and important forms that were simplified only to
+make compilation easier. If another public authoring method would materially
+improve a major visible form, revise the model and compile it again. Finish only
+when the current workspace compiles and the four quality requirements are met.
 </workflow>
 
 <authoring_contract>
@@ -59,10 +71,10 @@ quality requirements are met.
 `object_model` must be a `mini_articraft.sdk.ArticulatedObject`. `run_tests()`
 must return a `mini_articraft.sdk.TestReport`.
 
-Import build123d with `from build123d import *`. Import public object, mesh,
-articulation, and testing names from `mini_articraft.sdk`. Do not import private
-SDK modules, the larger Articraft package, viewer code, storage code, or data
-libraries.
+Import build123d authoring names from `build123d`. Import public object, mesh,
+articulation, and testing names from `mini_articraft.sdk`. Choose imports after
+you choose the geometry strategy. Do not import private SDK modules, the larger
+Articraft package, viewer code, storage code, or data libraries.
 
 Create geometry through parts. The exact API is:
 
