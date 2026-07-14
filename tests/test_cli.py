@@ -158,6 +158,34 @@ def test_cli_replay_missing_run_exits_nonzero(tmp_path: Path) -> None:
     assert "no conversation log" in result.output
 
 
+def test_cli_view_opens_resolved_run(monkeypatch, tmp_path: Path) -> None:
+    viewed: list[Path] = []
+
+    def view_run(run_dir: Path) -> None:
+        viewed.append(run_dir)
+
+    monkeypatch.setattr(mini, "serve_viewer", view_run)
+
+    result = CliRunner().invoke(
+        mini.app,
+        ["view", "run-demo", "--output-dir", str(tmp_path)],
+    )
+
+    assert result.exit_code == 0
+    assert viewed == [tmp_path / "run-demo"]
+
+
+def test_cli_view_reports_invalid_run(monkeypatch, tmp_path: Path) -> None:
+    def fail(_run_dir: Path) -> None:
+        raise ValueError("no USDZ outputs")
+
+    monkeypatch.setattr(mini, "serve_viewer", fail)
+    result = CliRunner().invoke(mini.app, ["view", str(tmp_path / "missing")])
+
+    assert result.exit_code == 1
+    assert "no USDZ outputs" in result.output
+
+
 def test_main_args_accept_bare_prompt() -> None:
     assert mini._app_args(["articulated lamp"]) == ["generate", "articulated lamp"]
     assert mini._app_args(["articulated lamp", "--model", "gpt-test"]) == [
@@ -177,4 +205,5 @@ def test_main_args_accept_bare_prompt() -> None:
 def test_main_args_keep_commands_and_help() -> None:
     assert mini._app_args(["generate", "articulated lamp"]) == ["generate", "articulated lamp"]
     assert mini._app_args(["replay", "run-x"]) == ["replay", "run-x"]
+    assert mini._app_args(["view", "run-x"]) == ["view", "run-x"]
     assert mini._app_args(["--help"]) == ["--help"]

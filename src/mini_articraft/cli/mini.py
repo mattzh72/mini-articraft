@@ -14,9 +14,10 @@ from mini_articraft.cli.tui import replay_run, run_live
 from mini_articraft.environments import LocalEnvironment
 from mini_articraft.models import OpenAIModel
 from mini_articraft.settings import DEFAULT_OUTPUT_DIR, Settings, get_settings
+from mini_articraft.viewer import serve_viewer
 
 app = typer.Typer(help="Generate articulated objects with mini-articraft.", add_completion=False)
-COMMANDS = {"generate", "replay"}
+COMMANDS = {"generate", "replay", "view"}
 
 
 @app.command()
@@ -60,6 +61,21 @@ def replay(
         raise typer.Exit(1)
 
     replay_run(run_dir, delay=delay)
+
+
+@app.command()
+def view(
+    run: str = typer.Argument(
+        ..., help="Run id under the output directory, or a path to a run directory."
+    ),
+    output_dir: Path | None = typer.Option(None, "--output-dir", help="Run output directory."),
+) -> None:
+    """Open the articulated USDZ outputs for a run."""
+    try:
+        serve_viewer(_resolve_run_dir(run, output_dir))
+    except (OSError, ValueError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(1) from None
 
 
 async def _generate(
