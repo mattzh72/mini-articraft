@@ -1,0 +1,159 @@
+from __future__ import annotations
+
+import contextlib
+import json
+import re
+import webbrowser
+from dataclasses import dataclass
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from urllib.parse import urlsplit
+
+from pxr import Usd
+
+from mini_articraft import package_dir
+
+
+@dataclass(frozen=True)
+class ViewerRun:
+    versions: tuple[dict[str, object], ...]
+    files: dict[str, Path]
+
+    def bootstrap(self) -> dict[str, object]:
+        return {"versions": self.versions}
+
+
+def load_viewer_run(run_dir: Path | str) -> ViewerRun:
+    run_dir = Path(run_dir).resolve()
+    usdz_dir = run_dir / "result" / "usdz"
+    paths = sorted(
+        (path for path in usdz_dir.glob("*.usdz") if path.stem.isdigit()),
+        key=lambda path: int(path.stem),
+        reverse=True,
+    )
+    if not paths:
+        raise ValueError(f"no numbered USDZ files found in {usdz_dir}")
+
+    versions = tuple(_read_version(path) for path in paths)
+    files = {str(version["id"]): path for version, path in zip(versions, paths, strict=True)}
+    return ViewerRun(versions=versions, files=files)
+
+
+def serve_viewer(run_dir: Path | str, *, open_browser: bool = True) -> None:
+    viewer_run = load_viewer_run(run_dir)
+    page = (package_dir / "viewer.html").read_bytes()
+    bootstrap = json.dumps(viewer_run.bootstrap(), separators=(",", ":")).encode()
+    handler = _handler(page, bootstrap, viewer_run.files)
+
+    with ThreadingHTTPServer(("127.0.0.1", 0), handler) as server:
+        url = f"http://127.0.0.1:{server.server_port}/"
+        print(f"Viewer URL: {url}")
+        if open_browser:
+            webbrowser.open(url)
+        with contextlib.suppress(KeyboardInterrupt):
+            server.serve_forever()
+
+
+def _read_version(path: Path) -> dict[str, object]:
+    try:
+        stage = Usd.Stage.Open(str(path.resolve()))
+    except Exception as exc:
+        raise ValueError(f"could not open USDZ file: {path}") from exc
+    if stage is None:
+        raise ValueError(f"could not open USDZ file: {path}")
+
+    world = stage.GetDefaultPrim()
+    object_prims = [prim for prim in world.GetChildren() if prim.GetChild("parts")]
+    if len(object_prims) != 1:
+        raise ValueError(f"expected one articulated object in {path}")
+    object_prim = object_prims[0]
+
+    parts = [
+        {
+            "name": _attribute(part, "name", part.GetName()),
+            "usd_name": part.GetName(),
+        }
+        for part in object_prim.GetChild("parts").GetChildren()
+    ]
+
+    articulations = []
+    for joint in object_prim.GetChild("joints").GetChildren():
+        articulation_type = _attribute(joint, "articulationType", "fixed")
+        limits = None
+        if articulation_type != "fixed":
+            limits = {
+                "lower": _attribute(joint, "limits:lower"),
+                "upper": _attribute(joint, "limits:upper"),
+            }
+        articulations.append(
+            {
+                "name": _attribute(joint, "name", joint.GetName()),
+                "type": articulation_type,
+                "parent": _attribute(joint, "parent"),
+                "child": _attribute(joint, "child"),
+                "origin": {
+                    "xyz": _attribute(joint, "origin:xyz", [0.0, 0.0, 0.0]),
+                    "rpy": _attribute(joint, "origin:rpy", [0.0, 0.0, 0.0]),
+                },
+                "axis": _attribute(joint, "axis", [0.0, 0.0, 1.0]),
+                "motion_limits": limits,
+            }
+        )
+
+    return {
+        "id": path.stem,
+        "filename": path.name,
+        "model": {
+            "name": _attribute(object_prim, "name", object_prim.GetName()),
+            "parts": parts,
+            "articulations": articulations,
+        },
+    }
+
+
+def _attribute(prim: Usd.Prim, name: str, default=None):
+    attribute = prim.GetAttribute(f"mini_articraft:{name}")
+    value = attribute.Get() if attribute else None
+    if value is None:
+        return default
+    if hasattr(value, "__len__") and hasattr(value, "__getitem__") and not isinstance(value, str):
+        return [float(value[index]) for index in range(len(value))]
+    return value
+
+
+def _handler(
+    page: bytes,
+    bootstrap: bytes,
+    files: dict[str, Path],
+) -> type[BaseHTTPRequestHandler]:
+    class ViewerHandler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            route = urlsplit(self.path).path
+            if route in {"/", "/index.html"}:
+                self._send(200, "text/html; charset=utf-8", page)
+                return
+            if route == "/api/bootstrap":
+                self._send(200, "application/json", bootstrap)
+                return
+            match = re.fullmatch(r"/models/(\d+)\.usdz", route)
+            path = files.get(match.group(1)) if match else None
+            if path is not None:
+                self._send(200, "model/vnd.usdz+zip", path.read_bytes())
+                return
+            if route == "/favicon.ico":
+                self._send(204, "image/x-icon", b"")
+                return
+            self._send(404, "text/plain; charset=utf-8", b"Not found\n")
+
+        def log_message(self, format: str, *args: object) -> None:
+            del format, args
+            return
+
+        def _send(self, status: int, content_type: str, body: bytes) -> None:
+            self.send_response(status)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+    return ViewerHandler
