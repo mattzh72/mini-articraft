@@ -53,6 +53,7 @@ include = ["mini_articraft*"]
 [tool.setuptools.package-data]
 mini_articraft = [
     "py.typed",
+    "viewer.html",
     "prompts/*.md",
     "sdk/docs/common/*.md",
     "sdk/docs/examples/*.py",
