@@ -38,13 +38,19 @@ def _mesh_field(mesh, pts: np.ndarray, band: float) -> np.ndarray:
 
 
 def weld(*geometries: MeshGeometry, radius: float = 0.006, voxel: float | None = None) -> MeshGeometry:
-    """Smoothly merge overlapping or nearly-touching solids into one blended solid.
+    """Smooth-union overlapping solids into one blended solid (a molded fillet join).
 
-    Like smoothing clay over a joint: where the pieces meet, `weld` grows a rounded
-    fillet of size `radius` instead of leaving a sharp seam or a stuck-on block. Use
-    it to attach a protrusion to a form -- a handle to a body, a spout to a shell, a
-    boss to a panel: place the pieces so they overlap (overlap within a part is
-    free), then weld them into a single molded shape and add THAT to the part.
+    This is a *smooth union*: it blends the pieces' signed distance fields with a
+    smooth-minimum, then re-extracts one surface (marching tetrahedra). Unlike a
+    boolean union -- which keeps the exact input surfaces and leaves a SHARP seam --
+    this grows a rounded fillet of size `radius` at the junction, like smoothing clay
+    over a joint. It is approximate (resampled on a voxel grid), so reach for it only
+    when you want a molded look; use `boolean_union`/`boolean_difference` for an exact
+    conforming join.
+
+    Use it to mold a protrusion into a form -- a handle into a body, a spout into a
+    shell: place the pieces so they overlap (overlap within a part is free), then weld
+    them into a single molded shape and add THAT to the part.
 
     Weld pieces that share a color/material, since the result is one shape. The blend
     only bridges gaps up to about `radius`; pieces farther apart than that stay

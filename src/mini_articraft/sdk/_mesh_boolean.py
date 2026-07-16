@@ -53,11 +53,24 @@ def boolean_union(a: MeshGeometry, b: MeshGeometry) -> MeshGeometry:
 
 
 def boolean_difference(a: MeshGeometry, b: MeshGeometry) -> MeshGeometry:
-    return _from_manifold(_as_manifold(a, name="a") - _as_manifold(b, name="b"))
+    result = _from_manifold(_as_manifold(a, name="a") - _as_manifold(b, name="b"))
+    if not result.vertices:
+        raise ValueError(
+            "boolean_difference produced an empty solid: 'a' is entirely inside 'b', so "
+            "nothing is left. Check the two shapes' sizes and positions — a conforming "
+            "cut needs 'a' to poke through 'b', not sit fully inside it."
+        )
+    return result
 
 
 def boolean_intersection(a: MeshGeometry, b: MeshGeometry) -> MeshGeometry:
-    return _from_manifold(_as_manifold(a, name="a") ^ _as_manifold(b, name="b"))
+    result = _from_manifold(_as_manifold(a, name="a") ^ _as_manifold(b, name="b"))
+    if not result.vertices:
+        raise ValueError(
+            "boolean_intersection produced an empty solid: the inputs do not overlap. "
+            "Position them so they intersect before intersecting."
+        )
+    return result
 
 
 def _boolean_union_many(geometries: Iterable[MeshGeometry]) -> MeshGeometry:
