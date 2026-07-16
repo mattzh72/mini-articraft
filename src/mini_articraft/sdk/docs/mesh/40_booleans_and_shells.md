@@ -282,8 +282,37 @@ The result meshes are independent. Add them as named shapes when they belong to
 one rigid part, or add them to separate parts when the prompt requires separate
 motion.
 
+## weld: attach a protrusion with a smooth blend
+
+Use `weld(*geometries, radius=0.006)` to merge overlapping or nearly-touching
+solids into ONE blended solid. Where the pieces meet it grows a rounded fillet of
+size `radius` -- like smoothing clay over the joint -- instead of leaving a sharp
+seam or a stuck-on block.
+
+This is the correct way to ATTACH a protrusion to a form: a handle to a body, a
+spout to a shell, a boss to a panel. Do not author a thin strap and then bridge the
+gap to the body with an oversized mounting block. Instead, build the protrusion so
+it (and any small mount blobs) OVERLAP the target a few millimeters -- overlap
+within a rigid part is free -- then weld them into one molded shape:
+
+```python
+from mini_articraft.sdk import weld, rounded_rect_profile, sweep_profile_along_spline, BoxGeometry
+
+strap = sweep_profile_along_spline(handle_path, profile=rounded_rect_profile(0.024, 0.017, 0.005))
+top_mount = BoxGeometry((0.03, 0.03, 0.03)).translate(*top_anchor)     # overlaps the body
+bottom_mount = BoxGeometry((0.03, 0.03, 0.03)).translate(*bottom_anchor)
+handle = weld(strap, top_mount, bottom_mount, radius=0.007)            # one smooth molded handle
+part.add(handle, name="handle", color=DARK_PLASTIC)
+```
+
+Weld pieces that share a color, since the result is a single shape (add it with one
+color). The blend only bridges gaps up to about `radius`, so overlap the pieces
+first. Inputs must be closed manifold solids.
+
 ## Decision guide
 
+- Use `weld(...)` to attach a handle/spout/boss to a form as one molded piece,
+  instead of a strap plus a bridging block.
 - Use `boolean_difference(...)` to create a cavity or a real hole in a closed
   solid.
 - Use `cut_opening_on_face(...)` only when the outer opening boundary already

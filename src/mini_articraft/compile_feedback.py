@@ -252,7 +252,11 @@ def _warning_signal(text: str) -> CompileSignal:
             "warning",
             "disconnected_geometry",
             "WARN_DISCONNECTED_GEOMETRY",
-            "A part contains disconnected geometry that should be inspected.",
+            "A part contains disconnected geometry. Attach it properly instead of "
+            "bridging the gap with an oversized block: overlap the piece a few mm "
+            "into the form it lands on (overlap within a part is free) and "
+            "`weld(...)` them into one smooth molded shape, or "
+            "boolean_union/boolean_difference against that surface.",
             stripped,
             source="tests",
             group="qc",

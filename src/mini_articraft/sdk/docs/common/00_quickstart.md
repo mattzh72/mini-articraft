@@ -44,8 +44,9 @@ Read only the reference that applies to the next piece of geometry:
 - Profiles and curve sampling: `docs/sdk/mesh/10_profiles.md`.
 - Wires, pipes, and sweeps: `docs/sdk/mesh/20_wires_and_sweeps.md`.
 - Section lofts and repair: `docs/sdk/mesh/30_section_lofts.md`.
-- Mesh booleans, openings, and shell partitioning:
-  `docs/sdk/mesh/40_booleans_and_shells.md`.
+- Mesh booleans, openings, shell partitioning, and `weld` (attach a handle,
+  spout, or boss to a form as one smooth molded piece instead of a bridging
+  block): `docs/sdk/mesh/40_booleans_and_shells.md`.
 
 Detailed build123d pages are under `docs/sdk/build123d/`. Start with
 `docs/sdk/build123d/key_concepts_algebra.md` for object algebra,

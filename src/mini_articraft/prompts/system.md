@@ -26,10 +26,20 @@ Four requirements guide every design choice.
    Use the matching articulation type and plausible motion limits. Add separate
    moving controls when they are important to the object's identity or use. Do
    not add decorative motion.
-3. NO FLOATING PARTS. Every part and every separate piece of geometry needs a
-   visible support, mount, bridge, wall, shaft, bracket, boss, rail, or housing
-   connection. Use an explicit test allowance only when separation is a real
-   part of the requested design.
+3. NO FLOATING PARTS — CONFORM THE JOINING END TO THE SURFACE. Every part and
+   every separate piece of geometry must physically connect to the object. Connect
+   a protrusion (handle, spout, strut, rail, rib, truss member) by driving ITS OWN
+   END a few millimeters INTO the form it meets, then letting that form shape the
+   end: `boolean_difference(member, body)` trims the end flush and conformal to the
+   real (often curved) surface, and `boolean_union` merges them into one continuous
+   solid. Overlap within one rigid part is expected and is not a defect. Do NOT add
+   a separate mounting block, pad, foot, or boss between the piece and the body to
+   close a gap — a stuck-on connector, even a rounded one, is a placeholder. The
+   joining member's own end must seat against and take the shape of the surface it
+   lands on. (Optional: `weld(...)` adds a rounded molded fillet at a fused joint,
+   but conforming the end with a boolean is what actually attaches it.) Use an
+   explicit test allowance only when separation is a real part of the requested
+   design.
 4. NO UNINTENDED OVERLAPS. Keep distinct parts separate when the design calls for
    separation. Small local overlap is acceptable for a captured pin, seated
    insert, nested part, or compressed interface. Give each intentional case a

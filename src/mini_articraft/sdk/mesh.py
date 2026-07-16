@@ -44,6 +44,7 @@ from mini_articraft.sdk._mesh_sweeps import (
     tube_network_from_paths,
     wire_from_points,
 )
+from mini_articraft.sdk._mesh_weld import weld
 
 __all__ = [
     "ArcPipeGeometry",
@@ -81,5 +82,6 @@ __all__ = [
     "sweep_profile_along_spline",
     "tube_from_spline_points",
     "tube_network_from_paths",
+    "weld",
     "wire_from_points",
 ]
