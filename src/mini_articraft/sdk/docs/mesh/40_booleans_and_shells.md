@@ -315,6 +315,11 @@ first. Inputs must be closed manifold solids.
   instead of a strap plus a bridging block.
 - Use `boolean_difference(...)` to create a cavity or a real hole in a closed
   solid.
+- To trim a protrusion so it conforms to a HOLLOW body, subtract a SOLID form of
+  the body's outer surface, not the thin shell. Subtracting a thin wall removes
+  only a wall-thick slice and leaves sliver fragments at the junction; a solid
+  cutting tool trims the protrusion's end cleanly to one piece. (Build the solid
+  from the same outer profile, e.g. a solid `LatheGeometry` of the outer contour.)
 - Use `cut_opening_on_face(...)` only when the outer opening boundary already
   exists and you need its throat walls.
 - Use `partition_shell(...)` to divide one closed solid into named axis aligned

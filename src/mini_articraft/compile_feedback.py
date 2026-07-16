@@ -256,7 +256,10 @@ def _warning_signal(text: str) -> CompileSignal:
             "bridging the gap with an oversized block: overlap the piece a few mm "
             "into the form it lands on (overlap within a part is free) and "
             "`weld(...)` them into one smooth molded shape, or "
-            "boolean_union/boolean_difference against that surface.",
+            "boolean_union/boolean_difference against that surface. If a protrusion "
+            "fragmented into slivers, you likely ran boolean_difference against a thin "
+            "hollow shell -- subtract a SOLID form of the body's outer surface instead, "
+            "which trims the end cleanly without shaving off pieces.",
             stripped,
             source="tests",
             group="qc",
