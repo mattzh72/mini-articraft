@@ -37,7 +37,9 @@ def _mesh_field(mesh, pts: np.ndarray, band: float) -> np.ndarray:
     return sd
 
 
-def weld(*geometries: MeshGeometry, radius: float = 0.006, voxel: float | None = None) -> MeshGeometry:
+def weld(
+    *geometries: MeshGeometry, radius: float = 0.006, voxel: float | None = None
+) -> MeshGeometry:
     """Smooth-union overlapping solids into one blended solid (a molded fillet join).
 
     This is a *smooth union*: it blends the pieces' signed distance fields with a
@@ -93,10 +95,10 @@ def weld(*geometries: MeshGeometry, radius: float = 0.006, voxel: float | None =
     pts = np.column_stack([g.ravel() for g in grid])
 
     band = 3.0 * radius + voxel
-    field = None
-    for mesh in meshes:
+    field = _mesh_field(meshes[0], pts, band).reshape(dims)
+    for mesh in meshes[1:]:
         sd = _mesh_field(mesh, pts, band).reshape(dims)
-        field = sd if field is None else _smax(field, sd, radius)
+        field = _smax(field, sd, radius)
 
     if field.max() < 0.0:
         raise ValueError("weld produced no solid; check that the pieces are valid closed meshes")

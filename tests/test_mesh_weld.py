@@ -41,4 +41,4 @@ def test_weld_rejects_bad_radius() -> None:
 
 def test_weld_rejects_non_meshgeometry() -> None:
     with pytest.raises(TypeError):
-        weld(BoxGeometry((0.02, 0.02, 0.02)), np.zeros((3, 3)))
+        weld(BoxGeometry((0.02, 0.02, 0.02)), np.zeros((3, 3)))  # pyright: ignore[reportArgumentType]
