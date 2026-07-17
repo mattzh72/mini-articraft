@@ -44,8 +44,10 @@ def test_weld_trim_removes_stub_in_hollow_cavity() -> None:
     from mini_articraft.sdk import boolean_difference
 
     shell = boolean_difference(outer, cavity)
-    prot = CylinderGeometry(0.01, 0.06, radial_segments=24).rotate_y(np.pi / 2).translate(
-        0.045, 0.0, 0.0
+    prot = (
+        CylinderGeometry(0.01, 0.06, radial_segments=24)
+        .rotate_y(np.pi / 2)
+        .translate(0.045, 0.0, 0.0)
     )
     without_trim = weld(shell, prot)
     with_trim = weld(shell, prot, trim=cavity)
@@ -65,8 +67,10 @@ def test_weld_rejects_non_meshgeometry() -> None:
 
 def test_snap_to_closes_a_small_gap() -> None:
     body = SphereGeometry(0.05, width_segments=32, height_segments=16)
-    spout = CylinderGeometry(0.012, 0.05, radial_segments=24).rotate_y(np.pi / 2).translate(
-        0.085, 0.0, 0.0
+    spout = (
+        CylinderGeometry(0.012, 0.05, radial_segments=24)
+        .rotate_y(np.pi / 2)
+        .translate(0.085, 0.0, 0.0)
     )
     moved = snap_to(body, spout, overlap=0.004, max_move=0.05)
     fused = weld(body, moved)
