@@ -70,6 +70,8 @@ Read only the executable example closest to the current task:
 - Mixed build123d and mesh assembly: `docs/sdk/examples/mixed_articulated_assembly.py`.
 - Molding a handle/protrusion into a body (no mounting pads):
   `docs/sdk/examples/molded_mug.py`.
+- Seating radial blades into a hub disk and welding into one rotor:
+  `docs/sdk/examples/bladed_rotor.py`.
 
 Run `compile` after meaningful edits. Treat checks as design evidence. A failed check is not a
 reason to remove or simplify geometry that the prompt requires.
