@@ -261,21 +261,23 @@ class Agent:
             )
             started.append(time.perf_counter())
 
-        items = await asyncio.gather(*(self._run_tool(context, call) for call in tool_calls))
-        for call, item, tool_started in zip(tool_calls, items, started, strict=True):
+        results = await asyncio.gather(*(self._run_tool(context, call) for call in tool_calls))
+        for call, (item, display), tool_started in zip(tool_calls, results, started, strict=True):
             self.messages.append(item)
             append_conversation(conversation_path, item)
-            payload = _payload_for_display(item["output"])
             self._emit(
                 events.ToolFinished(
                     str(call["id"]),
                     str(call["name"]),
-                    _display_payload(context, str(call["name"]), payload),
+                    _display_payload(context, str(call["name"]), display),
                     round(time.perf_counter() - tool_started, 4),
                 )
             )
 
-    async def _run_tool(self, context: ToolContext, call: dict[str, Any]) -> dict[str, Any]:
+    async def _run_tool(
+        self, context: ToolContext, call: dict[str, Any]
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Return the model-facing result item and a payload for the local display."""
         name = str(call["name"])
         call_id = str(call["id"])
         try:
@@ -290,22 +292,15 @@ class Agent:
             payload = {"result": result}
         except Exception as exc:
             payload = {"error": str(exc)}
-        return tools.result_item(call_id, payload)
+        return tools.result_item(call_id, payload), _display_summary(payload)
 
 
-def _payload_for_display(output: Any) -> dict[str, Any]:
-    if isinstance(output, str):
-        return json.loads(output)
-    # Multimodal (image) tool output: a list of content parts; summarize for display.
-    texts = [
-        part["text"]
-        for part in output
-        if isinstance(part, dict) and part.get("type") == "input_text" and "text" in part
-    ]
-    payload = json.loads(texts[0]) if texts else {"result": {}}
+def _display_summary(payload: dict[str, Any]) -> dict[str, Any]:
+    """Local-display copy of a tool payload, with any rendered image reduced to a note."""
     result = payload.get("result")
-    if isinstance(result, dict):
-        result["image"] = "rendered"
+    if isinstance(result, dict) and "image_png_base64" in result:
+        trimmed = {**result, "image_png_base64": "<rendered image>"}
+        return {**payload, "result": trimmed}
     return payload
 
 
