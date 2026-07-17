@@ -6,6 +6,7 @@ from mini_articraft.agent.tools._core import Tool, ToolContext, result_item
 from mini_articraft.agent.tools.compile import TOOL as compile_tool
 from mini_articraft.agent.tools.edit import TOOL as edit_tool
 from mini_articraft.agent.tools.exec_command import TOOL as exec_command_tool
+from mini_articraft.agent.tools.inspect_view import TOOL as inspect_view_tool
 from mini_articraft.agent.tools.read import TOOL as read_tool
 from mini_articraft.agent.tools.write import TOOL as write_tool
 from mini_articraft.agent.tools.write_stdin import TOOL as write_stdin_tool
@@ -19,6 +20,7 @@ TOOLS = {
         exec_command_tool,
         write_stdin_tool,
         compile_tool,
+        inspect_view_tool,
     )
 }
 

@@ -265,7 +265,7 @@ class Agent:
         for call, item, tool_started in zip(tool_calls, items, started, strict=True):
             self.messages.append(item)
             append_conversation(conversation_path, item)
-            payload = json.loads(item["output"])
+            payload = _payload_for_display(item["output"])
             self._emit(
                 events.ToolFinished(
                     str(call["id"]),
@@ -291,6 +291,22 @@ class Agent:
         except Exception as exc:
             payload = {"error": str(exc)}
         return tools.result_item(call_id, payload)
+
+
+def _payload_for_display(output: Any) -> dict[str, Any]:
+    if isinstance(output, str):
+        return json.loads(output)
+    # Multimodal (image) tool output: a list of content parts; summarize for display.
+    texts = [
+        part["text"]
+        for part in output
+        if isinstance(part, dict) and part.get("type") == "input_text" and "text" in part
+    ]
+    payload = json.loads(texts[0]) if texts else {"result": {}}
+    result = payload.get("result")
+    if isinstance(result, dict):
+        result["image"] = "rendered"
+    return payload
 
 
 def _display_payload(

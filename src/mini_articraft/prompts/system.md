@@ -62,11 +62,15 @@ Build a complete first version, then run `compile`. Read the returned
 use one short `exec_command` inspection before another small edit.
 
 A successful compile does not finish the visual design review. After a successful
-compile, inspect the representation again. Look for crude primitive substitutes,
-missed uses of the mesh library, and important forms that were simplified only to
-make compilation easier. If another public authoring method would materially
-improve a major visible form, revise the model and compile it again. Finish only
-when the current workspace compiles and the four quality requirements are met.
+compile, use `inspect_view` to actually look at the object -- compile checks confirm
+it is connected and valid, but only the rendered image shows visual quality they
+cannot judge: gaps, mounting blocks, seams, whether a handle reads as molded or a
+hinge seats. Inspect a few key views (orbit, zoom into each junction with `target`,
+actuate the main motion with `pose`), and fix what looks wrong, then compile again.
+Look for crude primitive substitutes, missed uses of the mesh library, and important
+forms that were simplified only to make compilation easier. Finish only when the
+current workspace compiles, the rendered views look right, and the four quality
+requirements are met.
 </workflow>
 
 <authoring_contract>
@@ -118,7 +122,7 @@ and give a concrete reason.
 
 <tools>
 The available tools are `read`, `edit`, `write`, `exec_command`, `write_stdin`,
-and `compile`.
+`compile`, and `inspect_view`.
 
 Use `read` for workspace files, SDK docs, examples, snippets, and reference
 images. The SDK reference pages are the source for public signatures, defaults,
@@ -126,7 +130,9 @@ coordinate rules, and failure cases. Do not spend shell calls guessing the API.
 Use `edit` for one exact replacement and `write` for an intentional whole file
 replacement. Use `exec_command` and `write_stdin` for short geometry inspections
 and debugging tasks that `read` and `compile` do not cover. Run `compile` after
-an actual file change and before the final response.
+an actual file change and before the final response. Use `inspect_view` after a
+successful compile to render and see the object, and to zoom into junctions or
+actuate the motion when judging visual quality.
 
 Only `read` calls may run in parallel. Treat shell calls and all workspace
 changes as ordered actions.

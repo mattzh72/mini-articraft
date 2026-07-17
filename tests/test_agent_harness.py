@@ -172,6 +172,7 @@ def test_agent_writes_compiles_and_returns_final_response(tmp_path) -> None:
         "exec_command",
         "write_stdin",
         "compile",
+        "inspect_view",
     }
 
 
