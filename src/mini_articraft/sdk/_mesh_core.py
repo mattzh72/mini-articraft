@@ -427,7 +427,7 @@ class BoxGeometry(MeshGeometry):
 
 class CylinderGeometry(MeshGeometry):
     def __init__(
-        self, radius: float, height: float, *, radial_segments: int = 48, closed: bool = True
+        self, radius: float, height: float, *, radial_segments: int = 24, closed: bool = True
     ):
         radius, height = float(radius), float(height)
         if radius <= 0.0 or height <= 0.0:
@@ -464,7 +464,7 @@ class CylinderGeometry(MeshGeometry):
 
 class ConeGeometry(MeshGeometry):
     def __init__(
-        self, radius: float, height: float, *, radial_segments: int = 48, closed: bool = True
+        self, radius: float, height: float, *, radial_segments: int = 24, closed: bool = True
     ):
         radius, height = float(radius), float(height)
         if radius <= 0.0 or height <= 0.0:
@@ -482,7 +482,7 @@ class ConeGeometry(MeshGeometry):
 
 
 class SphereGeometry(MeshGeometry):
-    def __init__(self, radius: float, *, width_segments: int = 48, height_segments: int = 24):
+    def __init__(self, radius: float, *, width_segments: int = 24, height_segments: int = 16):
         radius = float(radius)
         if radius <= 0.0:
             raise ValueError("sphere radius must be positive")
@@ -496,8 +496,8 @@ class DomeGeometry(MeshGeometry):
         self,
         radius: float | Sequence[float],
         *,
-        radial_segments: int = 48,
-        height_segments: int = 20,
+        radial_segments: int = 24,
+        height_segments: int = 12,
         closed: bool = True,
     ):
         if isinstance(radius, (int, float)):
@@ -551,8 +551,8 @@ class CapsuleGeometry(MeshGeometry):
         radius: float,
         length: float,
         *,
-        radial_segments: int = 48,
-        height_segments: int = 14,
+        radial_segments: int = 24,
+        height_segments: int = 8,
     ):
         radius, length = float(radius), float(length)
         if radius <= 0.0 or length < 0.0:
@@ -580,8 +580,8 @@ class TorusGeometry(MeshGeometry):
         radius: float,
         tube: float,
         *,
-        radial_segments: int = 24,
-        tubular_segments: int = 64,
+        radial_segments: int = 16,
+        tubular_segments: int = 32,
     ):
         radius, tube = float(radius), float(tube)
         if radius <= 0.0 or tube <= 0.0:
@@ -631,7 +631,7 @@ class LatheGeometry(MeshGeometry):
         outer_profile: Iterable[Sequence[float]],
         inner_profile: Iterable[Sequence[float]],
         *,
-        segments: int = 48,
+        segments: int = 32,
         start_cap: str = "flat",
         end_cap: str = "flat",
         lip_samples: int = 6,
@@ -647,7 +647,7 @@ class LatheGeometry(MeshGeometry):
         return cls(profile, segments=segments, closed=True)
 
     def __init__(
-        self, profile: Iterable[Sequence[float]], *, segments: int = 48, closed: bool = True
+        self, profile: Iterable[Sequence[float]], *, segments: int = 32, closed: bool = True
     ):
         points = _profile_2d(profile, minimum=3) if closed else _profile_2d(profile, minimum=2)
         if closed:

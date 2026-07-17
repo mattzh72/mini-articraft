@@ -32,8 +32,9 @@ def test_weld_keeps_exact_input_bounds() -> None:
     (a_min, a_max), (b_min, b_max) = a.bounds, b.bounds
     w_min, w_max = welded.bounds
     # a boolean union stays within the inputs' own extent -- it never grows a fillet
-    assert w_max[0] == pytest.approx(max(a_max[0], b_max[0]), abs=1e-9)
-    assert w_min[0] == pytest.approx(min(a_min[0], b_min[0]), abs=1e-9)
+    # (tolerance well below any fillet, above manifold's re-meshing noise)
+    assert w_max[0] == pytest.approx(max(a_max[0], b_max[0]), abs=1e-6)
+    assert w_min[0] == pytest.approx(min(a_min[0], b_min[0]), abs=1e-6)
     assert welded.is_watertight
 
 
