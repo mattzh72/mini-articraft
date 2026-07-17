@@ -17,7 +17,7 @@ from mini_articraft.sdk._collision import (
     Vec3,
     _pair_key,
 )
-from mini_articraft.sdk.joints import Articulation
+from mini_articraft.sdk.joints import Articulation, ArticulationType
 from mini_articraft.sdk.object import ArticulatedObject, Part, PartRef
 
 DEFAULT_MESH_TOLERANCE = 0.001
@@ -498,6 +498,66 @@ class TestContext:
     ) -> bool:
         return self._check_disconnected_geometry(contact_tol=contact_tol, name=name, warn=True)
 
+    def fail_if_articulation_separates_child(
+        self,
+        *,
+        samples: int = 4,
+        gap_tol: float = 0.003,
+        name: str | None = None,
+    ) -> bool:
+        """Fail if a hinge/pivot pulls its moving child away from its parent.
+
+        For every REVOLUTE and CONTINUOUS articulation, this samples the joint
+        across its motion range and measures the closest distance between the child
+        part and its parent. A real hinge or pivot keeps them touching throughout;
+        if the child instead separates by more than `gap_tol` beyond its rest gap as
+        the joint moves, the joint origin/axis is misplaced -- the classic "lid that
+        floats off when opened". PRISMATIC joints are exempt, since their parts
+        often separate on purpose (lift-off kettles, sliding drawers).
+
+        The other geometry checks only look at the rest pose, so this is what
+        catches articulation defects that appear only in motion.
+        """
+        samples = max(2, int(samples))
+        gap_tol = _non_negative(gap_tol, "gap_tol")
+        check_name = name or f"fail_if_articulation_separates_child(gap_tol={gap_tol:.6g})"
+        findings: list[str] = []
+        for articulation in self.model.articulations:
+            if articulation.articulation_type not in (
+                ArticulationType.REVOLUTE,
+                ArticulationType.CONTINUOUS,
+            ):
+                continue
+            parent = _part_name(articulation.parent, field_name="parent")
+            child = _part_name(articulation.child, field_name="child")
+            values = _articulation_sweep_values(articulation, samples)
+            with self.pose({articulation.name: values[0]}):
+                rest_gap = self.distance_between(parent, child).distance
+            worst_gap, worst_value = rest_gap, values[0]
+            for value in values[1:]:
+                with self.pose({articulation.name: value}):
+                    gap = self.distance_between(parent, child).distance
+                if gap > worst_gap:
+                    worst_gap, worst_value = gap, value
+            if worst_gap - rest_gap > gap_tol:
+                findings.append(
+                    f"articulation={articulation.name!r} "
+                    f"type={articulation.articulation_type} parent={parent!r} "
+                    f"child={child!r} rest_gap={rest_gap:.4g}m max_gap={worst_gap:.4g}m "
+                    f"at value={worst_value:.4g} "
+                    f"(child pulls {worst_gap - rest_gap:.4g}m off the parent as it moves)"
+                )
+        if not findings:
+            return self._record(check_name, True)
+        details = (
+            "A hinge/pivot pulls its moving child away from its parent -- the parts "
+            "touch at rest but separate when the joint is actuated (e.g. a lid that "
+            "floats off when opened). Place the articulation origin and axis so the "
+            "child stays connected to the parent throughout its motion range:\n"
+            + "\n".join(findings)
+        )
+        return self._record(check_name, False, details)
+
     def warn_if_absurd_dimensions(
         self,
         *,
@@ -673,6 +733,23 @@ def _part_name(value: PartRef, *, field_name: str) -> str:
     if not isinstance(raw, str) or not raw.strip():
         raise ValidationError(f"{field_name} must be a part name or Part")
     return raw.strip()
+
+
+def _articulation_sweep_values(articulation: Articulation, samples: int) -> list[float]:
+    """Joint values to sample across an articulation's motion range.
+
+    The first value is the rest pose. A bounded joint sweeps lower..upper; a
+    continuous or unbounded joint samples a half turn (0..pi), which is enough to
+    reveal a child that separates as it rotates.
+    """
+    limits = articulation.motion_limits
+    if limits is not None and limits.lower is not None and limits.upper is not None:
+        low, high = float(limits.lower), float(limits.upper)
+    else:
+        low, high = 0.0, math.pi
+    if high <= low:
+        return [low]
+    return [low + (high - low) * index / (samples - 1) for index in range(samples)]
 
 
 def _articulation_name(value: object) -> str:

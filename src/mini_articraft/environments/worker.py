@@ -125,6 +125,7 @@ def _run_baseline_tests(obj: ArticulatedObject, authored_report: TestReport) -> 
     ctx.warn_if_part_contains_disconnected_geometry_islands()
     ctx.warn_if_absurd_dimensions()
     ctx.fail_if_parts_overlap_in_current_pose()
+    ctx.fail_if_articulation_separates_child()
     return _without_allowance_notes(ctx.report())
 
 
