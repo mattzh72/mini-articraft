@@ -1,131 +1,125 @@
 from __future__ import annotations
 
-import manifold3d
 import numpy as np
-from scipy.interpolate import RegularGridInterpolator
-from trimesh.proximity import signed_distance
+from trimesh.proximity import closest_point
 
+from mini_articraft.sdk._mesh_boolean import boolean_difference, boolean_union
 from mini_articraft.sdk._mesh_core import MeshGeometry
 
-_MAX_GRID_POINTS = 900_000
-_FAR = 1.0e3
+_AXES = {"x": 0, "y": 1, "z": 2}
 
 
-def _smax(a: np.ndarray, b: np.ndarray, radius: float) -> np.ndarray:
-    """Polynomial smooth maximum: a rounded blend of two distance fields.
+class SnapRefused(ValueError):
+    """Raised when snapping a piece to touch would move it further than allowed."""
 
-    manifold3d's level_set treats the interior as SDF > 0 (positive inside), so a
-    union is a max and a *smooth* union is this smooth-max.
+
+def _require_mesh(geometry: object, label: str) -> MeshGeometry:
+    if not isinstance(geometry, MeshGeometry):
+        raise TypeError(f"{label} must be MeshGeometry")
+    return geometry
+
+
+def _nearest_gap(anchor: MeshGeometry, piece: MeshGeometry) -> tuple[float, np.ndarray]:
+    """Smallest surface gap between two solids and the unit direction piece -> anchor."""
+    a_mesh = anchor.to_trimesh()
+    b_mesh = piece.to_trimesh()
+    points_on_a, dist_b, _ = closest_point(a_mesh, b_mesh.vertices)
+    i = int(np.argmin(dist_b))
+    point_a, point_b, dist = points_on_a[i], b_mesh.vertices[i], float(dist_b[i])
+    points_on_b, dist_a, _ = closest_point(b_mesh, a_mesh.vertices)
+    j = int(np.argmin(dist_a))
+    if dist_a[j] < dist:
+        point_a, point_b, dist = a_mesh.vertices[j], points_on_b[j], float(dist_a[j])
+    direction = np.asarray(point_a, dtype=np.float64) - np.asarray(point_b, dtype=np.float64)
+    norm = float(np.linalg.norm(direction))
+    unit = direction / norm if norm > 1e-12 else np.zeros(3)
+    return dist, unit
+
+
+def snap_to(
+    anchor: MeshGeometry,
+    piece: MeshGeometry,
+    *,
+    overlap: float = 0.004,
+    max_move: float = 0.02,
+    axis: str | None = None,
+) -> MeshGeometry:
+    """Translate ``piece`` toward ``anchor`` until they overlap by about ``overlap``.
+
+    Use this before ``weld`` (or before adding an overlapping shape) when a protrusion
+    was placed with a small gap to the form it should meet, so you do not have to hit
+    the exact coordinate by hand. Like the other mesh transforms it moves ``piece`` in
+    place and returns it; snap the piece BEFORE you add it, and use the returned value,
+    so every later check and articulation sees the real snapped position.
+
+    ``snap_to`` only translates the whole piece, so it fits a single freely-placeable
+    attachment (a boss, a foot, a spout root). It cannot help a piece whose position is
+    fixed by a mechanism (a hinge barrel on its axis) or one that must meet the body at
+    more than one place (a handle with two ends) -- move those by fixing their own shape
+    or path instead.
+
+    It raises ``SnapRefused`` when closing the gap would move the piece further than
+    ``max_move``; a large required move means the piece is constrained or misplaced, and
+    silently teleporting it would break the design. Pass ``axis`` (``"x"``, ``"y"``, or
+    ``"z"``) to constrain the motion to one direction, e.g. to close a vertical gap
+    without shifting a piece off a shared axis.
     """
-    h = np.clip(0.5 + 0.5 * (a - b) / radius, 0.0, 1.0)
-    return b * (1.0 - h) + a * h + radius * h * (1.0 - h)
+    anchor = _require_mesh(anchor, "anchor")
+    piece = _require_mesh(piece, "piece")
+    overlap = float(overlap)
+    if overlap < 0.0:
+        raise ValueError("overlap must be non-negative")
+    max_move = float(max_move)
+    if max_move <= 0.0:
+        raise ValueError("max_move must be positive")
 
+    dist, unit = _nearest_gap(anchor, piece)
+    if axis is not None:
+        if axis not in _AXES:
+            raise ValueError(f"axis must be one of x, y, z; got {axis!r}")
+        k = _AXES[axis]
+        sign = np.sign(unit[k]) or 1.0
+        unit = np.zeros(3)
+        unit[k] = sign
 
-def _mesh_field(mesh, pts: np.ndarray, band: float) -> np.ndarray:
-    """Signed distance to `mesh`, POSITIVE inside, exact only near its bounds.
-
-    Points farther than `band` from the mesh bounding box get a large negative
-    value; they are outside the blend region and cannot affect the welded surface,
-    so skipping the expensive exact query there is safe and much faster.
-    """
-    # trimesh signed_distance is already positive inside -- matches manifold's convention.
-    sd = np.full(len(pts), -_FAR, dtype=np.float64)
-    bmin, bmax = mesh.bounds
-    near = np.all((pts >= bmin - band) & (pts <= bmax + band), axis=1)
-    if near.any():
-        sd[near] = signed_distance(mesh, pts[near])
-    return sd
+    move = (dist + overlap) * unit
+    magnitude = float(np.linalg.norm(move))
+    if magnitude > max_move:
+        raise SnapRefused(
+            f"closing the gap needs {magnitude * 1000:.1f} mm, over max_move "
+            f"{max_move * 1000:.0f} mm; the piece is likely constrained or misplaced -- "
+            f"fix its placement or shape instead of snapping"
+        )
+    return piece.translate(float(move[0]), float(move[1]), float(move[2]))
 
 
 def weld(
-    *geometries: MeshGeometry, radius: float = 0.006, voxel: float | None = None
+    *geometries: MeshGeometry,
+    trim: MeshGeometry | None = None,
 ) -> MeshGeometry:
-    """Smooth-union overlapping solids into one blended solid (a molded fillet join).
+    """Fuse overlapping solids into one molded piece with an exact boolean union.
 
-    This is a *smooth union*: it blends the pieces' signed distance fields with a
-    smooth-minimum, then re-extracts one surface (marching tetrahedra). Unlike a
-    boolean union -- which keeps the exact input surfaces and leaves a SHARP seam --
-    this grows a rounded fillet of size `radius` at the junction, like smoothing clay
-    over a joint. It is approximate (resampled on a voxel grid), so reach for it only
-    when you want a molded look; use `boolean_union`/`boolean_difference` for an exact
-    conforming join.
+    Place the pieces so they overlap (overlap within a part is free; use ``snap_to`` to
+    close a small gap first), then ``weld`` them into a single shape and add THAT to the
+    part. The result keeps the exact input surfaces, so fine detail is preserved. Because
+    the pieces become one shape they take one color, so weld pieces that share a material;
+    keep a differently colored piece (a black handle on a steel body) as its own
+    overlapping shape instead.
 
-    Use it to mold a protrusion into a form -- a handle into a body, a spout into a
-    shell: place the pieces so they overlap (overlap within a part is free), then weld
-    them into a single molded shape and add THAT to the part.
-
-    Weld pieces that share a color/material, since the result is one shape. The blend
-    only bridges gaps up to about `radius`; pieces farther apart than that stay
-    separate, so overlap them first.
+    When the body is a hollow shell and a protrusion pokes through the wall into the
+    cavity, pass ``trim`` (the solid that fills the cavity) to difference that stub away
+    after the union, so nothing dangles inside the interior.
     """
-    geoms = list(geometries)
+    geoms = [_require_mesh(g, f"geometries[{i}]") for i, g in enumerate(geometries)]
     if len(geoms) < 2:
         raise ValueError("weld needs at least two geometries")
-    radius = float(radius)
-    if radius <= 0.0:
-        raise ValueError("radius must be positive")
 
-    meshes = []
-    for index, geometry in enumerate(geoms):
-        if not isinstance(geometry, MeshGeometry):
-            raise TypeError(f"geometries[{index}] must be MeshGeometry")
-        geometry.validate()
-        if not geometry.is_watertight:
-            raise ValueError(f"geometries[{index}] must be a closed manifold solid to weld")
-        meshes.append(geometry.to_trimesh())
-
-    mins = np.min([m.bounds[0] for m in meshes], axis=0)
-    maxs = np.max([m.bounds[1] for m in meshes], axis=0)
-    margin = 4.0 * radius
-    lo = np.asarray(mins) - margin
-    hi = np.asarray(maxs) + margin
-
-    if voxel is None:
-        voxel = radius * 0.6
-    voxel = float(voxel)
-    if voxel <= 0.0:
-        raise ValueError("voxel must be positive")
-    dims = np.ceil((hi - lo) / voxel).astype(int) + 1
-    while int(np.prod(dims)) > _MAX_GRID_POINTS:
-        voxel *= 1.3
-        dims = np.ceil((hi - lo) / voxel).astype(int) + 1
-
-    axes = [lo[i] + voxel * np.arange(dims[i]) for i in range(3)]
-    grid = np.meshgrid(axes[0], axes[1], axes[2], indexing="ij")
-    pts = np.column_stack([g.ravel() for g in grid])
-
-    band = 3.0 * radius + voxel
-    field = _mesh_field(meshes[0], pts, band).reshape(dims)
-    for mesh in meshes[1:]:
-        sd = _mesh_field(mesh, pts, band).reshape(dims)
-        field = _smax(field, sd, radius)
-
-    if field.max() < 0.0:
-        raise ValueError("weld produced no solid; check that the pieces are valid closed meshes")
-
-    interp = RegularGridInterpolator(
-        tuple(axes), field, bounds_error=False, fill_value=float(min(field.min(), -voxel))
-    )
-
-    def sdf(x: float, y: float, z: float) -> float:
-        return float(interp([[x, y, z]])[0])
-
-    solid = manifold3d.Manifold.level_set(
-        sdf, [lo[0], lo[1], lo[2], hi[0], hi[1], hi[2]], voxel, 0.0
-    )
-    if solid.is_empty():
-        raise ValueError(
-            "weld produced an empty solid; the pieces are farther apart than `radius` "
-            "allows -- overlap them or increase radius"
-        )
-
-    mesh = solid.to_mesh()
-    verts = np.asarray(mesh.vert_properties, dtype=np.float64)[:, :3]
-    faces = np.asarray(mesh.tri_verts, dtype=np.int64)
-    return MeshGeometry(
-        vertices=[(float(v[0]), float(v[1]), float(v[2])) for v in verts],
-        faces=[(int(f[0]), int(f[1]), int(f[2])) for f in faces],
-    )
+    result = geoms[0]
+    for geometry in geoms[1:]:
+        result = boolean_union(result, geometry)
+    if trim is not None:
+        result = boolean_difference(result, _require_mesh(trim, "trim"))
+    return result
 
 
-__all__ = ["weld"]
+__all__ = ["SnapRefused", "snap_to", "weld"]

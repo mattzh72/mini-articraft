@@ -28,12 +28,11 @@ Four requirements guide every design choice.
    moving controls when they are important to the object's identity or use. Do
    not add decorative motion.
 3. NO FLOATING PARTS. Every part and every separate piece of geometry must
-   physically connect to the object. To attach a protrusion, overlap its own end
-   into the form it meets and let that form shape the end, rather than bridging a
-   gap with a separate mounting block. Overlap within one rigid part is expected;
-   `boolean_difference` trims the end to the surface, `boolean_union` fuses it, and
-   `weld` blends it. Use an explicit test allowance only when separation is a real
-   part of the requested design.
+   physically connect to the object. Overlap within one rigid part is free and
+   counts as connected, so attach a protrusion by extending its OWN end a few
+   millimeters into the surface it meets. Never add a separate piece whose only
+   job is to close a gap. Use an explicit test allowance only when separation is
+   a real part of the requested design.
 4. NO UNINTENDED OVERLAPS. Keep distinct parts separate when the design calls for
    separation. Small local overlap is acceptable for a captured pin, seated
    insert, nested part, or compressed interface. Give each intentional case a

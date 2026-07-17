@@ -282,44 +282,58 @@ The result meshes are independent. Add them as named shapes when they belong to
 one rigid part, or add them to separate parts when the prompt requires separate
 motion.
 
-## weld: attach a protrusion with a smooth blend
+## weld and snap_to: fuse a protrusion into a form
 
-Use `weld(*geometries, radius=0.006)` to merge overlapping or nearly-touching
-solids into ONE blended solid. Where the pieces meet it grows a rounded fillet of
-size `radius` -- like smoothing clay over the joint -- instead of leaving a sharp
-seam or a stuck-on block.
-
-This is the correct way to ATTACH a protrusion to a form: a handle to a body, a
-spout to a shell, a boss to a panel. Do not author a thin strap and then bridge the
-gap to the body with an oversized mounting block. Instead, build the protrusion so
-it (and any small mount blobs) OVERLAP the target a few millimeters -- overlap
-within a rigid part is free -- then weld them into one molded shape:
+`weld(*geometries, trim=None)` fuses overlapping closed solids into ONE shape with
+an exact boolean union. Use it to mold a protrusion into a body -- a spout into a
+shell, a boss into a panel: place the pieces so they overlap (overlap within a part
+is free), then `weld` them and add the single result to the part.
 
 ```python
-from mini_articraft.sdk import weld, rounded_rect_profile, sweep_profile_along_spline, BoxGeometry
-
-strap = sweep_profile_along_spline(handle_path, profile=rounded_rect_profile(0.024, 0.017, 0.005))
-top_mount = BoxGeometry((0.03, 0.03, 0.03)).translate(*top_anchor)     # overlaps the body
-bottom_mount = BoxGeometry((0.03, 0.03, 0.03)).translate(*bottom_anchor)
-handle = weld(strap, top_mount, bottom_mount, radius=0.007)            # one smooth molded handle
-part.add(handle, name="handle", color=DARK_PLASTIC)
+body = LatheGeometry.from_shell_profiles(outer_profile=..., inner_profile=...)
+spout = LoftGeometry(sections).translate(0.06, 0.0, 0.10)  # overlaps the body wall
+molded = weld(body, spout)
+kettle.add(molded, name="body_with_molded_spout", color=(0.80, 0.82, 0.83))
 ```
 
-Weld pieces that share a color, since the result is a single shape (add it with one
-color). The blend only bridges gaps up to about `radius`, so overlap the pieces
-first. Inputs must be closed manifold solids.
+Because the pieces become one shape they take one color, so weld pieces that share a
+material. Keep a differently colored piece (a black handle on a steel body) as its
+own overlapping shape instead of welding it.
+
+When the body is a hollow shell and the protrusion pokes through the wall into the
+cavity, pass `trim` (the solid that fills the cavity) to difference that stub away:
+
+```python
+molded = weld(shell, spout, trim=cavity_solid)  # union, then remove the interior stub
+```
+
+If a protrusion was placed with a small gap to the form it should meet, call
+`snap_to(anchor, piece, overlap=0.004, max_move=0.02, axis=None)` first. It moves the
+piece toward `anchor` until they overlap by about `overlap` and returns it, so you do
+not have to hit the exact coordinate by hand. Snap the piece BEFORE you add it:
+
+```python
+spout = snap_to(body, spout, max_move=0.01)   # close the gap
+kettle.add(weld(body, spout), name="body_with_molded_spout", color=(0.80, 0.82, 0.83))
+```
+
+`snap_to` only translates the whole piece, so it fits a single freely-placeable
+attachment (a boss, a foot, a spout root). It raises `SnapRefused` when closing the
+gap would move the piece further than `max_move` -- a large required move means the
+piece is constrained (a hinge barrel on its axis) or must meet the body at more than
+one place (a handle with two ends), and those are fixed by their own shape or path,
+not by snapping. Pass `axis` to constrain the motion to one direction.
 
 ## Decision guide
 
-- Use `weld(...)` to attach a handle/spout/boss to a form as one molded piece,
-  instead of a strap plus a bridging block.
-- Use `boolean_difference(...)` to create a cavity or a real hole in a closed
-  solid.
-- To trim a protrusion so it conforms to a HOLLOW body, subtract a SOLID form of
-  the body's outer surface, not the thin shell. Subtracting a thin wall removes
-  only a wall-thick slice and leaves sliver fragments at the junction; a solid
-  cutting tool trims the protrusion's end cleanly to one piece. (Build the solid
-  from the same outer profile, e.g. a solid `LatheGeometry` of the outer contour.)
+- Use `weld(...)` to fuse overlapping same-material solids into one shape (an exact
+  boolean union); pass `trim` to remove a stub left inside a hollow body, and
+  `snap_to(...)` first to close a small gap before welding.
+- Use `boolean_difference(...)` to cut one solid out of another (a cavity, a hole,
+  or trimming one shape to another's surface).
+- Note: `boolean_difference` against a thin hollow shell removes only a wall-thick
+  slice and can fragment the input into slivers; subtract a solid to remove
+  everything inside a surface.
 - Use `cut_opening_on_face(...)` only when the outer opening boundary already
   exists and you need its throat walls.
 - Use `partition_shell(...)` to divide one closed solid into named axis aligned

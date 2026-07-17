@@ -252,14 +252,13 @@ def _warning_signal(text: str) -> CompileSignal:
             "warning",
             "disconnected_geometry",
             "WARN_DISCONNECTED_GEOMETRY",
-            "A part contains disconnected geometry. Rather than bridging the gap with "
-            "a separate block, consider overlapping the piece a few mm into the form it "
-            "lands on (overlap within a part is free) and joining them -- for example "
-            "`weld(...)` for a molded blend, or boolean_union/boolean_difference against "
-            "that surface. If a protrusion fragmented into slivers, it was likely a "
-            "boolean_difference against a thin hollow shell; try subtracting a solid form "
-            "of the body's outer surface instead, which trims the end without shaving off "
-            "pieces.",
+            "A part contains disconnected geometry. Move or extend the disconnected piece "
+            "so its OWN body overlaps the nearest piece by a few mm -- overlap within a "
+            "part is free and counts as connected. Do not add a separate piece to bridge "
+            "the gap. To then smooth or trim that overlap, `weld(...)` blends it and "
+            "boolean_difference trims it; if a protrusion fragmented into slivers, it was "
+            "a boolean_difference against a thin hollow shell, so subtract a solid form of "
+            "the body's outer surface instead.",
             stripped,
             source="tests",
             group="qc",
