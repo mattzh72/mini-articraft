@@ -285,6 +285,19 @@ def test_mesh_booleans_return_closed_solids_and_reject_open_meshes() -> None:
         boolean_union(a, MeshGeometry())
 
 
+def test_degenerate_boolean_results_raise_actionable_errors() -> None:
+    small = BoxGeometry((0.1, 0.1, 0.1))
+    big = BoxGeometry((1.0, 1.0, 1.0))
+    apart = BoxGeometry((0.1, 0.1, 0.1)).translate(5.0, 0.0, 0.0)
+
+    # 'small' fully inside 'big' -> difference vanishes; a real conform needs overlap-through.
+    with pytest.raises(ValueError, match="empty solid"):
+        boolean_difference(small, big)
+    # non-overlapping inputs -> intersection is empty.
+    with pytest.raises(ValueError, match="do not overlap"):
+        boolean_intersection(small, apart)
+
+
 def test_build123d_conversion_keeps_shape_location() -> None:
     geometry = build123d_to_mesh(Pos(2.0, 3.0, 4.0) * Box(1.0, 2.0, 3.0))
 

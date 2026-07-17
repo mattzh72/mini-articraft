@@ -28,6 +28,10 @@ def run_tests() -> TestReport:
 Every shape needs a unique name within its part. A color can contain RGB or RGBA values from
 zero through one.
 
+Within one rigid part, overlapping shapes count as connected -- notice `leg_1` overlaps up into
+`top` above. To attach a handle, spout, or any protrusion, extend the protrusion's own end a few
+millimeters into the form it meets; it then reads as one molded piece with no extra geometry.
+
 Use `model.articulation(...)` for fixed, revolute, continuous, and prismatic motion. Use named
 shape arguments in exact checks when a part contains several shapes.
 
@@ -44,7 +48,8 @@ Read only the reference that applies to the next piece of geometry:
 - Profiles and curve sampling: `docs/sdk/mesh/10_profiles.md`.
 - Wires, pipes, and sweeps: `docs/sdk/mesh/20_wires_and_sweeps.md`.
 - Section lofts and repair: `docs/sdk/mesh/30_section_lofts.md`.
-- Mesh booleans, openings, and shell partitioning:
+- Mesh booleans, openings, shell partitioning, and `weld`/`snap_to` (fuse a
+  same-material protrusion into a body, snapping it to close a small gap first):
   `docs/sdk/mesh/40_booleans_and_shells.md`.
 
 Detailed build123d pages are under `docs/sdk/build123d/`. Start with
@@ -63,6 +68,8 @@ Read only the executable example closest to the current task:
 - Hollow shell: `docs/sdk/examples/hollow_shell.py`.
 - Section loft with a swept wire: `docs/sdk/examples/section_loft_with_wires.py`.
 - Mixed build123d and mesh assembly: `docs/sdk/examples/mixed_articulated_assembly.py`.
+- Molding a handle/protrusion into a body (no mounting pads):
+  `docs/sdk/examples/molded_mug.py`.
 
 Run `compile` after meaningful edits. Treat checks as design evidence. A failed check is not a
 reason to remove or simplify geometry that the prompt requires.

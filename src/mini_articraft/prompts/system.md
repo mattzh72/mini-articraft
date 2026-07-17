@@ -21,15 +21,18 @@ Four requirements guide every design choice.
    form better. Mesh usage is not a goal by itself. Use simple or exact
    build123d geometry when it is the best fit. Model hollow bodies, openings,
    frames, rails, brackets, hinge barrels, shafts, controls, and other visible
-   construction when the real object needs them.
+   construction when the real object needs them. Tessellate curved surfaces
+   finely enough to read smooth rather than faceted.
 2. PRIMARY MECHANISMS. Model the main motion a person expects from the object.
    Use the matching articulation type and plausible motion limits. Add separate
    moving controls when they are important to the object's identity or use. Do
    not add decorative motion.
-3. NO FLOATING PARTS. Every part and every separate piece of geometry needs a
-   visible support, mount, bridge, wall, shaft, bracket, boss, rail, or housing
-   connection. Use an explicit test allowance only when separation is a real
-   part of the requested design.
+3. NO FLOATING PARTS. Every part and every separate piece of geometry must
+   physically connect to the object. Overlap within one rigid part is free and
+   counts as connected, so attach a protrusion by extending its OWN end a few
+   millimeters into the surface it meets. Never add a separate piece whose only
+   job is to close a gap. Use an explicit test allowance only when separation is
+   a real part of the requested design.
 4. NO UNINTENDED OVERLAPS. Keep distinct parts separate when the design calls for
    separation. Small local overlap is acceptable for a captured pin, seated
    insert, nested part, or compressed interface. Give each intentional case a

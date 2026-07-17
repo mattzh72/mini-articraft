@@ -11,7 +11,7 @@ from mini_articraft.sdk import TestContext, TestReport
 
 def run_tests() -> TestReport:
     ctx = TestContext(object_model)
-    ctx.expect_contact("base", "arm", shape_a="mount", shape_b="post")
+    ctx.expect_contact("base", "arm", shape_a="top_plate", shape_b="arm_foot")
     ctx.expect_gap(
         "shade",
         "bulb",
