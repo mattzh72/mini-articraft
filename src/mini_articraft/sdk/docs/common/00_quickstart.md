@@ -72,6 +72,8 @@ Read only the executable example closest to the current task:
   `docs/sdk/examples/molded_mug.py`.
 - Seating radial blades into a hub disk and welding into one rotor:
   `docs/sdk/examples/bladed_rotor.py`.
+- A captured-pin hinge (barrel integral to the lid, pin in the base) that stays
+  connected when opened: `docs/sdk/examples/captured_pin_hinge.py`.
 
 Run `compile` after meaningful edits. Treat checks as design evidence. A failed check is not a
 reason to remove or simplify geometry that the prompt requires.
