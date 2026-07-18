@@ -248,6 +248,50 @@ def _resolve_probe(
     return point, label
 
 
+def _font() -> Any:
+    from PIL import ImageFont
+
+    try:
+        from matplotlib import font_manager
+
+        return ImageFont.truetype(font_manager.findfont("DejaVu Sans"), 13)
+    except Exception:
+        return ImageFont.load_default()
+
+
+def _separate(boxes: list[dict[str, float]], size: int, *, pad: float = 4.0) -> None:
+    """Nudge overlapping label boxes apart along their smaller overlap axis.
+
+    ponytail: O(n^2) per iteration, but n is the shape count (~10-30), so this
+    is negligible; swap for a spatial grid only if a model ever has hundreds.
+    """
+    for _ in range(80):
+        moved = False
+        for i in range(len(boxes)):
+            for j in range(i + 1, len(boxes)):
+                a, b = boxes[i], boxes[j]
+                ox = min(a["x"] + a["w"], b["x"] + b["w"]) - max(a["x"], b["x"]) + pad
+                oy = min(a["y"] + a["h"], b["y"] + b["h"]) - max(a["y"], b["y"]) + pad
+                if ox <= 0 or oy <= 0:
+                    continue
+                moved = True
+                if oy <= ox:
+                    shift = oy / 2.0
+                    lo, hi = (a, b) if a["y"] <= b["y"] else (b, a)
+                    lo["y"] -= shift
+                    hi["y"] += shift
+                else:
+                    shift = ox / 2.0
+                    lo, hi = (a, b) if a["x"] <= b["x"] else (b, a)
+                    lo["x"] -= shift
+                    hi["x"] += shift
+        if not moved:
+            break
+    for box in boxes:
+        box["x"] = max(2.0, min(size - box["w"] - 2.0, box["x"]))
+        box["y"] = max(2.0, min(size - box["h"] - 2.0, box["y"]))
+
+
 def _overlay(
     png: bytes,
     pieces: list[_Piece],
@@ -262,19 +306,41 @@ def _overlay(
     image = Image.open(io.BytesIO(png)).convert("RGB")
     size = image.width  # square render
     draw = ImageDraw.Draw(image)
+    font = _font()
 
-    def _text(x: float, y: float, text: str, bg: tuple[int, int, int]) -> None:
-        draw.rectangle([x - 2, y - 7, x + len(text) * 6 + 2, y + 7], fill=bg)
-        draw.text((x, y - 6), text, fill=(0, 0, 0))
+    def _text_box(text: str) -> tuple[float, float]:
+        left, top, right, bottom = draw.textbbox((0, 0), text, font=font)
+        return right - left, bottom - top
 
     if labels:
+        boxes: list[dict[str, float]] = []
+        meta: list[tuple[str, float, float]] = []  # text, anchor x, anchor y
         for piece in pieces:
             projected = _project(piece.vertices.mean(axis=0), eye, center, size)
             if projected is None:
                 continue
-            px, py, _ = projected
-            if 0 <= px < size and 0 <= py < size:
-                _text(px, py, piece.name, (255, 255, 180))
+            ax, ay, depth = projected
+            if not (0 <= ax < size and 0 <= ay < size):
+                continue
+            width, height = _text_box(piece.name)
+            boxes.append(
+                {"x": ax + 8, "y": ay - height - 8, "w": width, "h": height, "d": depth}
+            )
+            meta.append((piece.name, ax, ay))
+        _separate(boxes, size)
+        # Draw far labels first so nearer ones layer on top.
+        for box, (text, ax, ay) in sorted(
+            zip(boxes, meta, strict=True), key=lambda item: -item[0]["d"]
+        ):
+            cx, cy = box["x"] + box["w"] / 2.0, box["y"] + box["h"] / 2.0
+            draw.line([ax, ay, cx, cy], fill=(150, 150, 110), width=1)
+            draw.ellipse([ax - 2, ay - 2, ax + 2, ay + 2], fill=(230, 70, 60))
+            draw.rectangle(
+                [box["x"] - 3, box["y"] - 2, box["x"] + box["w"] + 3, box["y"] + box["h"] + 2],
+                fill=(255, 255, 205),
+                outline=(150, 150, 90),
+            )
+            draw.text((box["x"], box["y"]), text, fill=(20, 20, 20), font=font)
 
     if probe is not None:
         resolved = _resolve_probe(pieces, probe)
@@ -285,7 +351,11 @@ def _overlay(
                 draw.line([px - 9, py, px + 9, py], fill=(220, 40, 40), width=2)
                 draw.line([px, py - 9, px, py + 9], fill=(220, 40, 40), width=2)
                 draw.ellipse([px - 5, py - 5, px + 5, py + 5], outline=(220, 40, 40), width=2)
-                _text(px + 10, py + 8, resolved[1], (255, 210, 120))
+                width, height = _text_box(resolved[1])
+                draw.rectangle(
+                    [px + 9, py + 6, px + 13 + width, py + 10 + height], fill=(255, 210, 120)
+                )
+                draw.text((px + 11, py + 8), resolved[1], fill=(20, 20, 20), font=font)
 
     buffer = io.BytesIO()
     image.save(buffer, format="png")
