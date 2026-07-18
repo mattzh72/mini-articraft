@@ -1,7 +1,14 @@
 from __future__ import annotations
 
+import numpy as np
+
 from mini_articraft.agent.tools import result_item
-from mini_articraft.agent.tools.inspect_view import render_png
+from mini_articraft.agent.tools.inspect_view import (
+    _Piece,
+    _project,
+    _resolve_probe,
+    render_png,
+)
 from mini_articraft.sdk import ArticulatedObject, BoxGeometry
 
 _PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
@@ -43,6 +50,32 @@ def test_result_item_emits_image_content_for_a_render() -> None:
 def test_result_item_stays_text_without_an_image() -> None:
     item = result_item("call_2", {"result": {"status": "ok"}})
     assert isinstance(item["output"], str)
+
+
+def test_project_maps_center_to_middle_and_drops_behind_camera() -> None:
+    center = np.zeros(3)
+    eye = np.array([0.0, -1.0, 0.0])
+    at_center = _project(center, eye, center, 720)
+    assert at_center is not None
+    px, py, depth = at_center
+    assert abs(px - 360) < 1 and abs(py - 360) < 1 and depth > 0
+    assert _project(np.array([0.0, -2.0, 0.0]), eye, center, 720) is None  # behind eye
+
+
+def test_resolve_probe_by_name_and_point() -> None:
+    piece = _Piece(
+        name="cube",
+        vertices=np.array([[0.0, 0.0, 0.0], [0.2, 0.2, 0.2]]),
+        faces=np.zeros((0, 3), dtype=np.int64),
+        normals=np.zeros((2, 3)),
+        color=(0.5, 0.5, 0.5),
+    )
+    by_name = _resolve_probe([piece], "cube")
+    assert by_name is not None
+    assert np.allclose(by_name[0], [0.1, 0.1, 0.1]) and "0.100" in by_name[1]
+    by_point = _resolve_probe([piece], [1.0, 2.0, 3.0])
+    assert by_point is not None and np.allclose(by_point[0], [1.0, 2.0, 3.0])
+    assert _resolve_probe([piece], "missing") is None
 
 
 def test_toggle_hides_inspect_view() -> None:

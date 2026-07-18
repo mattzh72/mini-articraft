@@ -13,8 +13,10 @@ authors = [{ name = "mini-articraft contributors" }]
 dependencies = [
     "build123d>=0.11.0",
     "manifold3d>=3.3.2",
+    "matplotlib>=3.9",
     "networkx>=3.0",
     "numpy>=1.26",
+    "pillow>=10.0",
     "pydantic>=2.0.0",
     "pydantic-settings>=2.14.2",
     "python-fcl>=0.7.0.11",
