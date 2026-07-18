@@ -23,13 +23,16 @@ from harness import (
     ScriptExhaustedError,
     WarmEnvironment,
     calls,
+    compile_success_tool,
     run,
     run_scenario,
+    stub_schema,
     text,
     tool_call,
 )
 
 from mini_articraft.agent.events import TurnStarted
+from mini_articraft.agent.tools import ToolContext
 from mini_articraft.environments.local import LocalEnvironment
 from mini_articraft.record import Record
 
@@ -835,6 +838,66 @@ def test_run_scenario_validates_its_arguments() -> None:
         run_scenario("a box", [text("x")], model=ScriptedModel([text("y")]))
     with pytest.raises(ValueError, match="env= or tmp_path="):
         run_scenario("a box", [text("x")])
+
+
+def test_run_scenario_allows_open_ended_scripts(tmp_path: Path) -> None:
+    artifacts = run_scenario(
+        "a box",
+        [write_good_main(), calls(tool_call("compile")), text("done"), text("unused")],
+        env=WarmEnvironment(output_dir=tmp_path),
+        assert_exhausted=False,
+    )
+    assert artifacts.record.status == "success"
+    assert isinstance(artifacts.model, ScriptedModel)
+    assert len(artifacts.model.queries) == 3
+
+
+def test_run_scenario_honors_run_id(tmp_path: Path) -> None:
+    artifacts = run_scenario(
+        "a box",
+        [write_good_main(), calls(tool_call("compile")), text("done")],
+        env=WarmEnvironment(output_dir=tmp_path),
+        run_id="custom-run",
+    )
+    assert artifacts.run_dir.name == "custom-run"
+    assert artifacts.record.run_id == "custom-run"
+
+
+def test_replay_leftovers_fail_the_scenario(tmp_path: Path, replay_harness: ReplayHarness) -> None:
+    replay_harness.set(
+        "long",
+        [write_good_main(), calls(tool_call("compile")), text("done"), text("unused")],
+    )
+    with pytest.raises(AssertionError, match="cassette row"):
+        run_scenario(
+            "a box",
+            model=replay_harness.replay("long"),
+            env=WarmEnvironment(output_dir=tmp_path),
+        )
+
+
+def test_compile_success_tool_mints_a_usdz_and_marks_freshness(tmp_path: Path) -> None:
+    env = LocalEnvironment(output_dir=tmp_path)
+    run_dir = env.create_run("box")
+    context = ToolContext(env, run_dir, run_dir / "workspace")
+
+    result = run(compile_success_tool().run(context, {}))
+
+    assert result["status"] == "success"
+    assert Path(result["usdz"]).is_file()
+    assert context.refresh_compile_freshness()
+
+
+def test_stub_schema_has_the_function_wire_shape() -> None:
+    schema = stub_schema("compile")
+    assert schema["type"] == "function"
+    assert schema["name"] == "compile"
+    assert schema["parameters"] == {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": False,
+    }
 
 
 def test_captured_cassette_replays_a_full_scenario(
