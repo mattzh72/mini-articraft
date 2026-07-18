@@ -259,6 +259,21 @@ def _font() -> Any:
         return ImageFont.load_default()
 
 
+def _palette(n: int) -> list[tuple[int, int, int]]:
+    """n visually distinct colors, so a label matches its dot and leader line."""
+    import colorsys
+
+    colors: list[tuple[int, int, int]] = []
+    for i in range(n):
+        r, g, b = colorsys.hsv_to_rgb(i / max(n, 1), 0.60, 0.98)
+        colors.append((int(255 * r), int(255 * g), int(255 * b)))
+    return colors
+
+
+def _luminance(color: tuple[int, int, int]) -> float:
+    return 0.299 * color[0] + 0.587 * color[1] + 0.114 * color[2]
+
+
 def _stack_ys(anchor_ys: list[float], size: int, line_h: float) -> list[float]:
     """Vertical positions for a gutter of labels: keep reading order, no overlap.
 
@@ -316,21 +331,26 @@ def _overlay(
 
         line_h = _text_box("Ag")[1] + 6.0
         margin = 6.0
+        palette = _palette(len(left) + len(right))
+        color_index = 0
         for group, side in ((sorted(left), "left"), (sorted(right), "right")):
             ys = _stack_ys([ay for ay, _, _ in group], size, line_h)
             for (ay, ax, name), ly in zip(group, ys, strict=True):
+                color = palette[color_index]
+                color_index += 1
                 width, height = _text_box(name)
                 bx = margin if side == "left" else size - margin - width
                 inner_x = bx + width if side == "left" else bx
                 cy = ly + height / 2.0
-                draw.line([inner_x, cy, ax, ay], fill=(150, 150, 110), width=1)
-                draw.ellipse([ax - 2, ay - 2, ax + 2, ay + 2], fill=(230, 70, 60))
+                draw.line([inner_x, cy, ax, ay], fill=color, width=2)
+                draw.ellipse([ax - 3, ay - 3, ax + 3, ay + 3], fill=color)
                 draw.rectangle(
                     [bx - 3, ly - 2, bx + width + 3, ly + height + 2],
-                    fill=(255, 255, 205),
-                    outline=(150, 150, 90),
+                    fill=color,
+                    outline=(30, 30, 30),
                 )
-                draw.text((bx, ly), name, fill=(20, 20, 20), font=font)
+                text_fill = (0, 0, 0) if _luminance(color) > 140 else (255, 255, 255)
+                draw.text((bx, ly), name, fill=text_fill, font=font)
 
     if probe is not None:
         resolved = _resolve_probe(pieces, probe)
