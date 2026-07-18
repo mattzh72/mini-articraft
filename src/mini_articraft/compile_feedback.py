@@ -522,6 +522,13 @@ def _primary_issue(signal: CompileSignal) -> str:
     return issues.get(signal.kind, signal.summary)
 
 
+_VISUAL_INSPECT_NUDGE = (
+    "- See it: call inspect_view(target='<the shape named above>') and orbit (vary "
+    "azimuth/elevation) until the flagged region is clearly visible, then fix what you see."
+)
+_VISUAL_KINDS = {"isolated_part", "real_overlap", "exact_contact_gap"}
+
+
 def _rules(
     failures: list[CompileSignal],
     *,
@@ -532,7 +539,8 @@ def _rules(
     if not failures:
         return (
             [
-                "- Warnings are design evidence. Do not remove or simplify prompt-critical geometry just to clear them."
+                _VISUAL_INSPECT_NUDGE,
+                "- Warnings are design evidence. Do not remove or simplify prompt-critical geometry just to clear them.",
             ]
             if has_warnings
             else []
@@ -563,6 +571,8 @@ def _rules(
         ]
     else:
         rules = ["- Fix the named failing check before adding more geometry or tests."]
+    if kind in _VISUAL_KINDS:
+        rules.append(_VISUAL_INSPECT_NUDGE)
     if failure_streak >= 3:
         rules.append(f"- The repair loop has continued. {_inspection_advice(kind)}")
     elif repeated:

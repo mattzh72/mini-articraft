@@ -35,9 +35,9 @@ def test_render_only_isolates_a_shape() -> None:
 def test_result_item_emits_image_content_for_a_render() -> None:
     item = result_item("call_1", {"result": {"image_png_base64": "QUJD", "view": {"azimuth": 45}}})
     assert isinstance(item["output"], list)
-    assert item["output"][0]["type"] == "input_text"
-    assert item["output"][1]["type"] == "input_image"
-    assert item["output"][1]["image_url"].startswith("data:image/png;base64,QUJD")
+    assert len(item["output"]) == 1
+    assert item["output"][0]["type"] == "input_image"
+    assert item["output"][0]["image_url"].startswith("data:image/png;base64,QUJD")
 
 
 def test_result_item_stays_text_without_an_image() -> None:
