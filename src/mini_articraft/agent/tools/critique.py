@@ -85,7 +85,13 @@ def _prompt(goal: str, question: str | None, colored: bool) -> str:
         "jarring: exposed brackets, knuckles, or hardware a molded product would hide; parts "
         "that float or do not touch; crude stand-in shapes; a mechanism that does not read as "
         "the real thing. Be specific and blunt, and do not pad praise for parts that look "
-        f"fine.{ask}\n\nEnd with the 1-3 most important fixes, most important first."
+        f"fine.{ask}\n\n"
+        "When a part looks stuck-on or separate (a handle, spout, or foot), the correct fix is "
+        "to merge it into the body as ONE continuous surface -- boolean-union the pieces and "
+        "fillet the joint so there is no seam. Do NOT recommend adding separate mounting pads, "
+        "bosses, lugs, collars, or fairings to 'integrate' a part; those become exactly the "
+        "stuck-on hardware you are flagging. Prescribe removing seams, not adding hardware.\n\n"
+        "End with the 1-3 most important fixes, most important first."
     )
 
 
