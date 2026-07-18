@@ -1,38 +1,57 @@
 """Modular test environment for mini-articraft.
 
-Verify the generation loop deeply without paying for model calls:
+Verify the generation loop deeply without paying for model calls. Four
+lanes, cheapest first:
 
 1. Unit lane -- call pure functions (SDK checks, compile feedback) directly;
    no harness needed.
-2. Scripted agent lane -- :class:`ScriptedModel` plus :func:`run_scenario`
+2. Warm compile lane -- :class:`WarmEnvironment` keeps one compile worker
+   subprocess alive for the whole test session: the same isolation, timeout,
+   and cleanup contract as ``LocalEnvironment``, but the geometry imports are
+   paid once instead of once per compile (~3s -> ~0.1s).
+3. Scripted agent lane -- :class:`ScriptedModel` plus :func:`run_scenario`
    drive the full agent loop (tools, reminders, compile freshness, record)
    with a deterministic model that can react to what the agent sends it.
-3. Cassette lane -- :class:`ReplayHarness` manages any number of named
+4. Cassette lane -- :class:`ReplayHarness` manages any number of named
    recordings: capture one from a live (paid) model once, author one from a
    scripted model for free, or install one by hand; then plug any of them
    into :func:`run_scenario` by name for offline regression runs.
+
+The cold lane (``LocalEnvironment``, fresh worker per compile) stays the
+reference for the fresh-interpreter and installed-wheel contracts; both
+lanes share the worker payload shape and ``local.py``'s result assembly, so
+behavior differences between them are bugs, not semantics.
 """
 
 from __future__ import annotations
 
 import asyncio
+import atexit
+import contextlib
 import hashlib
 import inspect
 import itertools
 import json
+import os
+import queue
 import re
+import signal
+import subprocess
+import sys
+import threading
+import time
 from collections.abc import Awaitable, Callable, Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, ClassVar, Generic, TypeVar
+from typing import Any, ClassVar, Generic, Literal, TypeVar
 
 from mini_articraft import Model
 from mini_articraft.agent import Agent, events
 from mini_articraft.agent.tools import Tool, ToolContext
 from mini_articraft.agent.tools._core import schema as _tool_schema
 from mini_articraft.agent.tools._core import workspace_digest
-from mini_articraft.environments.local import LocalEnvironment
+from mini_articraft.environments.local import LocalEnvironment, _error_result, _finalize_payload
 from mini_articraft.record import Record, read_conversation
 
 T = TypeVar("T")
@@ -523,6 +542,248 @@ class ReplayHarness:
             self.erase(name)
             removed += 1
         return removed
+
+
+# ---------------------------------------------------------------------------
+# Warm compile lane
+# ---------------------------------------------------------------------------
+
+_SERVER_SCRIPT = Path(__file__).resolve().parent / "_compile_server.py"
+
+# A fresh worker announces readiness (its first stdout line) once its imports
+# are done. The allowance bounds that handshake, so the per-compile timeout
+# can always bound the compile itself, spawn or no spawn.
+_WORKER_STARTUP_ALLOWANCE = 30.0
+
+
+class CompileServerError(RuntimeError):
+    """The warm compile worker cannot be used at all."""
+
+
+# The outcome of one compile request: the payload, or the reason there is
+# none (the worker is killed in both failure cases and lazily restarted).
+CompileStatus = Literal["ok", "timeout", "died"]
+
+
+class _CompileServer:
+    """One warm compile-worker subprocess shared by all ``WarmEnvironment``s.
+
+    Speaks newline-delimited JSON with ``tests/_compile_server.py``: the
+    worker announces readiness after its imports, then answers one
+    ``{"run_dir": ...}`` request per line with one compile payload line.
+    A compile that times out or takes the worker down with it (e.g.
+    ``os._exit`` in workspace code) costs one worker generation; the next
+    compile lazily starts a fresh one. Every queued line is tagged with its
+    generation so a stale reader from a killed worker can never be mistaken
+    for the current compile's response.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._lines: queue.Queue[tuple[int, str | None]] = queue.Queue()
+        self._proc: subprocess.Popen[str] | None = None
+        self._generation = 0
+        atexit.register(self._stop)
+
+    def compile(
+        self,
+        run_dir: Path,
+        *,
+        timeout_seconds: float,
+    ) -> tuple[CompileStatus, dict[str, Any] | None]:
+        """Compile one run through the warm worker.
+
+        Returns ``("ok", payload)``. A compile that times out or takes the
+        worker down with it returns ``("timeout", None)`` or
+        ``("died", None)``; the worker is restarted on the next compile.
+        Compiles are serialized: one worker serves one compile at a time.
+        """
+        with self._lock:
+            generation = self._send(run_dir)
+            deadline = time.monotonic() + timeout_seconds
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    self._stop()
+                    return "timeout", None
+                try:
+                    item_generation, line = self._lines.get(timeout=remaining)
+                except queue.Empty:
+                    self._stop()
+                    return "timeout", None
+                if item_generation != generation:
+                    continue  # stale line from a killed worker generation
+                if line is None:
+                    self._stop()
+                    return "died", None
+                try:
+                    return "ok", json.loads(line)
+                except json.JSONDecodeError as exc:
+                    self._stop()
+                    raise CompileServerError(
+                        f"warm compile worker returned invalid JSON: {exc}"
+                    ) from exc
+
+    def _send(self, run_dir: Path) -> int:
+        """Write one request and return the serving worker's generation.
+
+        Retrying once on a write failure is safe: a broken pipe means the
+        worker is dead or dying, so no live compiler can hold the request --
+        recompiling on a fresh worker never duplicates a compile.
+        """
+        request = json.dumps({"run_dir": str(run_dir.resolve())}) + "\n"
+        for attempt in range(2):
+            proc, just_started = self._ensure_running()
+            self._drain_stale_lines()
+            if just_started and not self._await_ready():
+                self._stop()
+                if attempt:
+                    raise CompileServerError("warm compile worker failed to start") from None
+                continue
+            try:
+                assert proc.stdin is not None
+                proc.stdin.write(request)
+                proc.stdin.flush()
+            except (BrokenPipeError, OSError):
+                self._stop()
+                if attempt:
+                    raise CompileServerError("warm compile worker is not usable") from None
+                continue
+            return self._generation
+        raise AssertionError("unreachable")
+
+    def _await_ready(self) -> bool:
+        """Wait for a fresh worker's readiness marker, bounded by the allowance."""
+        deadline = time.monotonic() + _WORKER_STARTUP_ALLOWANCE
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return False
+            try:
+                generation, line = self._lines.get(timeout=remaining)
+            except queue.Empty:
+                return False
+            if generation != self._generation:
+                continue
+            if line is None:
+                return False  # the worker died during startup
+            try:
+                marker = json.loads(line)
+            except json.JSONDecodeError:
+                return False
+            return marker == {"ready": True}
+
+    def _ensure_running(self) -> tuple[subprocess.Popen[str], bool]:
+        if self._proc is None or self._proc.poll() is not None:
+            self._start()
+            assert self._proc is not None
+            return self._proc, True
+        return self._proc, False
+
+    def _start(self) -> None:
+        self._generation += 1
+        self._proc = subprocess.Popen(
+            [sys.executable, str(_SERVER_SCRIPT)],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            text=True,
+            start_new_session=True,
+        )
+        reader = threading.Thread(
+            target=self._read_lines,
+            args=(self._proc, self._generation),
+            daemon=True,
+        )
+        reader.start()
+
+    def _read_lines(self, proc: subprocess.Popen[str], generation: int) -> None:
+        try:
+            assert proc.stdout is not None
+            for line in proc.stdout:
+                self._lines.put((generation, line))
+        finally:
+            self._lines.put((generation, None))  # EOF: the worker exited
+
+    def _drain_stale_lines(self) -> None:
+        while True:
+            try:
+                self._lines.get_nowait()
+            except queue.Empty:
+                return
+
+    def _stop(self) -> None:
+        proc, self._proc = self._proc, None
+        if proc is None:
+            return
+        if proc.stdin is not None:
+            with contextlib.suppress(OSError):
+                proc.stdin.close()
+        if proc.poll() is not None:
+            proc.wait()
+            return
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(proc.pid, signal.SIGTERM)
+        try:
+            proc.wait(timeout=1)
+        except subprocess.TimeoutExpired:
+            with contextlib.suppress(ProcessLookupError):
+                os.killpg(proc.pid, signal.SIGKILL)
+            proc.wait()
+
+
+class WarmEnvironment(LocalEnvironment):
+    """A ``LocalEnvironment`` that compiles through one shared warm worker.
+
+    Same contract as the cold lane -- every compile runs in a worker
+    subprocess with the same timeout and cleanup semantics, and result
+    assembly is shared with ``LocalEnvironment`` -- but the worker
+    (``tests/_compile_server.py``) stays alive between compiles, so the
+    geometry imports are paid once per test session instead of once per
+    compile (~3s -> ~0.1s each). A compile that times out or crashes the
+    worker gets an error result, and the next compile lazily starts a fresh
+    worker. Compiles are serialized through the single shared worker.
+
+    ``compile_count`` tracks how many real compiles ran, which makes
+    freshness-cache behavior directly assertable.
+    """
+
+    _server: ClassVar[_CompileServer | None] = None
+    _server_lock: ClassVar[threading.Lock] = threading.Lock()
+
+    def __init__(self, **kwargs: Any):
+        super().__init__(**kwargs)
+        self.compile_count = 0
+
+    @classmethod
+    def _shared_server(cls) -> _CompileServer:
+        with cls._server_lock:
+            if cls._server is None:
+                cls._server = _CompileServer()
+            return cls._server
+
+    def _run_worker(self, run_dir: Path) -> dict[str, Any]:
+        self.compile_count += 1
+        status, payload = self._shared_server().compile(
+            run_dir,
+            timeout_seconds=self.config.timeout_seconds,
+        )
+        if status == "timeout":
+            return _error_result(
+                run_dir,
+                error=f"compile timed out after {self.config.timeout_seconds:g}s",
+            )
+        if payload is None:
+            return _error_result(
+                run_dir,
+                error="compile worker exited mid-compile "
+                "(workspace code may have exited the process)",
+            )
+        return _finalize_payload(
+            run_dir,
+            payload,
+            stderr="",
+            returncode=0 if payload["status"] == "success" else 1,
+        )
 
 
 # ---------------------------------------------------------------------------

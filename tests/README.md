@@ -3,15 +3,17 @@
 This suite verifies the generation loop without paid model calls.
 `tests/harness.py` is the shared kit; prefer it over per-file fakes.
 
-## The lanes
+## The four lanes
 
 | Lane | Cost | Use for |
 | --- | --- | --- |
 | Unit | ~0s | pure functions: SDK checks, `compile_feedback`, signals |
-| Scripted agent | seconds per run | the full agent loop via `ScriptedModel` + `run_scenario` |
+| Warm compile | ~0.1s per compile | compile behavior via `WarmEnvironment` |
+| Scripted agent | ~0.5s per run | the full agent loop via `ScriptedModel` + `run_scenario` |
+| Cassette replay | free | recorded real runs via `ReplayHarness` |
 
 ```python
-from harness import run_scenario, calls, text, tool_call
+from harness import WarmEnvironment, run_scenario, calls, text, tool_call
 
 artifacts = run_scenario(
     "a box",
@@ -20,7 +22,7 @@ artifacts = run_scenario(
         calls(tool_call("compile")),
         text("done"),
     ],
-    tmp_path=tmp_path,
+    env=WarmEnvironment(output_dir=tmp_path),
 )
 assert artifacts.record.status == "success"
 ```
@@ -29,6 +31,25 @@ A scripted step can also be a callable `(ModelQuery) -> Response`, so the
 "model" can assert on what the agent sent and react to earlier tool outputs.
 See `tests/test_agent_scenarios.py` for end-to-end examples (repair loops,
 repeat-failure guidance, allowances).
+
+## WarmEnvironment vs LocalEnvironment
+
+Both lanes run every compile in a worker subprocess with the same timeout,
+cleanup, and result-assembly contract (shared in
+`src/mini_articraft/environments/local.py`). They differ only in the worker
+lifecycle:
+
+- `LocalEnvironment` (cold) spawns a fresh interpreter per compile (~3s).
+  It owns the fresh-interpreter, process-cleanup, and installed-wheel
+  contracts (`test_compile.py`).
+- `WarmEnvironment` (warm) keeps one worker (`tests/_compile_server.py`)
+  alive for the whole test session, so compiles cost ~0.1s. A compile that
+  times out or kills the worker (e.g. `os._exit` in workspace code) gets an
+  error result; the next compile lazily starts a fresh worker. Compiles are
+  serialized through the shared worker.
+
+Agent-loop tests that monkeypatch the compile tool (`compile_success_tool()`)
+never compile at all and can use either environment.
 
 ## Cassettes: pay once, replay forever
 
