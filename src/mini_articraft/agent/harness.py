@@ -22,6 +22,18 @@ from mini_articraft.settings import DEFAULT_MAX_TURNS
 PROMPT_SLUG_MAX_LENGTH = 48
 MAX_CONSECUTIVE_EMPTY_RESPONSES = 3
 
+_INSPECT_GUIDANCE = (
+    "You also have an `inspect_view` tool. A successful compile confirms the model is "
+    "connected and valid, but only a rendered image shows the visual quality the checks "
+    "cannot judge: gaps, mounting blocks, seams, whether a handle reads as molded or a "
+    "hinge seats. After a successful compile, call `inspect_view` to look at the object "
+    "-- orbit with azimuth/elevation, frame a part or shape with `target` and tighten "
+    "with `zoom`, isolate parts with `only`, and actuate the main motion with `pose`. "
+    "When a compile error names a shape, inspect that shape to see the problem. Fix what "
+    "looks wrong and compile again; finish only when the workspace compiles and the "
+    "rendered views look right."
+)
+
 
 class AgentConfig(BaseModel):
     max_turns: int = DEFAULT_MAX_TURNS
@@ -59,10 +71,16 @@ class Agent:
         record.result = ""
         record.save(record_path)
 
+        self._inspect_view_enabled = bool(
+            getattr(getattr(self.model, "config", None), "inspect_view_enabled", True)
+        )
+        system_content = _read_prompt("system.md")
+        if self._inspect_view_enabled:
+            system_content += "\n\n" + _INSPECT_GUIDANCE
         self.messages = [
             {
                 "role": "system",
-                "content": _read_prompt("system.md"),
+                "content": system_content,
             },
             {
                 "role": "user",
@@ -99,7 +117,9 @@ class Agent:
             for turn in range(1, self.config.max_turns + 1):
                 self._emit(events.TurnStarted(turn))
                 try:
-                    response = await self.model.query(self.messages, tools=tools.schemas())
+                    response = await self.model.query(
+                        self.messages, tools=tools.schemas(inspect_view=self._inspect_view_enabled)
+                    )
                 except Exception as exc:
                     termination_error = f"model query failed: {type(exc).__name__}: {exc}"
                     break
@@ -287,7 +307,7 @@ class Agent:
                     "finish the running exec_command with write_stdin before calling "
                     f"{name} (session_id={live_sessions[0]})"
                 )
-            tool = tools.get(name)
+            tool = tools.get(name, inspect_view=self._inspect_view_enabled)
             result = await tool.run(context, _arguments(call))
             payload = {"result": result}
         except Exception as exc:

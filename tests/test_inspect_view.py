@@ -43,3 +43,14 @@ def test_result_item_emits_image_content_for_a_render() -> None:
 def test_result_item_stays_text_without_an_image() -> None:
     item = result_item("call_2", {"result": {"status": "ok"}})
     assert isinstance(item["output"], str)
+
+
+def test_toggle_hides_inspect_view() -> None:
+    import pytest
+
+    from mini_articraft.agent import tools
+
+    assert "inspect_view" in {s["name"] for s in tools.schemas(inspect_view=True)}
+    assert "inspect_view" not in {s["name"] for s in tools.schemas(inspect_view=False)}
+    with pytest.raises(ValueError):
+        tools.get("inspect_view", inspect_view=False)

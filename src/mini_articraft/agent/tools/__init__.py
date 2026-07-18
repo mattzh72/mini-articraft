@@ -25,11 +25,17 @@ TOOLS = {
 }
 
 
-def schemas() -> list[dict[str, Any]]:
-    return [tool.schema for tool in TOOLS.values()]
+def schemas(*, inspect_view: bool = True) -> list[dict[str, Any]]:
+    return [
+        tool.schema
+        for name, tool in TOOLS.items()
+        if inspect_view or name != "inspect_view"
+    ]
 
 
-def get(name: str) -> Tool:
+def get(name: str, *, inspect_view: bool = True) -> Tool:
+    if name == "inspect_view" and not inspect_view:
+        raise ValueError(f"unknown tool: {name}")
     try:
         return TOOLS[name]
     except KeyError as exc:
