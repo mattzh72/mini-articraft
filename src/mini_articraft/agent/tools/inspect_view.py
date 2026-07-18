@@ -383,9 +383,18 @@ def render_png(
     pose: dict[str, float] | None,
     labels: bool = True,
     probe: Any = None,
+    color_by_shape: bool = False,
     width: int = 720,
 ) -> bytes:
     pieces, _ = _scene(model, only=only, pose=pose)
+    if color_by_shape:
+        # Recolor every shape a distinct bright hue so separate pieces stand out
+        # (a hinge built from six chunks reads as six colors, not one gray nub).
+        shades = _palette(len(pieces))
+        pieces = [
+            _Piece(p.name, p.vertices, p.faces, p.normals, (c[0] / 255, c[1] / 255, c[2] / 255))
+            for p, c in zip(pieces, shades, strict=True)
+        ]
     center, radius = _framing(
         pieces, target=target, zoom=zoom, model=model, only=only, pose=pose
     )
