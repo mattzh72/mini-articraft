@@ -165,6 +165,7 @@ def test_agent_writes_compiles_and_returns_final_response(tmp_path) -> None:
     assert "docs/sdk/common/30_articulated_object.md" in first_messages[1]["content"]
     assert first_messages[2]["content"].startswith("<task>")
     assert "a box" in first_messages[2]["content"]
+    # inspect_view is off by default, so it is not offered unless enabled.
     assert {tool["name"] for tool in model.calls[0]["tools"]} == {
         "read",
         "edit",
@@ -172,7 +173,6 @@ def test_agent_writes_compiles_and_returns_final_response(tmp_path) -> None:
         "exec_command",
         "write_stdin",
         "compile",
-        "inspect_view",
     }
 
 

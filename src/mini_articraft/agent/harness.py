@@ -72,7 +72,7 @@ class Agent:
         record.save(record_path)
 
         self._inspect_view_enabled = bool(
-            getattr(getattr(self.model, "config", None), "inspect_view_enabled", True)
+            getattr(getattr(self.model, "config", None), "inspect_view_enabled", False)
         )
         system_content = _read_prompt("system.md")
         if self._inspect_view_enabled:

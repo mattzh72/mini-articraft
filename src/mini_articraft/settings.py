@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     openai_api_key: str = Field(validation_alias="OPENAI_API_KEY")
     max_turns: int = Field(default=DEFAULT_MAX_TURNS, validation_alias="MINI_ARTICRAFT_MAX_TURNS")
     inspect_view_enabled: bool = Field(
-        default=True,
+        default=False,
         validation_alias="MINI_ARTICRAFT_INSPECT_VIEW",
     )
 
