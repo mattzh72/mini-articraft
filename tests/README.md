@@ -30,6 +30,35 @@ A scripted step can also be a callable `(ModelQuery) -> Response`, so the
 See `tests/test_agent_scenarios.py` for end-to-end examples (repair loops,
 repeat-failure guidance, allowances).
 
+## Cassettes: pay once, replay forever
+
+`ReplayHarness` manages any number of named recordings as
+`<name>.jsonl` files under one root. The `replay_harness` pytest fixture
+gives each test a scratch library.
+
+```python
+# capture: record a real run once (or a scripted run, for free authoring)
+with replay_harness.capture("hinged-box", OpenAIModel()) as model:
+    run(Agent(model, env).run("a hinged box"))
+
+# set: install or transform a cassette without running anything
+replay_harness.set("plain-box", [calls(tool_call("compile")), text("done")])
+
+# replay: plug any recording into a run; strict mode fails on trajectory drift
+artifacts = run_scenario("a box", model=replay_harness.replay("plain-box"))
+
+# erase / clear
+replay_harness.erase("plain-box")
+```
+
+Strict replay compares a structural fingerprint (roles, tool names, call
+ids), not payload text, because tool outputs embed machine-specific run
+paths. Rows installed by `set()` carry no fingerprint and match any request.
+
+Curated regression cassettes belong in `tests/cassettes/` (git-ignored by
+default; force-add the ones worth keeping). Scratch cassettes belong under
+`tmp_path`.
+
 ## Known platform flakes
 
 On macOS, a few exec-output timing tests can fail with empty captured output
