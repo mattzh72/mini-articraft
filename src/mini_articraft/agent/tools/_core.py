@@ -29,6 +29,7 @@ class ToolContext:
     env: Any
     run_dir: Path
     workspace: Path
+    task_prompt: str = ""
     compile_result: dict[str, Any] | None = None
     successful_compile_result: dict[str, Any] | None = None
     successful_compile_digest: str | None = None
