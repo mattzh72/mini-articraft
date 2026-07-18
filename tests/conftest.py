@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable, Iterator
+from contextlib import AbstractContextManager, contextmanager
 from pathlib import Path
 
 import pytest
-from harness import ReplayHarness
+from harness import CASSETTE_ROOT, ReplayHarness, ScenarioModel
+
+from mini_articraft import Model
 
 
 @pytest.fixture(scope="session")
@@ -42,3 +46,53 @@ def _use_session_loop(_event_loop):
 def replay_harness(tmp_path: Path) -> ReplayHarness:
     """A scratch cassette library under the test's tmp dir."""
     return ReplayHarness(tmp_path / "cassettes")
+
+
+def pytest_addoption(parser: pytest.Parser) -> None:
+    parser.addoption(
+        "--record-cassettes",
+        action="store_true",
+        default=False,
+        help=(
+            "run cassette-backed tests live and re-record their cassettes "
+            "(needs OPENAI_API_KEY); the default is offline replay"
+        ),
+    )
+
+
+CassetteModelOpener = Callable[[str | None], AbstractContextManager[ScenarioModel]]
+
+
+@pytest.fixture
+def cassette_model(request: pytest.FixtureRequest) -> CassetteModelOpener:
+    """Open a cassette-backed model for live/e2e tests.
+
+    Default: offline replay of ``tests/cassettes/<name>.jsonl`` (the test's
+    own name when none is given), skipping when no cassette exists. With
+    ``--record-cassettes``: run live against the real model and re-record
+    the cassette (needs ``OPENAI_API_KEY``).
+    """
+    record = request.config.getoption("--record-cassettes")
+    library = ReplayHarness(CASSETTE_ROOT)
+
+    @contextmanager
+    def open_cassette(name: str | None = None) -> Iterator[ScenarioModel]:
+        cassette_name = name or request.node.name
+        if record:
+            with library.capture(cassette_name, _live_model()) as recording:
+                yield recording
+            return
+        if not library.has(cassette_name):
+            pytest.skip(f"cassette {cassette_name!r} not recorded; run with --record-cassettes")
+        yield library.replay(cassette_name)
+
+    return open_cassette
+
+
+def _live_model() -> Model:
+    try:
+        from mini_articraft.models.openai import OpenAIModel
+
+        return OpenAIModel()
+    except Exception as exc:
+        pytest.skip(f"--record-cassettes needs OPENAI_API_KEY: {exc}")

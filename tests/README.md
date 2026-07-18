@@ -80,6 +80,21 @@ Curated regression cassettes belong in `tests/cassettes/` (git-ignored by
 default; force-add the ones worth keeping). Scratch cassettes belong under
 `tmp_path`.
 
+## Live tests in replay mode
+
+Tests using the `cassette_model` fixture run live only when asked:
+
+```bash
+# offline (default): replay tests/cassettes/<test name>.jsonl; skip if missing
+uv run pytest tests/test_live_generation.py
+
+# live: pay once, (re)record the cassette
+OPENAI_API_KEY=... uv run pytest tests/test_live_generation.py --record-cassettes
+```
+
+Record intentionally, commit the cassette (`git add -f`), and CI replays it
+for free. Cassette names default to the test function name.
+
 ## Known platform flakes
 
 On macOS, a few exec-output timing tests can fail with empty captured output
