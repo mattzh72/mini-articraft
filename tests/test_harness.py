@@ -4,8 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sys
+import types
 from pathlib import Path
 
+import _compile_server
+import harness
 import pytest
 from harness import (
     GOOD_MAIN_PY,
@@ -323,6 +327,46 @@ def test_compile_server_rejects_invalid_json(
 
     with pytest.raises(CompileServerError, match="invalid JSON"):
         server.compile(run_dir, timeout_seconds=30)
+
+
+def test_compile_server_stop_is_idempotent() -> None:
+    """Stopping with no worker is a no-op, as is stopping twice."""
+    server = harness._CompileServer()
+    server._stop()
+    server._stop()
+
+
+def test_compile_server_parses_requests() -> None:
+    assert _compile_server._parse_request("not json") is None
+    assert _compile_server._parse_request('{"wrong": "shape"}') is None
+    assert _compile_server._parse_request('{"run_dir": 42}') is None
+    parsed = _compile_server._parse_request('{"run_dir": "/tmp/some-run"}')
+    assert parsed == Path("/tmp/some-run").resolve()
+
+
+def test_compile_server_evicts_only_workspace_modules(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    workspace = tmp_path / "run" / "workspace"
+    workspace.mkdir(parents=True)
+    inside = workspace / "helper.py"
+    inside.write_text("", encoding="utf-8")
+    outside = tmp_path / "other.py"
+    outside.write_text("", encoding="utf-8")
+    for name, file in (
+        ("fake_inside", inside),
+        ("fake_outside", outside),
+        ("fake_builtin", None),
+    ):
+        module = types.ModuleType(name)
+        module.__file__ = None if file is None else str(file)
+        monkeypatch.setitem(sys.modules, name, module)
+
+    _compile_server._evict_workspace_modules(workspace)
+
+    assert "fake_inside" not in sys.modules
+    assert "fake_outside" in sys.modules
+    assert "fake_builtin" in sys.modules
 
 
 def test_warm_environment_enforces_the_timeout_contract(tmp_path: Path) -> None:
