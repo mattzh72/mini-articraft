@@ -116,13 +116,12 @@ class LocalEnvironment:
                 returncode=completed.returncode,
             )
 
-        payload.setdefault("stdout", "")
-        payload["stderr"] = str(payload.get("stderr", "")) + completed.stderr
-        payload.setdefault("error", "")
-        payload.setdefault("traceback", "")
-        payload["returncode"] = completed.returncode
-        payload["compile_report"] = build_compile_report_from_payload(payload)
-        return _with_paths(run_dir, payload)
+        return _finalize_payload(
+            run_dir,
+            payload,
+            stderr=completed.stderr,
+            returncode=completed.returncode,
+        )
 
     def _record_compile(self, run_dir: Path) -> None:
         record = Record.load(run_dir / "record.json")
@@ -207,6 +206,28 @@ def _with_paths(run_dir: Path, result: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
+def _finalize_payload(
+    run_dir: Path,
+    payload: dict[str, Any],
+    *,
+    stderr: str,
+    returncode: int | None,
+) -> dict[str, Any]:
+    """Assemble the environment-level compile result from a worker payload.
+
+    Single owner of result assembly for any worker transport: captured worker
+    stderr is followed by process-level stderr, missing keys are defaulted,
+    and the compile report and run paths are attached here.
+    """
+    payload.setdefault("stdout", "")
+    payload["stderr"] = str(payload.get("stderr", "")) + stderr
+    payload.setdefault("error", "")
+    payload.setdefault("traceback", "")
+    payload["returncode"] = returncode
+    payload["compile_report"] = build_compile_report_from_payload(payload)
+    return _with_paths(run_dir, payload)
+
+
 def _error_result(
     run_dir: Path,
     *,
@@ -215,7 +236,5 @@ def _error_result(
     stderr: str = "",
     returncode: int | None = None,
 ) -> dict[str, Any]:
-    payload = empty_compile_payload(error=error, stdout=stdout, stderr=stderr)
-    payload["returncode"] = returncode
-    payload["compile_report"] = build_compile_report_from_payload(payload)
-    return _with_paths(run_dir, payload)
+    payload = empty_compile_payload(error=error, stdout=stdout)
+    return _finalize_payload(run_dir, payload, stderr=stderr, returncode=returncode)
