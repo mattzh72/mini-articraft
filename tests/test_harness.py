@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 
@@ -81,6 +82,83 @@ def test_normalized_responses_do_not_mutate_step_dicts() -> None:
     model = ScriptedModel([step])
     run(model.query([]))
     assert step == {"text": "hi", "tool_calls": []}
+
+
+def test_model_query_contains_matches_a_single_message() -> None:
+    query = ModelQuery(
+        turn=1,
+        messages=[
+            {"role": "user", "content": "alpha only"},
+            {"role": "user", "content": "alpha and beta"},
+        ],
+        tools=[],
+    )
+    assert query.contains("alpha")
+    assert query.contains("alpha", "beta")  # both needles in one message
+    assert not query.contains("beta", "gamma")
+    # needles split across messages do not match: containment is per message
+    split = ModelQuery(
+        turn=1,
+        messages=[{"role": "user", "content": "alpha"}, {"role": "user", "content": "beta"}],
+        tools=[],
+    )
+    assert not split.contains("alpha", "beta")
+    with pytest.raises(ValueError, match="at least one needle"):
+        query.contains()
+
+
+def test_model_query_tool_outputs_parses_only_tool_results() -> None:
+    query = ModelQuery(
+        turn=1,
+        messages=[
+            {"role": "assistant", "content": "working"},
+            {"type": "function_call_output", "output": '{"result": {"path": "main.py"}}'},
+        ],
+        tools=[],
+    )
+    assert query.tool_outputs() == [{"result": {"path": "main.py"}}]
+
+
+def test_tool_call_ids_are_unique_and_explicit_ids_win() -> None:
+    first, second = tool_call("read"), tool_call("read")
+    assert first["id"] != second["id"]
+    assert tool_call("read", call_id="chosen")["id"] == "chosen"
+    assert json.loads(tool_call("write", {"path": "a.py"})["arguments"]) == {"path": "a.py"}
+
+
+def test_text_and_calls_carry_optional_fields() -> None:
+    usage = {"input_tokens": 1, "output_tokens": 2}
+    assert text("hi", cost=0.5, token_usage=usage)["cost"] == 0.5
+    response = calls(tool_call("compile"), token_usage=usage)
+    assert response["token_usage"] == usage
+    assert response["tool_calls"][0]["name"] == "compile"
+
+
+def test_non_dict_steps_are_a_clear_type_error() -> None:
+    model = ScriptedModel([["not", "a", "dict"]])  # type: ignore[list-item]
+    with pytest.raises(TypeError, match="model responses must be dicts"):
+        run(model.query([]))
+
+
+def test_async_steps_are_awaited() -> None:
+    async def slow(query: ModelQuery) -> Response:
+        await asyncio.sleep(0)
+        return text("late")
+
+    model = ScriptedModel([slow])
+    assert run(model.query([]))["text"] == "late"
+
+
+def test_model_identity_is_configurable() -> None:
+    model = ScriptedModel(
+        [],
+        model_name="gpt-custom",
+        reasoning_effort="minimal",
+        context_window_tokens=1234,
+    )
+    assert model.config.openai_model == "gpt-custom"
+    assert model.config.openai_reasoning_effort == "minimal"
+    assert model.context_window_tokens == 1234
 
 
 # ---------------------------------------------------------------------------
