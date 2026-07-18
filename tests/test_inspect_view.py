@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from itertools import pairwise
+
 import numpy as np
 
 from mini_articraft.agent.tools import result_item
@@ -7,7 +9,7 @@ from mini_articraft.agent.tools.inspect_view import (
     _Piece,
     _project,
     _resolve_probe,
-    _separate,
+    _stack_ys,
     render_png,
 )
 from mini_articraft.sdk import ArticulatedObject, BoxGeometry
@@ -79,16 +81,16 @@ def test_resolve_probe_by_name_and_point() -> None:
     assert _resolve_probe([piece], "missing") is None
 
 
-def test_separate_pushes_overlapping_labels_apart() -> None:
-    # Two identical boxes stacked on the same spot must not overlap afterwards.
-    a = {"x": 100.0, "y": 100.0, "w": 60.0, "h": 14.0}
-    b = {"x": 100.0, "y": 100.0, "w": 60.0, "h": 14.0}
-    _separate([a, b], size=720, pad=4.0)
-    gap_x = max(a["x"], b["x"]) - min(a["x"] + a["w"], b["x"] + b["w"])
-    gap_y = max(a["y"], b["y"]) - min(a["y"] + a["h"], b["y"] + b["h"])
-    assert gap_x >= 0 or gap_y >= 0  # separated on at least one axis
-    for box in (a, b):  # stayed inside the frame
-        assert 2.0 <= box["x"] <= 720 - box["w"] - 2.0
+def test_stack_ys_keeps_order_and_min_gap() -> None:
+    line_h = 20.0
+    # Five labels whose anchors bunch near the same y must spread out in order.
+    ys = _stack_ys([100.0, 105.0, 110.0, 115.0, 120.0], size=720, line_h=line_h)
+    assert ys == sorted(ys)  # reading order preserved
+    for a, b in pairwise(ys):
+        assert b - a >= line_h - 1e-6  # no overlap
+    # A stack that would overrun the bottom is shifted up to fit.
+    tall = _stack_ys([700.0, 705.0, 710.0], size=720, line_h=line_h)
+    assert tall[-1] + line_h <= 720
 
 
 def test_toggle_hides_inspect_view() -> None:

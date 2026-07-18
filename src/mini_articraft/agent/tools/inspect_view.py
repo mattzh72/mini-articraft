@@ -259,37 +259,25 @@ def _font() -> Any:
         return ImageFont.load_default()
 
 
-def _separate(boxes: list[dict[str, float]], size: int, *, pad: float = 4.0) -> None:
-    """Nudge overlapping label boxes apart along their smaller overlap axis.
+def _stack_ys(anchor_ys: list[float], size: int, line_h: float) -> list[float]:
+    """Vertical positions for a gutter of labels: keep reading order, no overlap.
 
-    ponytail: O(n^2) per iteration, but n is the shape count (~10-30), so this
-    is negligible; swap for a spatial grid only if a model ever has hundreds.
+    Each label wants to sit at its anchor's y; a forward pass enforces a minimum
+    gap, then the stack shifts up if it overran the bottom margin. Labels stay in
+    anchor-y order so leader lines to the object do not cross.
     """
-    for _ in range(80):
-        moved = False
-        for i in range(len(boxes)):
-            for j in range(i + 1, len(boxes)):
-                a, b = boxes[i], boxes[j]
-                ox = min(a["x"] + a["w"], b["x"] + b["w"]) - max(a["x"], b["x"]) + pad
-                oy = min(a["y"] + a["h"], b["y"] + b["h"]) - max(a["y"], b["y"]) + pad
-                if ox <= 0 or oy <= 0:
-                    continue
-                moved = True
-                if oy <= ox:
-                    shift = oy / 2.0
-                    lo, hi = (a, b) if a["y"] <= b["y"] else (b, a)
-                    lo["y"] -= shift
-                    hi["y"] += shift
-                else:
-                    shift = ox / 2.0
-                    lo, hi = (a, b) if a["x"] <= b["x"] else (b, a)
-                    lo["x"] -= shift
-                    hi["x"] += shift
-        if not moved:
-            break
-    for box in boxes:
-        box["x"] = max(2.0, min(size - box["w"] - 2.0, box["x"]))
-        box["y"] = max(2.0, min(size - box["h"] - 2.0, box["y"]))
+    margin = 4.0
+    ys: list[float] = []
+    prev = margin - line_h
+    for want in anchor_ys:
+        y = max(want - line_h / 2.0, prev + line_h)
+        ys.append(y)
+        prev = y
+    if ys:
+        overflow = ys[-1] + line_h - (size - margin)
+        if overflow > 0:
+            ys = [max(margin, y - overflow) for y in ys]
+    return ys
 
 
 def _overlay(
@@ -313,34 +301,36 @@ def _overlay(
         return right - left, bottom - top
 
     if labels:
-        boxes: list[dict[str, float]] = []
-        meta: list[tuple[str, float, float]] = []  # text, anchor x, anchor y
+        # Anchor each label to a dot on the object, then bin left/right by which
+        # side the anchor is on and stack each gutter so no two labels overlap.
+        left: list[tuple[float, float, str]] = []  # anchor y, anchor x, name
+        right: list[tuple[float, float, str]] = []
         for piece in pieces:
             projected = _project(piece.vertices.mean(axis=0), eye, center, size)
             if projected is None:
                 continue
-            ax, ay, depth = projected
+            ax, ay, _ = projected
             if not (0 <= ax < size and 0 <= ay < size):
                 continue
-            width, height = _text_box(piece.name)
-            boxes.append(
-                {"x": ax + 8, "y": ay - height - 8, "w": width, "h": height, "d": depth}
-            )
-            meta.append((piece.name, ax, ay))
-        _separate(boxes, size)
-        # Draw far labels first so nearer ones layer on top.
-        for box, (text, ax, ay) in sorted(
-            zip(boxes, meta, strict=True), key=lambda item: -item[0]["d"]
-        ):
-            cx, cy = box["x"] + box["w"] / 2.0, box["y"] + box["h"] / 2.0
-            draw.line([ax, ay, cx, cy], fill=(150, 150, 110), width=1)
-            draw.ellipse([ax - 2, ay - 2, ax + 2, ay + 2], fill=(230, 70, 60))
-            draw.rectangle(
-                [box["x"] - 3, box["y"] - 2, box["x"] + box["w"] + 3, box["y"] + box["h"] + 2],
-                fill=(255, 255, 205),
-                outline=(150, 150, 90),
-            )
-            draw.text((box["x"], box["y"]), text, fill=(20, 20, 20), font=font)
+            (left if ax < size / 2.0 else right).append((ay, ax, piece.name))
+
+        line_h = _text_box("Ag")[1] + 6.0
+        margin = 6.0
+        for group, side in ((sorted(left), "left"), (sorted(right), "right")):
+            ys = _stack_ys([ay for ay, _, _ in group], size, line_h)
+            for (ay, ax, name), ly in zip(group, ys, strict=True):
+                width, height = _text_box(name)
+                bx = margin if side == "left" else size - margin - width
+                inner_x = bx + width if side == "left" else bx
+                cy = ly + height / 2.0
+                draw.line([inner_x, cy, ax, ay], fill=(150, 150, 110), width=1)
+                draw.ellipse([ax - 2, ay - 2, ax + 2, ay + 2], fill=(230, 70, 60))
+                draw.rectangle(
+                    [bx - 3, ly - 2, bx + width + 3, ly + height + 2],
+                    fill=(255, 255, 205),
+                    outline=(150, 150, 90),
+                )
+                draw.text((bx, ly), name, fill=(20, 20, 20), font=font)
 
     if probe is not None:
         resolved = _resolve_probe(pieces, probe)
