@@ -434,6 +434,35 @@ class BoxGeometry(MeshGeometry):
         super().__init__(created.vertices, created.faces)
 
 
+class RoundedBoxGeometry(MeshGeometry):
+    def __init__(
+        self,
+        size: Sequence[float],
+        radius: float,
+        *,
+        tolerance: float = 0.0005,
+        angular_tolerance: float = 0.08,
+    ):
+        from build123d import Box
+
+        dimensions = _vec3(size, name="size")
+        if any(value <= 0.0 for value in dimensions):
+            raise ValueError("rounded box size values must be positive")
+        radius = float(radius)
+        if not math.isfinite(radius) or radius <= 0.0:
+            raise ValueError("rounded box radius must be finite and positive")
+        if radius >= min(dimensions) * 0.5:
+            raise ValueError("rounded box radius must be less than half its smallest size")
+        box = Box(*dimensions)
+        rounded = box.fillet(radius, box.edges())
+        converted = build123d_to_mesh(
+            rounded,
+            tolerance=tolerance,
+            angular_tolerance=angular_tolerance,
+        )
+        super().__init__(converted.vertices, converted.faces)
+
+
 class CylinderGeometry(MeshGeometry):
     def __init__(
         self, radius: float, height: float, *, radial_segments: int = 24, closed: bool = True
@@ -498,6 +527,84 @@ class SphereGeometry(MeshGeometry):
         count = (max(8, int(width_segments)), max(4, int(height_segments)))
         created = _from_created(trimesh.creation.uv_sphere(radius=radius, count=count))
         super().__init__(created.vertices, created.faces)
+
+
+def _signed_power(value: float, exponent: float) -> float:
+    return math.copysign(abs(value) ** exponent, value)
+
+
+class SuperellipsoidGeometry(MeshGeometry):
+    def __init__(
+        self,
+        radius: float | Sequence[float],
+        *,
+        latitude_exponent: float = 1.0,
+        longitude_exponent: float = 1.0,
+        radial_segments: int = 48,
+        height_segments: int = 24,
+    ):
+        radii = (float(radius),) * 3 if isinstance(radius, (int, float)) else _vec3(radius)
+        if any(not math.isfinite(value) or value <= 0.0 for value in radii):
+            raise ValueError("superellipsoid radii must be finite and positive")
+        latitude_exponent = float(latitude_exponent)
+        longitude_exponent = float(longitude_exponent)
+        if not math.isfinite(latitude_exponent) or latitude_exponent <= 0.0:
+            raise ValueError("latitude_exponent must be finite and positive")
+        if not math.isfinite(longitude_exponent) or longitude_exponent <= 0.0:
+            raise ValueError("longitude_exponent must be finite and positive")
+        if isinstance(radial_segments, bool) or not isinstance(radial_segments, Integral):
+            raise ValueError("radial_segments must be an integer")
+        if isinstance(height_segments, bool) or not isinstance(height_segments, Integral):
+            raise ValueError("height_segments must be an integer")
+        radial_segments = int(radial_segments)
+        height_segments = int(height_segments)
+        if radial_segments < 8:
+            raise ValueError("radial_segments must be at least 8")
+        if height_segments < 4:
+            raise ValueError("height_segments must be at least 4")
+
+        vertices: list[Vec3] = [(0.0, 0.0, -radii[2])]
+        for row in range(1, height_segments):
+            latitude = -0.5 * math.pi + math.pi * row / height_segments
+            latitude_radius = _signed_power(math.cos(latitude), latitude_exponent)
+            z = radii[2] * _signed_power(math.sin(latitude), latitude_exponent)
+            for column in range(radial_segments):
+                longitude = 2.0 * math.pi * column / radial_segments
+                vertices.append(
+                    (
+                        radii[0]
+                        * latitude_radius
+                        * _signed_power(math.cos(longitude), longitude_exponent),
+                        radii[1]
+                        * latitude_radius
+                        * _signed_power(math.sin(longitude), longitude_exponent),
+                        z,
+                    )
+                )
+        top = len(vertices)
+        vertices.append((0.0, 0.0, radii[2]))
+
+        faces: list[Face] = []
+        first_row = 1
+        for column in range(radial_segments):
+            following = (column + 1) % radial_segments
+            faces.append((0, first_row + following, first_row + column))
+        for row in range(height_segments - 2):
+            start = 1 + row * radial_segments
+            following_start = start + radial_segments
+            for column in range(radial_segments):
+                following = (column + 1) % radial_segments
+                faces.extend(
+                    (
+                        (start + column, start + following, following_start + following),
+                        (start + column, following_start + following, following_start + column),
+                    )
+                )
+        last_row = 1 + (height_segments - 2) * radial_segments
+        for column in range(radial_segments):
+            following = (column + 1) % radial_segments
+            faces.append((last_row + column, last_row + following, top))
+        super().__init__(vertices, faces)
 
 
 class DomeGeometry(MeshGeometry):
@@ -1177,7 +1284,9 @@ __all__ = [
     "LatheGeometry",
     "LoftGeometry",
     "MeshGeometry",
+    "RoundedBoxGeometry",
     "SphereGeometry",
+    "SuperellipsoidGeometry",
     "TorusGeometry",
     "build123d_to_mesh",
 ]

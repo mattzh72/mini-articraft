@@ -11,7 +11,8 @@ Import these names from the public SDK.
 This page documents `BoxGeometry`, `CapsuleGeometry`, `ConeGeometry`,
 `CylinderGeometry`, `DomeGeometry`, `ExtrudeGeometry`,
 `ExtrudeWithHolesGeometry`, `LatheGeometry`, `LoftGeometry`, `MeshGeometry`,
-`SphereGeometry`, `TorusGeometry`, and `build123d_to_mesh`.
+`RoundedBoxGeometry`, `SphereGeometry`, `SuperellipsoidGeometry`,
+`TorusGeometry`, and `build123d_to_mesh`.
 
 ```python
 from mini_articraft.sdk import (
@@ -25,7 +26,9 @@ from mini_articraft.sdk import (
     LatheGeometry,
     LoftGeometry,
     MeshGeometry,
+    RoundedBoxGeometry,
     SphereGeometry,
+    SuperellipsoidGeometry,
     TorusGeometry,
     build123d_to_mesh,
 )
@@ -205,6 +208,35 @@ BoxGeometry(size: tuple[float, float, float])
 `size` contains the full X, Y, and Z extents. Each value must be positive. The
 box is centered at the origin.
 
+### RoundedBoxGeometry
+
+```python
+RoundedBoxGeometry(
+    size: tuple[float, float, float],
+    radius: float,
+    *,
+    tolerance: float = 0.0005,
+    angular_tolerance: float = 0.08,
+)
+```
+
+This builder creates flat faces with tangent rounded edges and corners. `size`
+contains the full centered extents. `radius` must be positive and less than
+half the smallest size.
+
+The two tolerances control the final mesh density. Linear tolerance uses
+meters. Angular tolerance uses radians. Smaller values follow the rounded
+surface more closely and produce more triangles.
+
+```python
+housing = RoundedBoxGeometry(
+    (0.12, 0.075, 0.028),
+    0.006,
+    tolerance=0.0006,
+    angular_tolerance=0.08,
+)
+```
+
 ### CylinderGeometry
 
 ```python
@@ -251,6 +283,39 @@ SphereGeometry(
 
 The sphere is centered at the origin. Radius must be positive. Width segments
 are clamped to at least 8. Height segments are clamped to at least 4.
+
+### SuperellipsoidGeometry
+
+```python
+SuperellipsoidGeometry(
+    radius: float | tuple[float, float, float],
+    *,
+    latitude_exponent: float = 1.0,
+    longitude_exponent: float = 1.0,
+    radial_segments: int = 48,
+    height_segments: int = 24,
+)
+```
+
+A scalar radius creates an equal sided form. Three values set the X, Y, and Z
+radii. An exponent of `1.0` creates an ellipsoid. Values below one make the
+form fuller and boxier. Values above one make it more pinched. Separate
+latitude and longitude exponents let the vertical and horizontal shape change
+independently.
+
+All radii and exponents must be finite and positive. `radial_segments` must be
+at least 8. `height_segments` must be at least 4. Increase both values for a
+smoother surface.
+
+```python
+soft_housing = SuperellipsoidGeometry(
+    (0.06, 0.04, 0.018),
+    latitude_exponent=0.55,
+    longitude_exponent=0.45,
+    radial_segments=64,
+    height_segments=32,
+)
+```
 
 ### DomeGeometry
 

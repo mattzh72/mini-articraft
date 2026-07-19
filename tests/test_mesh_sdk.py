@@ -21,7 +21,9 @@ from mini_articraft.sdk.mesh import (
     LoftGeometry,
     MeshGeometry,
     PipeGeometry,
+    RoundedBoxGeometry,
     SphereGeometry,
+    SuperellipsoidGeometry,
     SweepGeometry,
     SweepSection,
     TorusGeometry,
@@ -108,6 +110,8 @@ def test_mesh_geometry_rotation_round_trip_and_obj_output() -> None:
         SphereGeometry(0.1),
         DomeGeometry((0.1, 0.08, 0.06)),
         CapsuleGeometry(0.03, 0.15),
+        RoundedBoxGeometry((0.1, 0.08, 0.06), 0.01, tolerance=0.0015),
+        SuperellipsoidGeometry((0.1, 0.08, 0.06)),
         TorusGeometry(0.1, 0.02),
     ],
 )
@@ -115,6 +119,40 @@ def test_primitive_builders_make_watertight_solids(geometry: MeshGeometry) -> No
     assert geometry.vertices
     assert geometry.faces
     assert geometry.is_watertight
+
+
+def test_smooth_form_primitives_expose_shape_and_density_controls() -> None:
+    rounded = RoundedBoxGeometry(
+        (0.1, 0.06, 0.04),
+        0.008,
+        tolerance=0.002,
+        angular_tolerance=0.2,
+    )
+    ellipsoid = SuperellipsoidGeometry(
+        (0.05, 0.03, 0.02),
+        radial_segments=32,
+        height_segments=16,
+    )
+    boxy = SuperellipsoidGeometry(
+        (0.05, 0.03, 0.02),
+        latitude_exponent=0.45,
+        longitude_exponent=0.45,
+        radial_segments=32,
+        height_segments=16,
+    )
+
+    assert rounded.bounds[0] == pytest.approx((-0.05, -0.03, -0.02))
+    assert rounded.bounds[1] == pytest.approx((0.05, 0.03, 0.02))
+    assert ellipsoid.is_watertight and boxy.is_watertight
+    assert ellipsoid.to_trimesh().volume == pytest.approx(
+        4.0 * math.pi * 0.05 * 0.03 * 0.02 / 3.0,
+        rel=0.03,
+    )
+    assert boxy.to_trimesh().volume > ellipsoid.to_trimesh().volume
+    with pytest.raises(ValueError, match="less than half"):
+        RoundedBoxGeometry((0.1, 0.06, 0.04), 0.02)
+    with pytest.raises(ValueError, match="latitude_exponent"):
+        SuperellipsoidGeometry(0.05, latitude_exponent=0.0)
 
 
 def test_profile_and_spline_helpers_are_deterministic() -> None:
