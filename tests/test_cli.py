@@ -108,8 +108,10 @@ def test_cli_warns_on_missing_required_settings(monkeypatch, tmp_path: Path) -> 
     result = CliRunner().invoke(mini.app, ["generate", "make a hinge", "--no-tui"])
 
     assert result.exit_code == 1
-    assert "missing required environment variable: OPENAI_API_KEY" in result.output
+    assert "Missing required environment variable" in result.output
+    assert "OPENAI_API_KEY" in result.output
     assert ".env.example" in result.output
+    assert "setup needed" in result.output
     assert "Traceback" not in result.output
     assert "ValidationError" not in result.output
 
