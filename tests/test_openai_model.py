@@ -168,6 +168,44 @@ def test_openai_model_returns_estimated_cost(monkeypatch: pytest.MonkeyPatch) ->
     assert result["token_usage"] == {
         "input_tokens": 1_000,
         "cached_input_tokens": 100,
+        "cache_write_tokens": 0,
+        "output_tokens": 20,
+        "total_tokens": 1_020,
+    }
+
+
+def test_openai_model_returns_estimated_cost_for_gpt_5_6_sol(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    socket = FakeWebSocket(
+        [
+            response_event(
+                "result",
+                model="gpt-5.6-sol",
+                usage={
+                    "input_tokens": 1_000,
+                    "input_tokens_details": {
+                        "cached_tokens": 100,
+                        "cache_write_tokens": 200,
+                    },
+                    "output_tokens": 20,
+                },
+            )
+        ]
+    )
+    patch_websocket(monkeypatch, socket)
+
+    result = run(
+        openai_model(openai_model="gpt-5.6-sol").query(
+            [{"role": "user", "content": "build"}]
+        )
+    )
+
+    assert result["cost"] == 0.0054
+    assert result["token_usage"] == {
+        "input_tokens": 1_000,
+        "cached_input_tokens": 100,
+        "cache_write_tokens": 200,
         "output_tokens": 20,
         "total_tokens": 1_020,
     }
@@ -177,6 +215,9 @@ def test_openai_model_exposes_context_window() -> None:
     assert openai_model().config.openai_model == "gpt-5.5-2026-04-23"
     assert DEFAULT_MAX_TURNS == 100
     assert openai_model().context_window_tokens == 1_050_000
+    assert context_window_tokens_for("gpt-5.6-sol") == 1_050_000
+    assert context_window_tokens_for("gpt-5.6") == 1_050_000
+    assert context_window_tokens_for("gpt-5.6-terra") is None
     assert context_window_tokens_for("gpt-5.5-2026-04-23") == 1_050_000
     assert context_window_tokens_for("gpt-5.4-mini-2026-03-17") == 400_000
     assert context_window_tokens_for("gpt-test") is None

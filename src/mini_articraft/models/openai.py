@@ -19,10 +19,12 @@ class _ModelSpec:
     input_price: float
     cached_input_price: float
     output_price: float
+    cache_write_price: float | None = None
 
 
-# Prices are USD per million tokens: input, cached input, output.
+# Prices are USD per million tokens: input, cached input, output, cache write.
 _MODELS = {
+    "gpt-5.6-sol": _ModelSpec(1_050_000, 5.0, 0.5, 30.0, 6.25),
     "gpt-5.5-pro": _ModelSpec(1_050_000, 30.0, 30.0, 180.0),
     "gpt-5.5": _ModelSpec(1_050_000, 5.0, 0.5, 30.0),
     "gpt-5.4-pro": _ModelSpec(1_050_000, 30.0, 30.0, 180.0),
@@ -30,6 +32,7 @@ _MODELS = {
     "gpt-5.4-nano": _ModelSpec(400_000, 0.2, 0.02, 1.25),
     "gpt-5.4": _ModelSpec(1_050_000, 2.5, 0.25, 15.0),
 }
+_MODEL_ALIASES = {"gpt-5.6": "gpt-5.6-sol"}
 
 
 class OpenAIModel:
@@ -239,11 +242,18 @@ def _response_cost(response: dict[str, Any]) -> float:
     if not usage or spec is None:
         return 0.0
 
-    uncached_tokens = max(0, usage["input_tokens"] - usage["cached_input_tokens"])
+    uncached_tokens = max(
+        0,
+        usage["input_tokens"]
+        - usage["cached_input_tokens"]
+        - usage["cache_write_tokens"],
+    )
+    cache_write_price = spec.cache_write_price or spec.input_price
     return round(
         (
             uncached_tokens * spec.input_price
             + usage["cached_input_tokens"] * spec.cached_input_price
+            + usage["cache_write_tokens"] * cache_write_price
             + usage["output_tokens"] * spec.output_price
         )
         / 1_000_000,
@@ -258,18 +268,23 @@ def _response_token_usage(response: dict[str, Any]) -> dict[str, int]:
 
     details = usage.get("input_tokens_details")
     cached_tokens = _int(details.get("cached_tokens")) if isinstance(details, dict) else 0
+    cache_write_tokens = (
+        _int(details.get("cache_write_tokens")) if isinstance(details, dict) else 0
+    )
     input_tokens = _int(usage.get("input_tokens"))
     output_tokens = _int(usage.get("output_tokens"))
     total_tokens = _int(usage.get("total_tokens")) or input_tokens + output_tokens
     return {
         "input_tokens": input_tokens,
         "cached_input_tokens": cached_tokens,
+        "cache_write_tokens": cache_write_tokens,
         "output_tokens": output_tokens,
         "total_tokens": total_tokens,
     }
 
 
 def _model_spec(model: str) -> _ModelSpec | None:
+    model = _MODEL_ALIASES.get(model, model)
     for name, spec in sorted(_MODELS.items(), key=lambda item: -len(item[0])):
         if model == name or model.startswith(f"{name}-"):
             return spec

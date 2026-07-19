@@ -123,6 +123,31 @@ def test_renderer_shows_token_usage_bar() -> None:
     assert "(0.3%)" in out
 
 
+def test_renderer_uses_gpt_5_6_sol_context_window() -> None:
+    renderer, console = _renderer()
+
+    renderer.handle(events.RunStarted("run-x", "gpt-5.6-sol", "a box", "low"))
+    renderer.handle(events.TurnStarted(1))
+    renderer.handle(
+        events.AssistantMessage(
+            1,
+            "done",
+            [],
+            {
+                "input_tokens": 10_000,
+                "cached_input_tokens": 1_000,
+                "output_tokens": 500,
+                "total_tokens": 10_500,
+            },
+        )
+    )
+
+    out = _text(console)
+    assert "tokens 10.5k" in out
+    assert "/ 1.1M" in out
+    assert "(1.0%)" in out
+
+
 def test_renderer_shows_full_compile_signals_without_protocol_tags_or_truncation() -> None:
     renderer, console = _renderer()
     detail_lines = "\n".join(f"  detail line {index}" for index in range(20))
