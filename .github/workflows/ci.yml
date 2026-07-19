@@ -52,4 +52,5 @@ jobs:
         run: uv run --frozen basedpyright
 
       - name: Test
-        run: uv run --frozen pytest -q
+        # --replay: cassette-backed tests stay offline (live is the local default)
+        run: uv run --frozen pytest -q --replay
