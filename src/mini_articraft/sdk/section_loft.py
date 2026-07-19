@@ -9,11 +9,19 @@ import numpy as np
 import trimesh
 
 from mini_articraft.errors import ValidationError
+from mini_articraft.sdk._mesh_sweeps import (
+    _initial_frame,
+    _path_frames,
+    _validated_up_hint,
+)
 from mini_articraft.sdk.mesh import LoftGeometry, MeshGeometry, boolean_union
 
 Vec3 = tuple[float, float, float]
 RepairMode = Literal["off", "mesh"]
 LoftInterpolation = Literal["linear", "catmull_rom"]
+LoftParameterization = Literal["uniform", "chord", "centripetal"]
+LoftCapStyle = Literal["flat", "round"]
+LoftFrameMode = Literal["parallel_transport", "fixed_up"]
 
 
 def _as_vec3(value: Sequence[float], *, name: str) -> Vec3:
@@ -55,11 +63,19 @@ class SectionLoftSpec:
     path: tuple[Vec3, ...] | None = None
     cap: bool = True
     symmetry: Literal["mirror_yz"] | None = None
-    repair: RepairMode = "mesh"
+    repair: RepairMode = "off"
     interpolation: LoftInterpolation = "linear"
     samples_per_span: int = 1
     close_path: bool = False
     align_sections: bool = True
+    parameterization: LoftParameterization = "uniform"
+    tension: float = 0.0
+    cap_style: LoftCapStyle = "flat"
+    cap_segments: int = 6
+    cap_length: float | None = None
+    orient_to_path: bool = False
+    frame_mode: LoftFrameMode = "parallel_transport"
+    up_hint: Vec3 = (0.0, 0.0, 1.0)
 
     def __post_init__(self) -> None:
         sections = tuple(
@@ -73,6 +89,11 @@ class SectionLoftSpec:
             path = tuple(_as_vec3(point, name="path[]") for point in self.path)
             if len(path) < 2:
                 raise ValidationError("path must contain at least two points")
+            if any(
+                float(np.linalg.norm(np.subtract(end, start))) <= 1e-12
+                for start, end in pairwise(path)
+            ):
+                raise ValidationError("consecutive path points must be distinct")
             object.__setattr__(self, "path", path)
         if self.symmetry not in {None, "mirror_yz"}:
             raise ValidationError("symmetry must be 'mirror_yz' or None")
@@ -80,12 +101,40 @@ class SectionLoftSpec:
             raise ValidationError("repair must be 'off' or 'mesh'")
         if self.interpolation not in {"linear", "catmull_rom"}:
             raise ValidationError("interpolation must be 'linear' or 'catmull_rom'")
+        if self.parameterization not in {"uniform", "chord", "centripetal"}:
+            raise ValidationError("parameterization must be 'uniform', 'chord', or 'centripetal'")
+        tension = float(self.tension)
+        if not np.isfinite(tension) or not 0.0 <= tension <= 1.0:
+            raise ValidationError("tension must be finite and between 0 and 1")
+        object.__setattr__(self, "tension", tension)
         samples = int(self.samples_per_span)
         if samples < 1:
             raise ValidationError("samples_per_span must be at least 1")
         object.__setattr__(self, "samples_per_span", samples)
         if self.close_path and len(sections) < 3:
             raise ValidationError("close_path requires at least three sections")
+        if self.cap_style not in {"flat", "round"}:
+            raise ValidationError("cap_style must be 'flat' or 'round'")
+        segments = int(self.cap_segments)
+        if segments < 2:
+            raise ValidationError("cap_segments must be at least 2")
+        object.__setattr__(self, "cap_segments", segments)
+        if self.cap_length is not None:
+            length = float(self.cap_length)
+            if not np.isfinite(length) or length <= 0.0:
+                raise ValidationError("cap_length must be finite and positive")
+            object.__setattr__(self, "cap_length", length)
+        if self.frame_mode not in {"parallel_transport", "fixed_up"}:
+            raise ValidationError("frame_mode must be 'parallel_transport' or 'fixed_up'")
+        try:
+            hint = _validated_up_hint(self.up_hint)
+        except ValueError as exc:
+            raise ValidationError(str(exc)) from exc
+        object.__setattr__(self, "up_hint", hint)
+        if self.orient_to_path and self.path is None:
+            raise ValidationError("orient_to_path requires a path")
+        if self.orient_to_path and self.close_path:
+            raise ValidationError("orient_to_path does not support close_path")
 
 
 def _coerce_spec(
@@ -176,6 +225,18 @@ def _sample_polyline(points: Sequence[Vec3], amount: float) -> Vec3:
     )
 
 
+def _sample_polyline_tangent(points: Sequence[Vec3], amount: float) -> Vec3:
+    delta = 1e-5
+    before = np.asarray(_sample_polyline(points, max(0.0, amount - delta)))
+    after = np.asarray(_sample_polyline(points, min(1.0, amount + delta)))
+    direction = after - before
+    length = float(np.linalg.norm(direction))
+    if length <= 1e-12:
+        raise ValidationError("path tangent must be non-zero")
+    tangent = direction / length
+    return (float(tangent[0]), float(tangent[1]), float(tangent[2]))
+
+
 def _path_adjusted_sections(spec: SectionLoftSpec, count: int) -> list[list[Vec3]]:
     sections = [_resample_loop(section.points, count) for section in spec.sections]
     if spec.align_sections:
@@ -187,17 +248,60 @@ def _path_adjusted_sections(spec: SectionLoftSpec, count: int) -> list[list[Vec3
     if path is None:
         return sections
     start, end = path[0], path[-1]
-    adjusted = []
+    adjusted: list[list[Vec3]] = []
+    amounts: list[float] = []
     divisor = max(1, len(sections) - 1)
     for index, section in enumerate(sections):
         amount = index / divisor
+        amounts.append(amount)
         path_point = _sample_polyline(path, amount)
         baseline = tuple(start[axis] + (end[axis] - start[axis]) * amount for axis in range(3))
         residual = tuple(path_point[axis] - baseline[axis] for axis in range(3))
         adjusted.append(
-            [tuple(point[axis] + residual[axis] for axis in range(3)) for point in section]
+            [
+                cast(Vec3, tuple(point[axis] + residual[axis] for axis in range(3)))
+                for point in section
+            ]
         )
-    return adjusted
+    if not spec.orient_to_path:
+        return adjusted
+
+    centers = [np.mean(np.asarray(section, dtype=np.float64), axis=0) for section in sections]
+    baseline = centers[-1] - centers[0]
+    baseline_length = float(np.linalg.norm(baseline))
+    if baseline_length <= 1e-12:
+        raise ValidationError("orient_to_path requires distinct first and last section centers")
+    baseline_tangent = cast(Vec3, tuple(float(value) for value in baseline / baseline_length))
+    base_normal, base_binormal = _initial_frame(baseline_tangent, spec.up_hint)
+    tangents = [_sample_polyline_tangent(path, amount) for amount in amounts]
+    path_points = [_sample_polyline(path, amount) for amount in amounts]
+    normals, binormals = _path_frames(
+        path_points,
+        tangents,
+        closed=False,
+        up_hint=spec.up_hint,
+        frame_mode=spec.frame_mode,
+    )
+    oriented: list[list[Vec3]] = []
+    for index, section in enumerate(sections):
+        adjusted_center = np.mean(np.asarray(adjusted[index], dtype=np.float64), axis=0)
+        ring: list[Vec3] = []
+        for point in section:
+            relative = np.asarray(point, dtype=np.float64) - centers[index]
+            local = (
+                float(np.dot(relative, base_normal)),
+                float(np.dot(relative, base_binormal)),
+                float(np.dot(relative, baseline_tangent)),
+            )
+            placed = (
+                adjusted_center
+                + np.asarray(normals[index]) * local[0]
+                + np.asarray(binormals[index]) * local[1]
+                + np.asarray(tangents[index]) * local[2]
+            )
+            ring.append(cast(Vec3, tuple(float(value) for value in placed)))
+        oriented.append(ring)
+    return oriented
 
 
 def _repair_mesh(geometry: MeshGeometry) -> MeshGeometry:
@@ -235,6 +339,11 @@ def section_loft(
         interpolation=value.interpolation,
         samples_per_span=value.samples_per_span,
         close_path=value.close_path,
+        parameterization=value.parameterization,
+        tension=value.tension,
+        cap_style=value.cap_style,
+        cap_segments=value.cap_segments,
+        cap_length=value.cap_length,
     )
     if value.symmetry == "mirror_yz":
         mirrored = geometry.copy().scale(-1.0, 1.0, 1.0)

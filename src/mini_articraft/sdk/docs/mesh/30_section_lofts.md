@@ -1,9 +1,9 @@
-# Section lofts and repair
+# Section lofts
 
 Use `section_loft(...)` when a form is described by ordered three dimensional
 cross sections. This helper can reconcile different point counts, align
-section loops, add path offsets, interpolate smooth spans, close a section
-loop, mirror a half form, and clean the result.
+section loops, follow a guide path, interpolate smooth spans, close a section
+loop, and mirror a half form.
 
 All coordinates and path values use meters.
 
@@ -51,11 +51,19 @@ SectionLoftSpec(
     path: tuple[tuple[float, float, float], ...] | None = None,
     cap: bool = True,
     symmetry: Literal["mirror_yz"] | None = None,
-    repair: Literal["off", "mesh"] = "mesh",
+    repair: Literal["off", "mesh"] = "off",
     interpolation: Literal["linear", "catmull_rom"] = "linear",
     samples_per_span: int = 1,
     close_path: bool = False,
     align_sections: bool = True,
+    parameterization: Literal["uniform", "chord", "centripetal"] = "uniform",
+    tension: float = 0.0,
+    cap_style: Literal["flat", "round"] = "flat",
+    cap_segments: int = 6,
+    cap_length: float | None = None,
+    orient_to_path: bool = False,
+    frame_mode: Literal["parallel_transport", "fixed_up"] = "parallel_transport",
+    up_hint: tuple[float, float, float] = (0.0, 0.0, 1.0),
 )
 ```
 
@@ -71,17 +79,24 @@ The fields have these meanings.
 - `cap` requests end caps.
 - `symmetry="mirror_yz"` mirrors the result across the YZ plane by reversing
   X.
-- `repair="mesh"` runs the mesh cleanup pass. `repair="off"` returns the raw
-  loft mesh.
+- `repair="off"` returns the generated loft directly. Set `repair="mesh"` only
+  when you need the optional cleanup pass.
 - `interpolation` selects straight or smooth spans between authored sections.
 - `samples_per_span` controls the number of generated rings in each span.
 - `close_path=True` connects the final section back to the first section.
 - `align_sections=False` preserves the authored starting point of each loop.
+- `parameterization` controls how Catmull Rom interpolation responds to uneven
+  spacing between section centers.
+- `tension` controls the strength of the smooth tangents from `0.0` to `1.0`.
+- `cap_style="round"` builds rounded ends as part of the loft. `cap_segments`
+  controls their density. `cap_length` controls how far each end extends.
+- `orient_to_path=True` rotates each section plane to follow the path tangent.
+  `frame_mode` and `up_hint` control its roll.
 
 ### Path behavior
 
-The path changes section positions. It does not rotate section planes to follow
-the path tangent.
+The path always changes section positions. Set `orient_to_path=True` when each
+section plane should also follow the path tangent.
 
 For each section, the helper samples a point at the matching fraction along the
 path. It compares that point with the same fraction along the straight line
@@ -89,7 +104,10 @@ from the path start to the path end. The difference becomes a translation for
 that section.
 
 Use a path when the section centers should bow or deviate from a straight loft.
-Keep the authored section planes in their intended orientation.
+With `orient_to_path=False`, the authored section planes keep their original
+orientation. With `orient_to_path=True`, parallel transport gives smooth roll
+through bends. Use `frame_mode="fixed_up"` when a stable global up direction is
+more important than minimum twist.
 
 ### Interpolation behavior
 
@@ -99,6 +117,12 @@ is the default and preserves the earlier behavior.
 Catmull Rom interpolation fits a smooth path through corresponding points in
 the authored sections. Set `samples_per_span` above one to add intermediate
 rings. Every authored section remains part of the result.
+
+`parameterization="uniform"` gives every authored span equal weight.
+`"chord"` uses the distance between section centers. `"centripetal"` uses the
+square root of that distance and is often the safest smooth choice when section
+spacing changes sharply. Higher `tension` reduces the tangent strength. A value
+of `1.0` eases each span with zero tangent at its ends.
 
 Smooth interpolation can extend outside a straight section span. This is
 useful for soft product forms, but it may create an unwanted bulge when two
@@ -205,6 +229,12 @@ spec = SectionLoftSpec(
     symmetry="mirror_yz",
     interpolation="catmull_rom",
     samples_per_span=5,
+    parameterization="centripetal",
+    tension=0.15,
+    orient_to_path=True,
+    cap_style="round",
+    cap_segments=8,
+    cap_length=0.012,
 )
 housing = section_loft(spec)
 ```
@@ -251,7 +281,13 @@ clean = repair_loft(housing, repair="mesh")
 - The only symmetry mode is `"mirror_yz"`.
 - Repair modes are `"off"` and `"mesh"`.
 - Interpolation modes are `"linear"` and `"catmull_rom"`.
+- Parameterization modes are `"uniform"`, `"chord"`, and `"centripetal"`.
+- Tension must be between zero and one.
 - `samples_per_span` must be at least one.
+- Cap styles are `"flat"` and `"round"`. Rounded caps need at least two
+  segments and a positive length when one is supplied.
+- Path orientation needs a path, a nonzero span between the first and last
+  section centers, and an open loft path.
 - Adjacent loft section centers must differ after path adjustment.
 - A closed path requires at least three sections.
 

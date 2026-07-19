@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
+from itertools import pairwise
 from numbers import Integral
 from typing import TYPE_CHECKING, TypeAlias, cast
 
@@ -20,6 +21,14 @@ Vec3: TypeAlias = tuple[float, float, float]
 Face: TypeAlias = tuple[int, int, int]
 
 _EPS = 1e-10
+
+
+def _mean_point(points: Sequence[Vec3]) -> Vec3:
+    return (
+        sum(point[0] for point in points) / len(points),
+        sum(point[1] for point in points) / len(points),
+        sum(point[2] for point in points) / len(points),
+    )
 
 
 def _vec2(value: Sequence[float], *, name: str = "point") -> Vec2:
@@ -672,45 +681,93 @@ def _interpolate_loft_point(
     amount: float,
     *,
     interpolation: str,
+    parameters: tuple[float, float, float, float],
+    tension: float,
 ) -> Vec3:
     if interpolation == "linear":
         return _v_lerp(p1, p2, amount)
+    t0, t1, t2, t3 = parameters
+    first_span = t2 - t0
+    second_span = t3 - t1
+    span = t2 - t1
+    if min(first_span, second_span, span) <= _EPS:
+        return _v_lerp(p1, p2, amount)
+    slope_scale = 1.0 - tension
+    first_derivative = _v_scale(_v_sub(p2, p0), slope_scale / first_span)
+    second_derivative = _v_scale(_v_sub(p3, p1), slope_scale / second_span)
     amount2, amount3 = amount * amount, amount * amount * amount
-    return cast(
-        Vec3,
-        tuple(
-            0.5
-            * (
-                2.0 * p1[axis]
-                + (-p0[axis] + p2[axis]) * amount
-                + (2.0 * p0[axis] - 5.0 * p1[axis] + 4.0 * p2[axis] - p3[axis]) * amount2
-                + (-p0[axis] + 3.0 * p1[axis] - 3.0 * p2[axis] + p3[axis]) * amount3
-            )
-            for axis in range(3)
-        ),
+    h00 = 2.0 * amount3 - 3.0 * amount2 + 1.0
+    h10 = amount3 - 2.0 * amount2 + amount
+    h01 = -2.0 * amount3 + 3.0 * amount2
+    h11 = amount3 - amount2
+    return (
+        h00 * p1[0]
+        + h10 * span * first_derivative[0]
+        + h01 * p2[0]
+        + h11 * span * second_derivative[0],
+        h00 * p1[1]
+        + h10 * span * first_derivative[1]
+        + h01 * p2[1]
+        + h11 * span * second_derivative[1],
+        h00 * p1[2]
+        + h10 * span * first_derivative[2]
+        + h01 * p2[2]
+        + h11 * span * second_derivative[2],
     )
+
+
+def _loft_parameter_step(start: Vec3, end: Vec3, parameterization: str) -> float:
+    if parameterization == "uniform":
+        return 1.0
+    distance = _v_norm(_v_sub(end, start))
+    return distance if parameterization == "chord" else math.sqrt(distance)
 
 
 def _interpolate_loft_rings(
     rings: Sequence[Sequence[Vec3]],
+    centers: Sequence[Vec3],
     *,
     interpolation: str,
     samples_per_span: int,
     close_path: bool,
+    parameterization: str,
+    tension: float,
 ) -> list[list[Vec3]]:
     if interpolation not in {"linear", "catmull_rom"}:
         raise ValueError("loft interpolation must be 'linear' or 'catmull_rom'")
+    if parameterization not in {"uniform", "chord", "centripetal"}:
+        raise ValueError("loft parameterization must be 'uniform', 'chord', or 'centripetal'")
+    tension = float(tension)
+    if not math.isfinite(tension) or not 0.0 <= tension <= 1.0:
+        raise ValueError("loft tension must be finite and between 0 and 1")
     samples = int(samples_per_span)
     if samples < 1:
         raise ValueError("loft samples_per_span must be at least 1")
+    parameters = [0.0]
+    for index in range(1, len(centers)):
+        parameters.append(
+            parameters[-1]
+            + _loft_parameter_step(centers[index - 1], centers[index], parameterization)
+        )
+    closing_step = _loft_parameter_step(centers[-1], centers[0], parameterization)
+    total = parameters[-1] + closing_step
     span_count = len(rings) if close_path else len(rings) - 1
     result: list[list[Vec3]] = []
     for span in range(span_count):
         p1 = rings[span]
         p2 = rings[(span + 1) % len(rings)]
+        t1 = parameters[span]
+        t2 = parameters[span + 1] if span + 1 < len(rings) else total
         if close_path:
             p0 = rings[span - 1]
             p3 = rings[(span + 2) % len(rings)]
+            t0 = parameters[span - 1] if span > 0 else parameters[-1] - total
+            if span == len(rings) - 1:
+                t3 = total + parameters[1]
+            elif span + 2 < len(rings):
+                t3 = parameters[span + 2]
+            else:
+                t3 = total
         else:
             p0 = (
                 rings[span - 1]
@@ -720,6 +777,7 @@ def _interpolate_loft_rings(
                     for point, following in zip(p1, p2, strict=True)
                 ]
             )
+            t0 = parameters[span - 1] if span > 0 else 2.0 * t1 - t2
             p3 = (
                 rings[span + 2]
                 if span + 2 < len(rings)
@@ -728,17 +786,85 @@ def _interpolate_loft_rings(
                     for point, previous in zip(p2, p1, strict=True)
                 ]
             )
+            t3 = parameters[span + 2] if span + 2 < len(rings) else 2.0 * t2 - t1
         for sample in range(samples):
             amount = sample / samples
             result.append(
                 [
-                    _interpolate_loft_point(a, b, c, d, amount, interpolation=interpolation)
+                    _interpolate_loft_point(
+                        a,
+                        b,
+                        c,
+                        d,
+                        amount,
+                        interpolation=interpolation,
+                        parameters=(t0, t1, t2, t3),
+                        tension=tension,
+                    )
                     for a, b, c, d in zip(p0, p1, p2, p3, strict=True)
                 ]
             )
     if not close_path:
         result.append(list(rings[-1]))
     return result
+
+
+def _connect_loft_rings(
+    faces: list[Face],
+    first_offset: int,
+    second_offset: int,
+    count: int,
+) -> None:
+    for index in range(count):
+        following = (index + 1) % count
+        faces.extend(
+            (
+                (first_offset + index, first_offset + following, second_offset + following),
+                (first_offset + index, second_offset + following, second_offset + index),
+            )
+        )
+
+
+def _add_rounded_loft_cap(
+    vertices: list[Vec3],
+    faces: list[Face],
+    *,
+    ring: Sequence[Vec3],
+    neighbor: Sequence[Vec3],
+    base_offset: int,
+    start: bool,
+    segments: int,
+    length: float | None,
+) -> None:
+    center = _mean_point(ring)
+    neighbor_center = _mean_point(neighbor)
+    direction = _v_normalize(_v_sub(center, neighbor_center))
+    radius = max(_v_norm(_v_sub(point, center)) for point in ring)
+    cap_length = radius if length is None else float(length)
+    if cap_length <= 0.0 or not math.isfinite(cap_length):
+        raise ValueError("loft cap_length must be finite and positive")
+    ring_offsets: list[int] = []
+    for sample in range(1, segments):
+        angle = math.pi * sample / (2.0 * segments)
+        scale = math.cos(angle)
+        ring_center = _v_add(center, _v_scale(direction, cap_length * math.sin(angle)))
+        ring_offsets.append(len(vertices))
+        vertices.extend(
+            _v_add(ring_center, _v_scale(_v_sub(point, center), scale)) for point in ring
+        )
+    ordered = [*reversed(ring_offsets), base_offset] if start else [base_offset, *ring_offsets]
+    for first, second in pairwise(ordered):
+        _connect_loft_rings(faces, first, second, len(ring))
+    tip_index = len(vertices)
+    vertices.append(_v_add(center, _v_scale(direction, cap_length)))
+    terminal_ring = ordered[0] if start else ordered[-1]
+    for index in range(len(ring)):
+        following = (index + 1) % len(ring)
+        faces.append(
+            (tip_index, terminal_ring + following, terminal_ring + index)
+            if start
+            else (terminal_ring + index, terminal_ring + following, tip_index)
+        )
 
 
 class LoftGeometry(MeshGeometry):
@@ -751,6 +877,11 @@ class LoftGeometry(MeshGeometry):
         interpolation: str = "linear",
         samples_per_span: int = 1,
         close_path: bool = False,
+        parameterization: str = "uniform",
+        tension: float = 0.0,
+        cap_style: str = "flat",
+        cap_segments: int = 6,
+        cap_length: float | None = None,
     ):
         rings = [_profile_3d(profile, minimum=3 if closed else 2) for profile in profiles]
         if len(rings) < 2:
@@ -760,6 +891,18 @@ class LoftGeometry(MeshGeometry):
         count = len(rings[0])
         if any(len(ring) != count for ring in rings):
             raise ValueError("loft profiles must have the same point count")
+        cap_style = str(cap_style).strip().lower().replace("-", "_")
+        if cap_style not in {"flat", "round"}:
+            raise ValueError("loft cap_style must be 'flat' or 'round'")
+        if isinstance(cap_segments, bool) or not isinstance(cap_segments, Integral):
+            raise ValueError("loft cap_segments must be an integer")
+        cap_segments = int(cap_segments)
+        if cap_segments < 2:
+            raise ValueError("loft cap_segments must be at least 2")
+        if cap_length is not None:
+            cap_length = float(cap_length)
+            if cap_length <= 0.0 or not math.isfinite(cap_length):
+                raise ValueError("loft cap_length must be finite and positive")
 
         def ring_center(ring: Sequence[Vec3]) -> Vec3:
             return (
@@ -803,9 +946,12 @@ class LoftGeometry(MeshGeometry):
 
         rings = _interpolate_loft_rings(
             rings,
+            centers,
             interpolation=interpolation,
             samples_per_span=samples_per_span,
             close_path=close_path,
+            parameterization=parameterization,
+            tension=tension,
         )
 
         vertices = [point for ring in rings for point in ring]
@@ -828,6 +974,29 @@ class LoftGeometry(MeshGeometry):
                     )
                 )
         if cap and closed and not close_path:
+            if cap_style == "round":
+                _add_rounded_loft_cap(
+                    vertices,
+                    faces,
+                    ring=rings[0],
+                    neighbor=rings[1],
+                    base_offset=0,
+                    start=True,
+                    segments=cap_segments,
+                    length=cap_length,
+                )
+                _add_rounded_loft_cap(
+                    vertices,
+                    faces,
+                    ring=rings[-1],
+                    neighbor=rings[-2],
+                    base_offset=(len(rings) - 1) * count,
+                    start=False,
+                    segments=cap_segments,
+                    length=cap_length,
+                )
+                super().__init__(vertices, faces)
+                return
             for ring_index, neighbor_index, offset in (
                 (0, 1, 0),
                 (len(rings) - 1, len(rings) - 2, (len(rings) - 1) * count),

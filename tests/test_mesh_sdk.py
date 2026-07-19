@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 from typing import Any
 
+import numpy as np
 import pytest
 from build123d import Box, Pos
 
@@ -508,6 +509,71 @@ def test_loft_interpolates_smoothly_between_authored_sections() -> None:
     assert len(smooth.vertices) == 9 * 4
     assert smooth.vertices[4 * 4] == profiles[1][0]
     assert smooth.vertices[2 * 4] != pytest.approx(linear.vertices[2 * 4])
+
+
+def test_loft_controls_smooth_parameterization_tension_and_round_caps() -> None:
+    profiles = [
+        [(-0.03, -0.02, 0.0), (0.03, -0.02, 0.0), (0.03, 0.02, 0.0), (-0.03, 0.02, 0.0)],
+        [(-0.06, -0.01, 0.02), (0.06, -0.01, 0.02), (0.06, 0.01, 0.02), (-0.06, 0.01, 0.02)],
+        [(-0.02, -0.04, 0.2), (0.02, -0.04, 0.2), (0.02, 0.04, 0.2), (-0.02, 0.04, 0.2)],
+    ]
+    uniform = LoftGeometry(
+        profiles,
+        interpolation="catmull_rom",
+        samples_per_span=4,
+        parameterization="uniform",
+    )
+    centripetal = LoftGeometry(
+        profiles,
+        interpolation="catmull_rom",
+        samples_per_span=4,
+        parameterization="centripetal",
+    )
+    tensioned = LoftGeometry(
+        profiles,
+        interpolation="catmull_rom",
+        samples_per_span=4,
+        parameterization="centripetal",
+        tension=0.8,
+    )
+    rounded = LoftGeometry(
+        profiles,
+        cap_style="round",
+        cap_segments=5,
+        cap_length=0.012,
+    )
+
+    assert uniform.is_watertight and centripetal.is_watertight and tensioned.is_watertight
+    assert centripetal.vertices[4] != pytest.approx(uniform.vertices[4])
+    assert tensioned.vertices[4] != pytest.approx(centripetal.vertices[4])
+    assert rounded.is_watertight
+    assert rounded.bounds[0][2] == pytest.approx(-0.012)
+    assert rounded.bounds[1][2] == pytest.approx(0.212)
+
+
+def test_section_loft_can_orient_sections_to_a_guide_path() -> None:
+    outline = ((-0.02, -0.01), (0.02, -0.01), (0.02, 0.01), (-0.02, 0.01))
+    sections = tuple(
+        LoftSection(tuple((x, y, z) for x, y in outline)) for z in (0.0, 0.025, 0.05, 0.075, 0.1)
+    )
+    path = ((0.0, 0.0, 0.0), (0.04, 0.0, 0.05), (0.0, 0.0, 0.1))
+    geometry = section_loft(
+        SectionLoftSpec(
+            sections,
+            path=path,
+            orient_to_path=True,
+            frame_mode="parallel_transport",
+        )
+    )
+    first_ring = geometry.to_trimesh().vertices[:4]
+    first_normal = np.cross(first_ring[1] - first_ring[0], first_ring[2] - first_ring[0])
+    first_normal /= np.linalg.norm(first_normal)
+    first_tangent = np.asarray(path[1]) - np.asarray(path[0])
+    first_tangent /= np.linalg.norm(first_tangent)
+
+    assert geometry.is_watertight
+    assert np.mean(geometry.to_trimesh().vertices[2 * 4 : 3 * 4], axis=0) == pytest.approx(path[1])
+    assert abs(float(np.dot(first_normal, first_tangent))) == pytest.approx(1.0)
 
 
 def test_loft_can_close_around_a_curved_section_path() -> None:

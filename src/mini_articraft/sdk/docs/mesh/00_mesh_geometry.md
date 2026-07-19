@@ -361,6 +361,11 @@ LoftGeometry(
     interpolation: str = "linear",
     samples_per_span: int = 1,
     close_path: bool = False,
+    parameterization: str = "uniform",
+    tension: float = 0.0,
+    cap_style: str = "flat",
+    cap_segments: int = 6,
+    cap_length: float | None = None,
 )
 ```
 
@@ -391,6 +396,17 @@ outside the straight span when profile size or position changes sharply. Add
 another authored profile or use linear interpolation when the surface must
 stay within a strict boundary.
 
+For Catmull Rom spans, `parameterization` can be `"uniform"`, `"chord"`, or
+`"centripetal"`. Chord and centripetal modes account for the distance between
+profile centers. Centripetal mode is a good starting point when the profile
+spacing is uneven. `tension` ranges from `0.0` to `1.0` and reduces tangent
+strength as it increases.
+
+The default `cap_style="flat"` triangulates each end profile. `"round"` grows
+smaller rings toward a rounded tip. `cap_segments` controls the number of rings.
+`cap_length` sets the distance from the end profile to the tip. When it is
+omitted, the loft uses the largest profile radius at that end.
+
 With `close_path=True`, the helper connects the final profile back to the first
 profile and does not add caps. A closed path needs at least three profiles.
 This supports ring forms whose profile changes around a complete loop.
@@ -403,6 +419,11 @@ loft = LoftGeometry(
     ],
     interpolation="catmull_rom",
     samples_per_span=6,
+    parameterization="centripetal",
+    tension=0.1,
+    cap_style="round",
+    cap_segments=8,
+    cap_length=0.015,
 )
 ```
 
