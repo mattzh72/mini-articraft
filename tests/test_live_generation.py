@@ -1,11 +1,12 @@
 """Live/e2e generation tests backed by the cassette lane.
 
-Default: replay the committed cassettes offline, for free. Re-record them
-with a real model when the trajectory intentionally changes:
+Default: always live (real model). Cassettes are opt-in via flags:
 
-    OPENAI_API_KEY=... uv run pytest tests/test_live_generation.py --record-cassettes
+    uv run pytest tests/test_live_generation.py --replay
+    OPENAI_API_KEY=... uv run pytest tests/test_live_generation.py --record
 
-Cassette names default to the test function name.
+Cassette names default to the test function name
+(``cassette_model("latest")`` for an explicit name).
 """
 
 from __future__ import annotations
