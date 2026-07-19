@@ -8,7 +8,7 @@ from typer.testing import CliRunner
 
 from mini_articraft.cli import mini
 from mini_articraft.record import Record, append_conversation
-from mini_articraft.settings import Settings
+from mini_articraft.settings import Settings, get_settings
 
 
 class FakeOpenAIModel:
@@ -98,6 +98,20 @@ def test_cli_runs_agent_with_only_core_overrides(monkeypatch, tmp_path: Path) ->
     assert FakeAgent.instances[0].prompt == "make a hinge"
     assert "status: success" in result.output
     assert "run: /tmp/run" in result.output
+
+
+def test_cli_warns_on_missing_required_settings(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.chdir(tmp_path)
+    get_settings.cache_clear()
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    result = CliRunner().invoke(mini.app, ["generate", "make a hinge", "--no-tui"])
+
+    assert result.exit_code == 1
+    assert "missing required environment variable: OPENAI_API_KEY" in result.output
+    assert ".env.example" in result.output
+    assert "Traceback" not in result.output
+    assert "ValidationError" not in result.output
 
 
 def test_cli_exits_nonzero_when_agent_fails(monkeypatch) -> None:

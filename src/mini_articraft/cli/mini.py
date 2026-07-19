@@ -131,7 +131,27 @@ def _settings(
         )
         if value is not None
     }
-    return get_settings().model_copy(update=updates)
+    try:
+        settings = get_settings()
+    except ValidationError as exc:
+        typer.echo(_settings_error(exc), err=True)
+        raise typer.Exit(1) from None
+    return settings.model_copy(update=updates)
+
+
+def _settings_error(exc: ValidationError) -> str:
+    missing = [
+        str(error["loc"][0])
+        for error in exc.errors()
+        if error.get("type") == "missing" and error.get("loc")
+    ]
+    if missing:
+        names = ", ".join(missing)
+        return (
+            f"missing required environment variable: {names}\n"
+            "Set it in the environment or a .env file (see .env.example)."
+        )
+    return f"invalid settings:\n{exc}"
 
 
 def _print_result(result: dict[str, object]) -> None:
