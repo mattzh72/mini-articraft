@@ -175,16 +175,39 @@ def _require_connected_inputs(
         )
 
 
-def _smooth_union(
+def _surface_controls(
+    radius: float,
+    tolerance: float | None,
+    profile: str,
+) -> tuple[float, float, str]:
+    radius = float(radius)
+    if not math.isfinite(radius) or radius <= 0.0:
+        raise ValueError("radius must be finite and positive")
+    tolerance = radius * 0.25 if tolerance is None else float(tolerance)
+    if not math.isfinite(tolerance) or tolerance <= 0.0:
+        raise ValueError("tolerance must be finite and positive")
+    profile = str(profile).strip().lower().replace("-", "_")
+    if profile not in _BLEND_PROFILES:
+        raise ValueError("profile must be 'tight', 'round', or 'soft'")
+    return radius, tolerance, profile
+
+
+def _smooth_operation(
     meshes: list[Trimesh],
     *,
     radius: float,
     tolerance: float,
     profile: str,
+    operation: str,
 ) -> MeshGeometry:
-    minimum = np.min([mesh.bounds[0] for mesh in meshes], axis=0)
-    maximum = np.max([mesh.bounds[1] for mesh in meshes], axis=0)
-    margin = radius + 2.0 * tolerance
+    if operation == "union":
+        minimum = np.min([mesh.bounds[0] for mesh in meshes], axis=0)
+        maximum = np.max([mesh.bounds[1] for mesh in meshes], axis=0)
+    else:
+        minimum, maximum = meshes[0].bounds
+    # Keep authored surfaces off the level-set lattice. Exact alignment can create
+    # zero-volume corner tetrahedra when a flat face lands directly on the zero level.
+    margin = radius + 2.371 * tolerance
     lower = np.asarray(minimum, dtype=np.float64) - margin
     upper = np.asarray(maximum, dtype=np.float64) + margin
     dimensions = np.ceil((upper - lower) / tolerance).astype(np.int64) + 1
@@ -205,6 +228,8 @@ def _smooth_union(
             values = _mesh_field(mesh, points, band)
             if mesh_index == 0:
                 field[start:stop] = values
+            elif operation == "difference":
+                field[start:stop] = -_smooth_max(-field[start:stop], values, radius, profile)
             else:
                 field[start:stop] = _smooth_max(field[start:stop], values, radius, profile)
     shaped_field = field.reshape(tuple(int(value) for value in dimensions))
@@ -218,14 +243,7 @@ def _smooth_union(
         tolerance,
         0.0,
     )
-    if solid.is_empty():
-        raise ValueError("weld produced an empty solid")
-    result = _from_manifold(solid)
-    if _positive_body_count(result.to_trimesh()) != 1:
-        raise ValueError(
-            "weld could not form one connected solid; increase radius or overlap the inputs"
-        )
-    return result
+    return _from_manifold(solid)
 
 
 def snap_to(
@@ -305,30 +323,70 @@ def weld(
     """
     if len(geometries) < 2:
         raise ValueError("weld needs at least two geometries")
-    radius = float(radius)
-    if not math.isfinite(radius) or radius <= 0.0:
-        raise ValueError("radius must be finite and positive")
-    tolerance = radius * 0.25 if tolerance is None else float(tolerance)
-    if not math.isfinite(tolerance) or tolerance <= 0.0:
-        raise ValueError("tolerance must be finite and positive")
-    profile = str(profile).strip().lower().replace("-", "_")
-    if profile not in _BLEND_PROFILES:
-        raise ValueError("profile must be 'tight', 'round', or 'soft'")
+    radius, tolerance, profile = _surface_controls(radius, tolerance, profile)
     max_gap = float(max_gap)
     if not math.isfinite(max_gap) or max_gap < 0.0:
         raise ValueError("max_gap must be finite and non-negative")
 
     meshes = _validate_weld_inputs(geometries)
     _require_connected_inputs(geometries, max_gap=max_gap)
-    result = _smooth_union(
+    result = _smooth_operation(
         meshes,
         radius=radius,
         tolerance=tolerance,
         profile=profile,
+        operation="union",
     )
+    if not result.vertices:
+        raise ValueError("weld produced an empty solid")
+    if _positive_body_count(result.to_trimesh()) != 1:
+        raise ValueError(
+            "weld could not form one connected solid; increase radius or overlap the inputs"
+        )
     if trim is not None:
         result = boolean_difference(result, _require_mesh(trim, "trim"))
     return result
 
 
-__all__ = ["SnapRefused", "snap_to", "weld"]
+def smooth_difference(
+    geometry: MeshGeometry,
+    *cutters: MeshGeometry,
+    radius: float = 0.006,
+    tolerance: float | None = None,
+    profile: str = "round",
+    max_gap: float = 0.0,
+) -> MeshGeometry:
+    """Subtract one or more solids with smooth generated transitions.
+
+    The cutters must overlap ``geometry`` or connect to it through the other cutters.
+    ``max_gap`` can allow a nearby cutter to form a shallow blended recess without an
+    exact intersection.
+    """
+    geometry = _require_mesh(geometry, "geometry")
+    if not cutters:
+        raise ValueError("smooth_difference needs at least one cutter")
+    radius, tolerance, profile = _surface_controls(radius, tolerance, profile)
+    max_gap = float(max_gap)
+    if not math.isfinite(max_gap) or max_gap < 0.0:
+        raise ValueError("max_gap must be finite and non-negative")
+    inputs = (geometry, *cutters)
+    meshes = _validate_weld_inputs(inputs)
+    try:
+        _require_connected_inputs(inputs, max_gap=max_gap)
+    except ValueError as exc:
+        raise ValueError(
+            "smooth_difference cutters do not reach the geometry; overlap them or increase max_gap"
+        ) from exc
+    result = _smooth_operation(
+        meshes,
+        radius=radius,
+        tolerance=tolerance,
+        profile=profile,
+        operation="difference",
+    )
+    if not result.vertices:
+        raise ValueError("smooth_difference removed the entire solid")
+    return result
+
+
+__all__ = ["SnapRefused", "smooth_difference", "snap_to", "weld"]

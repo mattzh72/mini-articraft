@@ -50,7 +50,7 @@ Read only the reference that applies to the next piece of geometry:
   `docs/sdk/mesh/20_wires_and_sweeps.md`.
 - Section lofts, smooth interpolation, rounded caps, and guide paths:
   `docs/sdk/mesh/30_section_lofts.md`.
-- Mesh booleans, openings, shell partitioning, and configurable smooth welds:
+- Mesh booleans, rounded cuts, shell partitioning, and configurable smooth welds:
   `docs/sdk/mesh/40_booleans_and_shells.md`.
 - Mesh refinement and smoothing:
   `docs/sdk/mesh/50_refinement_and_smoothing.md`.

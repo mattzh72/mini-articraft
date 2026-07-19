@@ -8,6 +8,8 @@ from mini_articraft.sdk import (
     CylinderGeometry,
     SnapRefused,
     SphereGeometry,
+    boolean_difference,
+    smooth_difference,
     snap_to,
     weld,
 )
@@ -55,8 +57,6 @@ def test_weld_can_bridge_only_an_allowed_small_gap() -> None:
 def test_weld_trim_removes_stub_in_hollow_cavity() -> None:
     outer = BoxGeometry((0.10, 0.08, 0.08))
     cavity = BoxGeometry((0.08, 0.06, 0.06))
-    from mini_articraft.sdk import boolean_difference
-
     shell = boolean_difference(outer, cavity)
     prot = (
         CylinderGeometry(0.01, 0.06, radial_segments=24)
@@ -87,6 +87,41 @@ def test_weld_validates_surface_controls() -> None:
         weld(first, second, profile="puffy")
     with pytest.raises(ValueError, match="tolerance"):
         weld(first, second, tolerance=0.0)
+
+
+def test_smooth_difference_rounds_a_cut_with_configurable_fullness() -> None:
+    base = BoxGeometry((0.06, 0.05, 0.03))
+    cutter = CylinderGeometry(0.012, 0.06, radial_segments=32)
+    sharp = boolean_difference(base, cutter)
+    tight = smooth_difference(
+        base,
+        cutter,
+        radius=0.004,
+        tolerance=0.002,
+        profile="tight",
+    )
+    soft = smooth_difference(
+        base,
+        cutter,
+        radius=0.004,
+        tolerance=0.002,
+        profile="soft",
+    )
+
+    assert tight.is_watertight and soft.is_watertight
+    assert tight.to_trimesh().body_count == 1
+    assert soft.to_trimesh().volume < tight.to_trimesh().volume
+    assert tight.to_trimesh().volume < sharp.to_trimesh().volume
+
+
+def test_smooth_difference_validates_cutter_reach() -> None:
+    base = BoxGeometry((0.04, 0.04, 0.02))
+    distant = SphereGeometry(0.005).translate(0.1, 0.0, 0.0)
+
+    with pytest.raises(ValueError, match="at least one cutter"):
+        smooth_difference(base)
+    with pytest.raises(ValueError, match="do not reach"):
+        smooth_difference(base, distant, tolerance=0.002)
 
 
 def test_snap_to_closes_a_small_gap() -> None:

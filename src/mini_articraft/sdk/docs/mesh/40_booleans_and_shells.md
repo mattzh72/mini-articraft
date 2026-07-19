@@ -356,6 +356,44 @@ piece is constrained (a hinge barrel on its axis) or must meet the body at more 
 one place (a handle with two ends), and those are fixed by their own shape or path,
 not by snapping. Pass `axis` to constrain the motion to one direction.
 
+## smooth_difference: generate rounded cuts
+
+```python
+smooth_difference(
+    geometry: MeshGeometry,
+    *cutters: MeshGeometry,
+    radius: float = 0.006,
+    tolerance: float | None = None,
+    profile: Literal["tight", "round", "soft"] = "round",
+    max_gap: float = 0.0,
+) -> MeshGeometry
+```
+
+`smooth_difference(...)` subtracts one or more closed cutters and generates a
+smooth transition where each cut meets the remaining surface. It uses the same
+radius, tolerance, and profile controls as `weld(...)`.
+
+Use `boolean_difference(...)` for an exact sharp cut. Use
+`smooth_difference(...)` for a recessed control, vent, opening, or socket whose
+edge should be part of the rounded generated surface.
+
+```python
+panel = BoxGeometry((0.12, 0.08, 0.012))
+opening = CylinderGeometry(0.018, 0.04, radial_segments=48)
+rounded_panel = smooth_difference(
+    panel,
+    opening,
+    radius=0.004,
+    tolerance=0.0015,
+    profile="tight",
+)
+```
+
+Every cutter must overlap the base or connect to it through another cutter.
+`max_gap` can allow a nearby cutter to form a shallow recess without an exact
+intersection. At least one cutter is required. The operation fails when the
+cutters remove the entire solid.
+
 ## Decision guide
 
 - Use `weld(...)` for one smooth generated transition. Set its radius, tolerance,
@@ -364,8 +402,8 @@ not by snapping. Pass `axis` to constrain the motion to one direction.
   surfaces.
 - Use `snap_to(...)` to close a small gap before welding when the whole piece can
   move safely.
-- Use `boolean_difference(...)` to cut one solid out of another (a cavity, a hole,
-  or trimming one shape to another's surface).
+- Use `smooth_difference(...)` for a cut with a generated rounded transition.
+- Use `boolean_difference(...)` for an exact sharp cavity, hole, or trim.
 - Note: `boolean_difference` against a thin hollow shell removes only a wall-thick
   slice and can fragment the input into slivers; subtract a solid to remove
   everything inside a surface.

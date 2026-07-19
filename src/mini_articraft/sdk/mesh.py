@@ -46,7 +46,7 @@ from mini_articraft.sdk._mesh_sweeps import (
     tube_network_from_paths,
     wire_from_points,
 )
-from mini_articraft.sdk._mesh_weld import SnapRefused, snap_to, weld
+from mini_articraft.sdk._mesh_weld import SnapRefused, smooth_difference, snap_to, weld
 
 __all__ = [
     "ArcPipeGeometry",
@@ -81,6 +81,7 @@ __all__ = [
     "sample_catmull_rom_spline_3d",
     "sample_cubic_bezier_spline_2d",
     "sample_cubic_bezier_spline_3d",
+    "smooth_difference",
     "smooth_mesh",
     "snap_to",
     "split_superellipse_side_loft",
