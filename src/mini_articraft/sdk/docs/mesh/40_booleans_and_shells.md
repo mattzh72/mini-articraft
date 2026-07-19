@@ -295,7 +295,7 @@ weld(
 ) -> MeshGeometry
 ```
 
-`weld(...)` fuses closed solids into one smooth mesh. Use it to grow a molded
+The public `weld` function fuses closed solids into one smooth mesh. Use it to grow a molded
 transition where a spout meets a shell, a boss meets a panel, or a handle meets
 a body. Place the pieces so they overlap, then weld them and add the single
 result to the part. Use `boolean_union(...)` instead when the joint should stay
@@ -369,7 +369,7 @@ smooth_difference(
 ) -> MeshGeometry
 ```
 
-`smooth_difference(...)` subtracts one or more closed cutters and generates a
+The public `smooth_difference` function subtracts one or more closed cutters and generates a
 smooth transition where each cut meets the remaining surface. It uses the same
 radius, tolerance, and profile controls as `weld(...)`.
 
