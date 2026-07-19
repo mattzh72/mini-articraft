@@ -410,6 +410,7 @@ def test_run_scenario_returns_deep_artifacts(tmp_path: Path) -> None:
     assert finished is not None
     assert finished.status == "success"
     assert artifacts.tool_outputs()[0]["result"]["path"] == "main.py"
+    assert isinstance(artifacts.model, ScriptedModel)
     assert artifacts.model.queries[-1].turn == 3
 
 
