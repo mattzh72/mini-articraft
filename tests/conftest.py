@@ -117,4 +117,4 @@ def _live_model() -> Model:
 
         return OpenAIModel()
     except Exception as exc:
-        pytest.exit(f"live model needs OPENAI_API_KEY: {exc}", returncode=1)
+        pytest.fail(f"live model needs OPENAI_API_KEY: {exc}")
