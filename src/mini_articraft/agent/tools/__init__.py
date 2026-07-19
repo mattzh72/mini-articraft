@@ -26,11 +26,7 @@ TOOLS = {
 
 
 def schemas(*, inspect_view: bool = True) -> list[dict[str, Any]]:
-    return [
-        tool.schema
-        for name, tool in TOOLS.items()
-        if inspect_view or name != "inspect_view"
-    ]
+    return [tool.schema for name, tool in TOOLS.items() if inspect_view or name != "inspect_view"]
 
 
 def get(name: str, *, inspect_view: bool = True) -> Tool:

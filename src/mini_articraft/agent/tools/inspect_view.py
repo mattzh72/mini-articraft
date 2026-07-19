@@ -53,9 +53,7 @@ def _color_map(model: ArticulatedObject) -> dict[tuple[str, str], tuple[float, f
 
 
 def _matches(part_name: str, shape_name: str, names: set[str]) -> bool:
-    return (
-        part_name in names or shape_name in names or f"{part_name}/{shape_name}" in names
-    )
+    return part_name in names or shape_name in names or f"{part_name}/{shape_name}" in names
 
 
 def _scene(
@@ -120,9 +118,7 @@ def _framing(
 
 def _eye(center: np.ndarray, radius: float, azimuth: float, elevation: float) -> np.ndarray:
     az, el = math.radians(azimuth), math.radians(elevation)
-    direction = np.array(
-        [math.cos(el) * math.cos(az), math.cos(el) * math.sin(az), math.sin(el)]
-    )
+    direction = np.array([math.cos(el) * math.cos(az), math.cos(el) * math.sin(az), math.sin(el)])
     distance = radius / math.tan(math.radians(_FOV_DEGREES) / 2.0) + radius
     return center + distance * direction
 
@@ -171,8 +167,15 @@ def _usdrecord_png(
         stage.GetRootLayer().Save()
 
         subprocess.run(
-            ["usdrecord", "--imageWidth", str(width), "--camera", "/World/cam",
-             str(usd_path), str(png_path)],
+            [
+                "usdrecord",
+                "--imageWidth",
+                str(width),
+                "--camera",
+                "/World/cam",
+                str(usd_path),
+                str(png_path),
+            ],
             check=True,
             capture_output=True,
             timeout=120,
@@ -232,9 +235,7 @@ def _project(
     return px, py, depth
 
 
-def _resolve_probe(
-    pieces: list[_Piece], probe: Any
-) -> tuple[np.ndarray, str] | None:
+def _resolve_probe(pieces: list[_Piece], probe: Any) -> tuple[np.ndarray, str] | None:
     if isinstance(probe, (list, tuple)) and len(probe) == 3:
         point = np.asarray([float(v) for v in probe], dtype=np.float64)
     elif isinstance(probe, str):
@@ -395,9 +396,7 @@ def render_png(
             _Piece(p.name, p.vertices, p.faces, p.normals, (c[0] / 255, c[1] / 255, c[2] / 255))
             for p, c in zip(pieces, shades, strict=True)
         ]
-    center, radius = _framing(
-        pieces, target=target, zoom=zoom, model=model, only=only, pose=pose
-    )
+    center, radius = _framing(pieces, target=target, zoom=zoom, model=model, only=only, pose=pose)
     try:
         png = _usdrecord_png(pieces, center, radius, azimuth, elevation, width)
     except (FileNotFoundError, subprocess.SubprocessError, ImportError, OSError):
