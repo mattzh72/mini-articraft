@@ -22,18 +22,6 @@ from mini_articraft.settings import DEFAULT_MAX_TURNS
 PROMPT_SLUG_MAX_LENGTH = 48
 MAX_CONSECUTIVE_EMPTY_RESPONSES = 3
 
-_INSPECT_GUIDANCE = (
-    "You also have an `inspect_view` tool. A successful compile confirms the model is "
-    "connected and valid, but only a rendered image shows the visual quality the checks "
-    "cannot judge: gaps, mounting blocks, seams, whether a handle reads as molded or a "
-    "hinge seats. After a successful compile, call `inspect_view` to look at the object "
-    "-- orbit with azimuth/elevation, frame a part or shape with `target` and tighten "
-    "with `zoom`, isolate parts with `only`, and actuate the main motion with `pose`. "
-    "When a compile error names a shape, inspect that shape to see the problem. Fix what "
-    "looks wrong and compile again; finish only when the workspace compiles and the "
-    "rendered views look right."
-)
-
 
 class AgentConfig(BaseModel):
     max_turns: int = DEFAULT_MAX_TURNS
@@ -76,7 +64,7 @@ class Agent:
         )
         system_content = _read_prompt("system.md")
         if self._inspect_view_enabled:
-            system_content += "\n\n" + _INSPECT_GUIDANCE
+            system_content += "\n\n" + _read_prompt("inspect_view.md").rstrip()
         self.messages = [
             {
                 "role": "system",
@@ -282,14 +270,14 @@ class Agent:
             started.append(time.perf_counter())
 
         results = await asyncio.gather(*(self._run_tool(context, call) for call in tool_calls))
-        for call, (item, display), tool_started in zip(tool_calls, results, started, strict=True):
+        for call, (item, payload), tool_started in zip(tool_calls, results, started, strict=True):
             self.messages.append(item)
             append_conversation(conversation_path, item)
             self._emit(
                 events.ToolFinished(
                     str(call["id"]),
                     str(call["name"]),
-                    _display_payload(context, str(call["name"]), display),
+                    _display(context, str(call["name"]), payload),
                     round(time.perf_counter() - tool_started, 4),
                 )
             )
@@ -297,7 +285,8 @@ class Agent:
     async def _run_tool(
         self, context: ToolContext, call: dict[str, Any]
     ) -> tuple[dict[str, Any], dict[str, Any]]:
-        """Return the model-facing result item and a payload for the local display."""
+        """Return the model-facing result item and the raw payload (the TUI view is
+        derived from it by `_display`)."""
         name = str(call["name"])
         call_id = str(call["id"])
         try:
@@ -312,35 +301,25 @@ class Agent:
             payload = {"result": result}
         except Exception as exc:
             payload = {"error": str(exc)}
-        return tools.result_item(call_id, payload), _display_summary(payload)
+        return tools.result_item(call_id, payload), payload
 
 
-def _display_summary(payload: dict[str, Any]) -> dict[str, Any]:
-    """Local-display copy of a tool payload, with any rendered image reduced to a note."""
+def _display(context: ToolContext, name: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """The TUI's view of a tool payload: it diverges from the model's in two ways --
+    a rendered image is shown as a note (not its base64), and a compile shows the full
+    report the model only gets a compact summary of."""
     result = payload.get("result")
-    if isinstance(result, dict) and "image_png_base64" in result:
-        trimmed = {**result, "image_png_base64": "<rendered image>"}
-        return {**payload, "result": trimmed}
+    if not isinstance(result, dict):
+        return payload
+    if "image_png_base64" in result:
+        return {**payload, "result": {**result, "image_png_base64": "<rendered image>"}}
+    if name == "compile":
+        full_result = context.compile_result
+        if result.get("status") == "success":
+            full_result = context.successful_compile_result or full_result
+        if isinstance(full_result, dict):
+            return {**payload, "result": full_result}
     return payload
-
-
-def _display_payload(
-    context: ToolContext,
-    name: str,
-    payload: dict[str, Any],
-) -> dict[str, Any]:
-    """Give the TUI full compile details without adding them to model context."""
-    if name != "compile" or "result" not in payload:
-        return payload
-    compact_result = payload["result"]
-    if not isinstance(compact_result, dict):
-        return payload
-    full_result = context.compile_result
-    if compact_result.get("status") == "success":
-        full_result = context.successful_compile_result or full_result
-    if not isinstance(full_result, dict):
-        return payload
-    return {**payload, "result": full_result}
 
 
 def _arguments(call: dict[str, Any]) -> dict[str, Any]:
