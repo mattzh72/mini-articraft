@@ -135,6 +135,10 @@ SweepGeometry(
     sections: Sequence[SweepSection] = (),
     section_interpolation: str = "linear",
     section_tension: float = 0.0,
+    max_segment_length: float | None = None,
+    cap_style: str = "flat",
+    cap_segments: int = 6,
+    cap_length: float | None = None,
 )
 ```
 
@@ -162,6 +166,10 @@ PipeGeometry(
     sections: Sequence[SweepSection] = (),
     section_interpolation: str = "linear",
     section_tension: float = 0.0,
+    max_segment_length: float | None = None,
+    cap_style: str = "flat",
+    cap_segments: int = 6,
+    cap_length: float | None = None,
 )
 ```
 
@@ -182,9 +190,17 @@ needed, joins the last ring to the shared first ring, and disables caps. A
 closed path needs at least three distinct points. With an open path, `cap=True`
 adds a cap at each end when the profile is closed.
 
-Pipe caps use the average of the profile ring as a fan center. Use a profile
-whose center lies inside the loop. A strongly concave profile can need a
-different solid builder for reliable caps.
+Set `max_segment_length` to add path rings until no centerline segment exceeds
+that length. This controls surface density without changing the path shape.
+
+`cap_style="flat"` triangulates the end profiles. `cap_style="round"` extends
+the profile along the endpoint tangent while scaling it into one tip. The
+default round cap length is the largest profile radius. Set `cap_length` to use
+a different length. `cap_segments` controls the number of curved spans and must
+be at least two.
+
+Flat caps triangulate the profile boundary. Concave profiles are supported
+when their boundary does not cross itself.
 
 ```python
 rail_profile = [
@@ -218,6 +234,10 @@ ArcPipeGeometry(
     sections: Sequence[SweepSection] = (),
     section_interpolation: str = "linear",
     section_tension: float = 0.0,
+    max_segment_length: float | None = None,
+    cap_style: str = "flat",
+    cap_segments: int = 6,
+    cap_length: float | None = None,
 )
 ```
 
@@ -314,6 +334,10 @@ WirePolylineGeometry(
     sections: Sequence[SweepSection] = (),
     section_interpolation: str = "linear",
     section_tension: float = 0.0,
+    max_segment_length: float | None = None,
+    cap_style: str = "flat",
+    cap_segments: int = 6,
+    cap_length: float | None = None,
     min_segment_length: float = 1e-6,
 )
 
@@ -332,6 +356,10 @@ wire_from_points(
     sections: Sequence[SweepSection] = (),
     section_interpolation: str = "linear",
     section_tension: float = 0.0,
+    max_segment_length: float | None = None,
+    cap_style: str = "flat",
+    cap_segments: int = 6,
+    cap_length: float | None = None,
     min_segment_length: float = 1e-6,
 ) -> MeshGeometry
 ```
@@ -388,6 +416,10 @@ tube_from_spline_points(
     sections: Sequence[SweepSection] = (),
     section_interpolation: str = "linear",
     section_tension: float = 0.0,
+    max_segment_length: float | None = None,
+    cap_style: str = "flat",
+    cap_segments: int = 6,
+    cap_length: float | None = None,
     min_segment_length: float = 1e-6,
 ) -> MeshGeometry
 ```
@@ -434,6 +466,10 @@ sweep_profile_along_spline(
     sections: Sequence[SweepSection] = (),
     section_interpolation: str = "linear",
     section_tension: float = 0.0,
+    max_segment_length: float | None = None,
+    cap_style: str = "flat",
+    cap_segments: int = 6,
+    cap_length: float | None = None,
     min_segment_length: float = 1e-6,
 ) -> MeshGeometry
 ```

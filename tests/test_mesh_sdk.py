@@ -314,6 +314,24 @@ def test_sweep_sections_support_smooth_tension_control() -> None:
     assert smooth.is_watertight
 
 
+def test_sweep_builds_round_caps_and_limits_path_segment_length() -> None:
+    profile = [(-0.01, -0.006), (0.01, -0.006), (0.01, 0.006), (-0.01, 0.006)]
+    rounded = PipeGeometry(
+        profile,
+        [(0.0, 0.0, 0.0), (0.0, 0.0, 0.1)],
+        cap=True,
+        cap_style="round",
+        cap_segments=5,
+        cap_length=0.012,
+        max_segment_length=0.02,
+    )
+
+    assert rounded.is_watertight
+    assert rounded.bounds[0][2] == pytest.approx(-0.012)
+    assert rounded.bounds[1][2] == pytest.approx(0.112)
+    assert len(rounded.vertices) == 6 * len(profile) + 2 * (4 * len(profile) + 1)
+
+
 def test_closed_sweep_uses_one_shared_seam_and_checks_section_match() -> None:
     path = [
         (0.05 * math.cos(angle), 0.05 * math.sin(angle), 0.006 * math.sin(2.0 * angle))

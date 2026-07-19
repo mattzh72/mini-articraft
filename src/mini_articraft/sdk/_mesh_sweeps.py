@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
+from itertools import pairwise
 from typing import cast
 
 from mini_articraft.sdk._mesh_core import (
@@ -143,6 +144,10 @@ class SweepGeometry(MeshGeometry):
         sections: Sequence[SweepSection] = (),
         section_interpolation: str = "linear",
         section_tension: float = 0.0,
+        max_segment_length: float | None = None,
+        cap_style: str = "flat",
+        cap_segments: int = 6,
+        cap_length: float | None = None,
     ):
         sweep = PipeGeometry(
             profile,
@@ -155,6 +160,10 @@ class SweepGeometry(MeshGeometry):
             sections=sections,
             section_interpolation=section_interpolation,
             section_tension=section_tension,
+            max_segment_length=max_segment_length,
+            cap_style=cap_style,
+            cap_segments=cap_segments,
+            cap_length=cap_length,
         )
         super().__init__(sweep.vertices, sweep.faces)
 
@@ -268,6 +277,28 @@ def _insert_path_fractions(
     return [
         _path_point_at_distance(path, fraction * total, closed=closed) for fraction in values
     ]
+
+
+def _subdivide_path_segments(
+    path: Sequence[Vec3],
+    *,
+    closed: bool,
+    max_segment_length: float | None,
+) -> list[Vec3]:
+    if max_segment_length is None:
+        return list(path)
+    maximum = float(max_segment_length)
+    if maximum <= 0.0 or not math.isfinite(maximum):
+        raise ValueError("max_segment_length must be finite and positive")
+    segment_count = len(path) if closed else len(path) - 1
+    result: list[Vec3] = []
+    for index in range(segment_count):
+        start, end = path[index], path[(index + 1) % len(path)]
+        divisions = max(1, math.ceil(_v_norm(_v_sub(end, start)) / maximum))
+        result.extend(_v_lerp(start, end, sample / divisions) for sample in range(divisions))
+    if not closed:
+        result.append(path[-1])
+    return result
 
 
 def _path_frames(
@@ -567,6 +598,96 @@ def _profile_at(
     return list(profiles[-1].points)
 
 
+def _connect_profile_rings(
+    faces: list[tuple[int, int, int]],
+    first_offset: int,
+    second_offset: int,
+    count: int,
+) -> None:
+    for index in range(count):
+        following = (index + 1) % count
+        faces.extend(
+            (
+                (first_offset + index, first_offset + following, second_offset + following),
+                (first_offset + index, second_offset + following, second_offset + index),
+            )
+        )
+
+
+def _rounded_cap_length(profile: Sequence[Vec2], requested: float | None) -> float:
+    if requested is not None:
+        length = float(requested)
+        if length <= 0.0 or not math.isfinite(length):
+            raise ValueError("cap_length must be finite and positive")
+        return length
+    center = (
+        sum(point[0] for point in profile) / len(profile),
+        sum(point[1] for point in profile) / len(profile),
+    )
+    length = max(math.dist(point, center) for point in profile)
+    if length <= _EPS:
+        raise ValueError("round cap profile radius must be positive")
+    return length
+
+
+def _add_rounded_cap(
+    vertices: list[Vec3],
+    faces: list[tuple[int, int, int]],
+    *,
+    profile: Sequence[Vec2],
+    path_point: Vec3,
+    tangent: Vec3,
+    normal: Vec3,
+    binormal: Vec3,
+    base_offset: int,
+    start: bool,
+    segments: int,
+    length: float | None,
+) -> None:
+    center = (
+        sum(point[0] for point in profile) / len(profile),
+        sum(point[1] for point in profile) / len(profile),
+    )
+    cap_length = _rounded_cap_length(profile, length)
+    direction = _v_scale(tangent, -1.0 if start else 1.0)
+    ring_offsets: list[int] = []
+    for sample in range(1, segments):
+        angle = math.pi * sample / (2.0 * segments)
+        scale = math.cos(angle)
+        ring_center = _v_add(path_point, _v_scale(direction, cap_length * math.sin(angle)))
+        ring_offsets.append(len(vertices))
+        vertices.extend(
+            _v_add(
+                ring_center,
+                _v_add(
+                    _v_scale(normal, center[0] + (point[0] - center[0]) * scale),
+                    _v_scale(binormal, center[1] + (point[1] - center[1]) * scale),
+                ),
+            )
+            for point in profile
+        )
+
+    ordered = [*reversed(ring_offsets), base_offset] if start else [base_offset, *ring_offsets]
+    for first, second in pairwise(ordered):
+        _connect_profile_rings(faces, first, second, len(profile))
+
+    tip_center = _v_add(path_point, _v_scale(direction, cap_length))
+    tip = _v_add(
+        tip_center,
+        _v_add(_v_scale(normal, center[0]), _v_scale(binormal, center[1])),
+    )
+    tip_index = len(vertices)
+    vertices.append(tip)
+    terminal_ring = ordered[0] if start else ordered[-1]
+    for index in range(len(profile)):
+        following = (index + 1) % len(profile)
+        faces.append(
+            (tip_index, terminal_ring + following, terminal_ring + index)
+            if start
+            else (terminal_ring + index, terminal_ring + following, tip_index)
+        )
+
+
 class PipeGeometry(MeshGeometry):
     """Sweep a profile along a path using a parallel-transport style frame."""
 
@@ -583,6 +704,10 @@ class PipeGeometry(MeshGeometry):
         sections: Sequence[SweepSection] = (),
         section_interpolation: str = "linear",
         section_tension: float = 0.0,
+        max_segment_length: float | None = None,
+        cap_style: str = "flat",
+        cap_segments: int = 6,
+        cap_length: float | None = None,
     ):
         base_profile = (
             _ensure_ccw(_profile_2d(profile)) if closed else _profile_2d(profile, minimum=2)
@@ -591,6 +716,13 @@ class PipeGeometry(MeshGeometry):
         up_hint = _validated_up_hint(up_hint)
         section_interpolation = _section_interpolation(section_interpolation)
         section_tension = _section_tension(section_tension)
+        cap_style = str(cap_style).strip().lower()
+        if cap_style not in {"flat", "round"}:
+            raise ValueError("cap_style must be 'flat' or 'round'")
+        if not isinstance(cap_segments, int) or isinstance(cap_segments, bool) or cap_segments < 2:
+            raise ValueError("cap_segments must be an integer of at least 2")
+        if cap_length is not None:
+            cap_length = _rounded_cap_length(base_profile, cap_length)
         if path_closed:
             if _v_norm(_v_sub(path_values[0], path_values[-1])) <= _EPS:
                 path_values.pop()
@@ -609,6 +741,11 @@ class PipeGeometry(MeshGeometry):
             path_values,
             (section.position for section in section_profiles),
             closed=path_closed,
+        )
+        path_values = _subdivide_path_segments(
+            path_values,
+            closed=path_closed,
+            max_segment_length=max_segment_length,
         )
         tangent_values = _tangents(path_values, closed=path_closed)
         normals, binormals = _path_frames(
@@ -653,13 +790,40 @@ class PipeGeometry(MeshGeometry):
                         (start + index, following_start + following, following_start + index),
                     )
                 )
-        if cap and closed:
+        if cap and closed and cap_style == "flat":
             start_triangles = _triangulate_simple(ring_profiles[0])
             end_triangles = _triangulate_simple(ring_profiles[-1])
             end_offset = (len(rings) - 1) * count
             faces.extend((c, b, a) for a, b, c in start_triangles)
             faces.extend(
                 (end_offset + a, end_offset + b, end_offset + c) for a, b, c in end_triangles
+            )
+        elif cap and closed:
+            _add_rounded_cap(
+                vertices,
+                faces,
+                profile=ring_profiles[0],
+                path_point=path_values[0],
+                tangent=tangent_values[0],
+                normal=normals[0],
+                binormal=binormals[0],
+                base_offset=0,
+                start=True,
+                segments=cap_segments,
+                length=cap_length,
+            )
+            _add_rounded_cap(
+                vertices,
+                faces,
+                profile=ring_profiles[-1],
+                path_point=path_values[-1],
+                tangent=tangent_values[-1],
+                normal=normals[-1],
+                binormal=binormals[-1],
+                base_offset=(len(rings) - 1) * count,
+                start=False,
+                segments=cap_segments,
+                length=cap_length,
             )
         super().__init__(vertices, faces)
 
@@ -681,6 +845,10 @@ class ArcPipeGeometry(MeshGeometry):
         sections: Sequence[SweepSection] = (),
         section_interpolation: str = "linear",
         section_tension: float = 0.0,
+        max_segment_length: float | None = None,
+        cap_style: str = "flat",
+        cap_segments: int = 6,
+        cap_length: float | None = None,
     ):
         pipe = PipeGeometry(
             profile,
@@ -698,6 +866,10 @@ class ArcPipeGeometry(MeshGeometry):
             sections=sections,
             section_interpolation=section_interpolation,
             section_tension=section_tension,
+            max_segment_length=max_segment_length,
+            cap_style=cap_style,
+            cap_segments=cap_segments,
+            cap_length=cap_length,
         )
         super().__init__(pipe.vertices, pipe.faces)
 
@@ -771,6 +943,10 @@ class WirePolylineGeometry(MeshGeometry):
         sections: Sequence[SweepSection] = (),
         section_interpolation: str = "linear",
         section_tension: float = 0.0,
+        max_segment_length: float | None = None,
+        cap_style: str = "flat",
+        cap_segments: int = 6,
+        cap_length: float | None = None,
         min_segment_length: float = 1e-6,
     ):
         radius = float(radius)
@@ -817,6 +993,10 @@ class WirePolylineGeometry(MeshGeometry):
             sections=sections,
             section_interpolation=section_interpolation,
             section_tension=section_tension,
+            max_segment_length=max_segment_length,
+            cap_style=cap_style,
+            cap_segments=cap_segments,
+            cap_length=cap_length,
         )
         super().__init__(pipe.vertices, pipe.faces)
 
@@ -836,6 +1016,10 @@ def wire_from_points(
     sections: Sequence[SweepSection] = (),
     section_interpolation: str = "linear",
     section_tension: float = 0.0,
+    max_segment_length: float | None = None,
+    cap_style: str = "flat",
+    cap_segments: int = 6,
+    cap_length: float | None = None,
     min_segment_length: float = 1e-6,
 ) -> MeshGeometry:
     return WirePolylineGeometry(
@@ -852,6 +1036,10 @@ def wire_from_points(
         sections=sections,
         section_interpolation=section_interpolation,
         section_tension=section_tension,
+        max_segment_length=max_segment_length,
+        cap_style=cap_style,
+        cap_segments=cap_segments,
+        cap_length=cap_length,
         min_segment_length=min_segment_length,
     )
 
@@ -896,6 +1084,10 @@ def tube_from_spline_points(
     sections: Sequence[SweepSection] = (),
     section_interpolation: str = "linear",
     section_tension: float = 0.0,
+    max_segment_length: float | None = None,
+    cap_style: str = "flat",
+    cap_segments: int = 6,
+    cap_length: float | None = None,
     min_segment_length: float = 1e-6,
 ) -> MeshGeometry:
     return wire_from_points(
@@ -916,6 +1108,10 @@ def tube_from_spline_points(
         sections=sections,
         section_interpolation=section_interpolation,
         section_tension=section_tension,
+        max_segment_length=max_segment_length,
+        cap_style=cap_style,
+        cap_segments=cap_segments,
+        cap_length=cap_length,
         min_segment_length=min_segment_length,
     )
 
@@ -934,6 +1130,10 @@ def sweep_profile_along_spline(
     sections: Sequence[SweepSection] = (),
     section_interpolation: str = "linear",
     section_tension: float = 0.0,
+    max_segment_length: float | None = None,
+    cap_style: str = "flat",
+    cap_segments: int = 6,
+    cap_length: float | None = None,
     min_segment_length: float = 1e-6,
 ) -> MeshGeometry:
     min_segment_length = float(min_segment_length)
@@ -962,6 +1162,10 @@ def sweep_profile_along_spline(
         sections=sections,
         section_interpolation=section_interpolation,
         section_tension=section_tension,
+        max_segment_length=max_segment_length,
+        cap_style=cap_style,
+        cap_segments=cap_segments,
+        cap_length=cap_length,
     )
 
 
