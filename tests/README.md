@@ -100,6 +100,22 @@ OPENAI_API_KEY=... uv run pytest tests/test_live_generation.py --record
 Commit a cassette (`git add -f`) and run CI with `--replay` for a hard
 offline gate. No `--replay` means no cassette — always the real model.
 
+## The tape CLI
+
+`scripts/tape.py` manages the recording library by hand:
+
+```bash
+uv run python scripts/tape.py list            # recordings + prompts
+uv run python scripts/tape.py show box        # one recording's exchanges
+uv run python scripts/tape.py replay box      # replay offline, end to end
+uv run python scripts/tape.py record box "a small box"   # live, pays once
+uv run python scripts/tape.py erase box
+```
+
+`record` stores the prompt as cassette metadata, which is what `replay`
+replays against. `--root` points at another library (the default is
+`tests/cassettes/`).
+
 ## Known platform flakes
 
 On macOS, a few exec-output timing tests can fail with empty captured output

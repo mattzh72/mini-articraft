@@ -851,6 +851,7 @@ def run_scenario(
     run_id: str = "scenario",
     max_turns: int = 10,
     assert_exhausted: bool = True,
+    on_event: Callable[[events.Event], None] | None = None,
 ) -> RunArtifacts:
     """Run the full agent loop for free and return deep-inspectable artifacts.
 
@@ -860,7 +861,9 @@ def run_scenario(
     ``env`` to choose the compile lane (:class:`WarmEnvironment` for speed)
     or ``tmp_path`` for a plain subprocess ``LocalEnvironment``. By default
     finite harness models must be consumed exactly; pass
-    ``assert_exhausted=False`` for open-ended or live runs.
+    ``assert_exhausted=False`` for open-ended or live runs. Every event also
+    flows to ``on_event`` when given (the artifacts recorder always sees it
+    too).
     """
     if model is None:
         if script is None:
@@ -873,7 +876,13 @@ def run_scenario(
             raise ValueError("run_scenario needs env= or tmp_path=")
         env = LocalEnvironment(output_dir=tmp_path)
     recorder = EventRecorder()
-    agent = Agent(model, env, max_turns=max_turns, on_event=recorder)
+
+    def callback(event: events.Event) -> None:
+        recorder(event)
+        if on_event is not None:
+            on_event(event)
+
+    agent = Agent(model, env, max_turns=max_turns, on_event=callback)
     result = run(agent.run(prompt, run_id=run_id))
     if assert_exhausted:
         check = getattr(model, "assert_exhausted", None)
