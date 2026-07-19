@@ -55,8 +55,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         action="store_true",
         default=False,
         help=(
-            "run cassette-backed tests live and (re)record named cassettes "
-            "(needs OPENAI_API_KEY)"
+            "run cassette-backed tests live and (re)record named cassettes (needs OPENAI_API_KEY)"
         ),
     )
     group.addoption(
