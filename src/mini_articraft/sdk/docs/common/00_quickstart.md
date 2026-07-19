@@ -53,6 +53,8 @@ Read only the reference that applies to the next piece of geometry:
 - Mesh booleans, openings, shell partitioning, and `weld`/`snap_to` (fuse a
   same-material protrusion into a body, snapping it to close a small gap first):
   `docs/sdk/mesh/40_booleans_and_shells.md`.
+- Mesh refinement and smoothing:
+  `docs/sdk/mesh/50_refinement_and_smoothing.md`.
 
 Detailed build123d pages are under `docs/sdk/build123d/`. Start with
 `docs/sdk/build123d/key_concepts_algebra.md` for object algebra,

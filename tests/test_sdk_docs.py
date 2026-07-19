@@ -100,6 +100,11 @@ def test_key_apis_are_documented_by_their_owner_pages() -> None:
             "`cut_opening_on_face`",
             "`partition_shell`",
         ),
+        "mesh/50_refinement_and_smoothing.md": (
+            "`refine_mesh`",
+            "`subdivide_mesh`",
+            "`smooth_mesh`",
+        ),
     }
 
     for relative_path, names in expected.items():

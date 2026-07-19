@@ -34,6 +34,7 @@ from mini_articraft.sdk._mesh_profiles import (
     superellipse_profile,
     superellipse_side_loft,
 )
+from mini_articraft.sdk._mesh_refine import refine_mesh, smooth_mesh, subdivide_mesh
 from mini_articraft.sdk._mesh_sweeps import (
     ArcPipeGeometry,
     PipeGeometry,
@@ -72,6 +73,7 @@ __all__ = [
     "boolean_union",
     "build123d_to_mesh",
     "cut_opening_on_face",
+    "refine_mesh",
     "resample_side_sections",
     "rounded_rect_profile",
     "sample_arc_3d",
@@ -79,8 +81,10 @@ __all__ = [
     "sample_catmull_rom_spline_3d",
     "sample_cubic_bezier_spline_2d",
     "sample_cubic_bezier_spline_3d",
+    "smooth_mesh",
     "snap_to",
     "split_superellipse_side_loft",
+    "subdivide_mesh",
     "superellipse_profile",
     "superellipse_side_loft",
     "sweep_profile_along_spline",
