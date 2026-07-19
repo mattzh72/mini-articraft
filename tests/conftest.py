@@ -6,7 +6,7 @@ from contextlib import AbstractContextManager, contextmanager
 from pathlib import Path
 
 import pytest
-from harness import CASSETTE_ROOT, ReplayHarness, ScenarioModel
+from harness import CASSETTE_ROOT, ReplayHarness
 
 from mini_articraft import Model
 
@@ -69,7 +69,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     )
 
 
-CassetteModelOpener = Callable[[str | None], AbstractContextManager[ScenarioModel]]
+CassetteModelOpener = Callable[[str | None], AbstractContextManager[Model]]
 
 
 @pytest.fixture
@@ -91,7 +91,7 @@ def cassette_model(request: pytest.FixtureRequest) -> CassetteModelOpener:
     library = ReplayHarness(CASSETTE_ROOT)
 
     @contextmanager
-    def open_cassette(name: str | None = None) -> Iterator[ScenarioModel]:
+    def open_cassette(name: str | None = None) -> Iterator[Model]:
         cassette_name = name or request.node.name
         if replay:
             if not library.has(cassette_name):

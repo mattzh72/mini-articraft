@@ -824,7 +824,7 @@ class RunArtifacts:
 
     result: dict[str, Any]
     record: Record
-    model: ScenarioModel
+    model: ScenarioModel | Model
     recorder: EventRecorder
     run_dir: Path
 
@@ -845,7 +845,7 @@ def run_scenario(
     prompt: str,
     script: Iterable[Step] | None = None,
     *,
-    model: ScenarioModel | None = None,
+    model: ScenarioModel | Model | None = None,
     env: LocalEnvironment | None = None,
     tmp_path: Path | None = None,
     run_id: str = "scenario",
@@ -856,10 +856,11 @@ def run_scenario(
 
     The model is a fresh :class:`ScriptedModel` built from ``script`` unless
     ``model=`` plugs in something else -- e.g. one recording from a
-    :class:`ReplayHarness`. Pass ``env`` to choose the compile lane
-    (:class:`WarmEnvironment` for speed) or ``tmp_path`` for a plain
-    subprocess ``LocalEnvironment``. By default the model must be consumed
-    exactly; pass ``assert_exhausted=False`` for open-ended runs.
+    :class:`ReplayHarness`, or a live :class:`~mini_articraft.Model`. Pass
+    ``env`` to choose the compile lane (:class:`WarmEnvironment` for speed)
+    or ``tmp_path`` for a plain subprocess ``LocalEnvironment``. By default
+    finite harness models must be consumed exactly; pass
+    ``assert_exhausted=False`` for open-ended or live runs.
     """
     if model is None:
         if script is None:
@@ -875,7 +876,9 @@ def run_scenario(
     agent = Agent(model, env, max_turns=max_turns, on_event=recorder)
     result = run(agent.run(prompt, run_id=run_id))
     if assert_exhausted:
-        model.assert_exhausted()
+        check = getattr(model, "assert_exhausted", None)
+        if callable(check):
+            check()
     run_dir = Path(str(result["run"]))
     return RunArtifacts(
         result=result,
