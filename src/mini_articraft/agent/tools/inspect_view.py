@@ -4,7 +4,6 @@ import base64
 import io
 import math
 import runpy
-import shutil
 import subprocess
 import tempfile
 from dataclasses import dataclass
@@ -61,12 +60,11 @@ def _scene(
     *,
     only: list[str] | None,
     pose: dict[str, float] | None,
-) -> tuple[list[_Piece], dict[tuple[str, str], tuple[float, float, float]]]:
+) -> list[_Piece]:
     kernel = MeshCollisionKernel(model, mesh_tolerance=0.0012)
     colors = _color_map(model)
     wanted = set(only) if only else None
     pieces: list[_Piece] = []
-    identity: dict[tuple[str, str], tuple[float, float, float]] = {}
     for entry in kernel._all_entries(pose or {}):
         if wanted is not None and not _matches(entry.part_name, entry.shape_name, wanted):
             continue
@@ -81,10 +79,9 @@ def _scene(
                 color=color,
             )
         )
-        identity[(entry.part_name, entry.shape_name)] = color
     if not pieces:
         raise ValueError("no geometry to render; check the 'only' names")
-    return pieces, identity
+    return pieces
 
 
 def _framing(
@@ -133,8 +130,8 @@ def _usdrecord_png(
 ) -> bytes:
     from pxr import Gf, Usd, UsdGeom
 
-    tmp = Path(tempfile.mkdtemp(prefix="inspect_view_"))
-    try:
+    with tempfile.TemporaryDirectory(prefix="inspect_view_") as tmpdir:
+        tmp = Path(tmpdir)
         usd_path = tmp / "scene.usda"
         png_path = tmp / "out.png"
         stage = Usd.Stage.CreateNew(str(usd_path))
@@ -181,8 +178,6 @@ def _usdrecord_png(
             timeout=120,
         )
         return png_path.read_bytes()
-    finally:
-        shutil.rmtree(tmp, ignore_errors=True)
 
 
 def _matplotlib_png(
@@ -387,7 +382,7 @@ def render_png(
     color_by_shape: bool = False,
     width: int = 720,
 ) -> bytes:
-    pieces, _ = _scene(model, only=only, pose=pose)
+    pieces = _scene(model, only=only, pose=pose)
     if color_by_shape:
         # Recolor every shape a distinct bright hue so separate pieces stand out
         # (a hinge built from six chunks reads as six colors, not one gray nub).
