@@ -282,29 +282,57 @@ The result meshes are independent. Add them as named shapes when they belong to
 one rigid part, or add them to separate parts when the prompt requires separate
 motion.
 
-## weld and snap_to: fuse a protrusion into a form
+## weld and snap_to: blend a protrusion into a form
 
-`weld(*geometries, trim=None)` fuses overlapping closed solids into ONE shape with
-an exact boolean union. Use it to mold a protrusion into a body -- a spout into a
-shell, a boss into a panel: place the pieces so they overlap (overlap within a part
-is free), then `weld` them and add the single result to the part.
+```python
+weld(
+    *geometries: MeshGeometry,
+    radius: float = 0.006,
+    tolerance: float | None = None,
+    profile: Literal["tight", "round", "soft"] = "round",
+    max_gap: float = 0.0,
+    trim: MeshGeometry | None = None,
+) -> MeshGeometry
+```
+
+`weld(...)` fuses closed solids into one smooth mesh. Use it to grow a molded
+transition where a spout meets a shell, a boss meets a panel, or a handle meets
+a body. Place the pieces so they overlap, then weld them and add the single
+result to the part. Use `boolean_union(...)` instead when the joint should stay
+sharp and preserve the exact input surfaces.
+
+`radius` controls how far the smooth transition reaches. `tolerance` controls
+the generated triangle size. It defaults to one quarter of the radius. Smaller
+values preserve more surface detail and produce more triangles. Large objects
+with very small tolerance values are rejected with a suggested minimum, so an
+accidental setting cannot create an unbounded field.
+
+The profile changes the fullness of the transition while keeping it smooth.
+`"tight"` adds the least volume, `"round"` is the neutral shape, and `"soft"`
+adds the fullest transition.
+
+Inputs must overlap by default. Set `max_gap` to a small positive distance only
+when the blend is meant to bridge that gap. The weld checks input connectivity
+first and still fails if the selected radius cannot form one solid.
 
 ```python
 body = LatheGeometry.from_shell_profiles(outer_profile=..., inner_profile=...)
-spout = LoftGeometry(sections).translate(0.06, 0.0, 0.10)  # overlaps the body wall
-molded = weld(body, spout)
+spout = LoftGeometry(sections).translate(0.06, 0.0, 0.10)
+molded = weld(
+    body,
+    spout,
+    radius=0.008,
+    tolerance=0.002,
+    profile="round",
+)
 kettle.add(molded, name="body_with_molded_spout", color=(0.80, 0.82, 0.83))
 ```
-
-Because the pieces become one shape they take one color, so weld pieces that share a
-material. Keep a differently colored piece (a black handle on a steel body) as its
-own overlapping shape instead of welding it.
 
 When the body is a hollow shell and the protrusion pokes through the wall into the
 cavity, pass `trim` (the solid that fills the cavity) to difference that stub away:
 
 ```python
-molded = weld(shell, spout, trim=cavity_solid)  # union, then remove the interior stub
+molded = weld(shell, spout, trim=cavity_solid)
 ```
 
 If a protrusion was placed with a small gap to the form it should meet, call
@@ -314,7 +342,11 @@ not have to hit the exact coordinate by hand. Snap the piece BEFORE you add it:
 
 ```python
 spout = snap_to(body, spout, max_move=0.01)   # close the gap
-kettle.add(weld(body, spout), name="body_with_molded_spout", color=(0.80, 0.82, 0.83))
+kettle.add(
+    weld(body, spout, radius=0.008, tolerance=0.002),
+    name="body_with_molded_spout",
+    color=(0.80, 0.82, 0.83),
+)
 ```
 
 `snap_to` only translates the whole piece, so it fits a single freely-placeable
@@ -326,9 +358,12 @@ not by snapping. Pass `axis` to constrain the motion to one direction.
 
 ## Decision guide
 
-- Use `weld(...)` to fuse overlapping same-material solids into one shape (an exact
-  boolean union); pass `trim` to remove a stub left inside a hollow body, and
-  `snap_to(...)` first to close a small gap before welding.
+- Use `weld(...)` for one smooth generated transition. Set its radius, tolerance,
+  and profile directly. Pass `trim` to remove a stub left inside a hollow body.
+- Use `boolean_union(...)` when the joint should be sharp and keep the exact input
+  surfaces.
+- Use `snap_to(...)` to close a small gap before welding when the whole piece can
+  move safely.
 - Use `boolean_difference(...)` to cut one solid out of another (a cavity, a hole,
   or trimming one shape to another's surface).
 - Note: `boolean_difference` against a thin hollow shell removes only a wall-thick

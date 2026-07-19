@@ -1,18 +1,15 @@
 """Attach a protrusion by molding it into the body -- no mounting pads.
 
-A handle, spout, leg, or arm joins a body as ONE continuous molded piece: shape the
-protrusion's own end so it overlaps into the body, then fuse them. This mug shows the
-pattern with a same-material ceramic handle:
+A handle, spout, leg, or arm joins a body as one continuous molded piece. Shape the
+protrusion's own end so it overlaps the body, then blend them. This mug shows the
+geometry pattern with a handle:
 
   1. Sweep the handle as a loop whose two ends sit a few mm INSIDE the body wall.
-  2. `weld(body, handle)` fuses the overlap into one solid (an exact boolean union).
+  2. `weld(body, handle)` builds a smooth transition across the overlap.
   3. Add the single welded result to the part.
 
-Do NOT bridge the handle to the body with a separate mounting pad, boss, or bracket --
-the handle's own end reaches into the body. When a protrusion is a DIFFERENT color from
-the body (a black handle on a steel kettle), keep it as its own overlapping shape
-instead of welding, so it can keep its color; the attachment principle -- own end
-embedded in the body, no pad -- is the same.
+Do not bridge the handle to the body with a separate mounting pad, boss, or bracket.
+The handle's own end reaches into the body and the weld generates the final surface.
 """
 
 from __future__ import annotations
@@ -64,7 +61,8 @@ def build_object_model() -> ArticulatedObject:
     )
 
     # Fuse into one molded ceramic piece. No mounting pad bridges the gap.
-    mug.add(weld(body, handle), name="body_with_molded_handle", color=(0.92, 0.91, 0.88))
+    molded = weld(body, handle, radius=0.006, tolerance=0.002, profile="round")
+    mug.add(molded, name="body_with_molded_handle", color=(0.92, 0.91, 0.88))
     return model
 
 

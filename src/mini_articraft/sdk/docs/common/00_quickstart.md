@@ -48,10 +48,9 @@ Read only the reference that applies to the next piece of geometry:
 - Profiles and curve sampling: `docs/sdk/mesh/10_profiles.md`.
 - Wires, pipes, and sweeps, including changing profiles and frame control:
   `docs/sdk/mesh/20_wires_and_sweeps.md`.
-- Section lofts, smooth interpolation, closed paths, and repair:
+- Section lofts, smooth interpolation, rounded caps, and guide paths:
   `docs/sdk/mesh/30_section_lofts.md`.
-- Mesh booleans, openings, shell partitioning, and `weld`/`snap_to` (fuse a
-  same-material protrusion into a body, snapping it to close a small gap first):
+- Mesh booleans, openings, shell partitioning, and configurable smooth welds:
   `docs/sdk/mesh/40_booleans_and_shells.md`.
 - Mesh refinement and smoothing:
   `docs/sdk/mesh/50_refinement_and_smoothing.md`.

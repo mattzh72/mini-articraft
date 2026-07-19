@@ -16,26 +16,40 @@ from mini_articraft.sdk import (
 def test_weld_two_overlapping_boxes_is_one_solid() -> None:
     a = BoxGeometry((0.05, 0.02, 0.02))
     b = BoxGeometry((0.02, 0.05, 0.02)).translate(0.02, 0.0, 0.0)
-    result = weld(a, b)
+    result = weld(a, b, tolerance=0.002)
     assert result.vertices and result.faces
     assert result.is_watertight
     # a single connected component (one fused solid, not two)
     assert result.to_trimesh().body_count == 1
 
 
-def test_weld_keeps_exact_input_bounds() -> None:
-    # a boolean union keeps the exact surfaces, so bounds match the outer extent of
-    # the inputs -- it never grows a fillet the way the old smooth weld did.
-    a = BoxGeometry((0.04, 0.02, 0.02))
-    b = SphereGeometry(0.014).translate(0.02, 0.0, 0.0)
-    welded = weld(a, b)
-    (a_min, a_max), (b_min, b_max) = a.bounds, b.bounds
-    w_min, w_max = welded.bounds
-    # a boolean union stays within the inputs' own extent -- it never grows a fillet
-    # (tolerance well below any fillet, above manifold's re-meshing noise)
-    assert w_max[0] == pytest.approx(max(a_max[0], b_max[0]), abs=1e-6)
-    assert w_min[0] == pytest.approx(min(a_min[0], b_min[0]), abs=1e-6)
-    assert welded.is_watertight
+def test_weld_profile_controls_the_smooth_transition() -> None:
+    a = BoxGeometry((0.05, 0.02, 0.02))
+    b = BoxGeometry((0.02, 0.05, 0.02)).translate(0.02, 0.0, 0.0)
+    tight = weld(a, b, radius=0.004, tolerance=0.002, profile="tight")
+    soft = weld(a, b, radius=0.004, tolerance=0.002, profile="soft")
+
+    assert tight.is_watertight and soft.is_watertight
+    assert tight.to_trimesh().volume < soft.to_trimesh().volume
+    assert tight.bounds[1][2] < soft.bounds[1][2]
+
+
+def test_weld_can_bridge_only_an_allowed_small_gap() -> None:
+    first = BoxGeometry((0.02, 0.02, 0.02))
+    second = BoxGeometry((0.02, 0.02, 0.02)).translate(0.021, 0.0, 0.0)
+
+    with pytest.raises(ValueError, match="increase max_gap"):
+        weld(first, second, radius=0.008, tolerance=0.002)
+
+    bridged = weld(
+        first,
+        second,
+        radius=0.008,
+        tolerance=0.002,
+        max_gap=0.0011,
+    )
+    assert bridged.is_watertight
+    assert bridged.to_trimesh().body_count == 1
 
 
 def test_weld_trim_removes_stub_in_hollow_cavity() -> None:
@@ -49,8 +63,8 @@ def test_weld_trim_removes_stub_in_hollow_cavity() -> None:
         .rotate_y(np.pi / 2)
         .translate(0.045, 0.0, 0.0)
     )
-    without_trim = weld(shell, prot)
-    with_trim = weld(shell, prot, trim=cavity)
+    without_trim = weld(shell, prot, tolerance=0.0025)
+    with_trim = weld(shell, prot, tolerance=0.0025, trim=cavity)
     assert with_trim.to_trimesh().volume < without_trim.to_trimesh().volume
     assert with_trim.is_watertight
 
@@ -65,6 +79,16 @@ def test_weld_rejects_non_meshgeometry() -> None:
         weld(BoxGeometry((0.02, 0.02, 0.02)), np.zeros((3, 3)))  # pyright: ignore[reportArgumentType]
 
 
+def test_weld_validates_surface_controls() -> None:
+    first = BoxGeometry((0.02, 0.02, 0.02))
+    second = SphereGeometry(0.012).translate(0.01, 0.0, 0.0)
+
+    with pytest.raises(ValueError, match="profile"):
+        weld(first, second, profile="puffy")
+    with pytest.raises(ValueError, match="tolerance"):
+        weld(first, second, tolerance=0.0)
+
+
 def test_snap_to_closes_a_small_gap() -> None:
     body = SphereGeometry(0.05, width_segments=32, height_segments=16)
     spout = (
@@ -73,7 +97,7 @@ def test_snap_to_closes_a_small_gap() -> None:
         .translate(0.085, 0.0, 0.0)
     )
     moved = snap_to(body, spout, overlap=0.004, max_move=0.05)
-    fused = weld(body, moved)
+    fused = weld(body, moved, tolerance=0.002)
     assert fused.is_watertight
     assert fused.to_trimesh().body_count == 1
 
