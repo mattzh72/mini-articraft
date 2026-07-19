@@ -80,20 +80,25 @@ Curated regression cassettes belong in `tests/cassettes/` (git-ignored by
 default; force-add the ones worth keeping). Scratch cassettes belong under
 `tmp_path`.
 
-## Live tests in replay mode
+## Live tests: `--record` / `--replay`
 
-Tests using the `cassette_model` fixture run live only when asked:
+Tests using the `cassette_model` fixture are **live by default**. Named
+cassettes (`tests/cassettes/<name>.jsonl`; default name = test function,
+or e.g. `cassette_model("latest")`) are used only when you ask:
 
 ```bash
-# offline (default): replay tests/cassettes/<test name>.jsonl; skip if missing
+# default: always live (needs OPENAI_API_KEY)
 uv run pytest tests/test_live_generation.py
 
-# live: pay once, (re)record the cassette
-OPENAI_API_KEY=... uv run pytest tests/test_live_generation.py --record-cassettes
+# offline: replay the named cassette; exit if missing
+uv run pytest tests/test_live_generation.py --replay
+
+# live + (re)record the cassette (needs OPENAI_API_KEY)
+OPENAI_API_KEY=... uv run pytest tests/test_live_generation.py --record
 ```
 
-Record intentionally, commit the cassette (`git add -f`), and CI replays it
-for free. Cassette names default to the test function name.
+Commit a cassette (`git add -f`) and run CI with `--replay` for a hard
+offline gate. No `--replay` means no cassette — always the real model.
 
 ## Known platform flakes
 

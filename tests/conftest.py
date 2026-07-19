@@ -49,13 +49,23 @@ def replay_harness(tmp_path: Path) -> ReplayHarness:
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
-    parser.addoption(
-        "--record-cassettes",
+    group = parser.getgroup("cassettes")
+    group.addoption(
+        "--record",
         action="store_true",
         default=False,
         help=(
-            "run cassette-backed tests live and re-record their cassettes "
-            "(needs OPENAI_API_KEY); the default is offline replay"
+            "run cassette-backed tests live and (re)record named cassettes "
+            "(needs OPENAI_API_KEY)"
+        ),
+    )
+    group.addoption(
+        "--replay",
+        action="store_true",
+        default=False,
+        help=(
+            "replay named cassettes offline; exit if a cassette is missing "
+            "(without this flag, cassette-backed tests always run live)"
         ),
     )
 
@@ -65,26 +75,39 @@ CassetteModelOpener = Callable[[str | None], AbstractContextManager[ScenarioMode
 
 @pytest.fixture
 def cassette_model(request: pytest.FixtureRequest) -> CassetteModelOpener:
-    """Open a cassette-backed model for live/e2e tests.
+    """Open a named model for live/e2e tests.
 
-    Default: offline replay of ``tests/cassettes/<name>.jsonl`` (the test's
-    own name when none is given), skipping when no cassette exists. With
-    ``--record-cassettes``: run live against the real model and re-record
-    the cassette (needs ``OPENAI_API_KEY``).
+    Names default to the test function (``cassette_model()``), or pass an
+    explicit name such as ``cassette_model("latest")``.
+
+    - default (no flags): always live (real model)
+    - ``--record``: live + (re)write the cassette
+    - ``--replay``: offline cassette only; exit if missing
     """
-    record = request.config.getoption("--record-cassettes")
+    record = bool(request.config.getoption("--record"))
+    replay = bool(request.config.getoption("--replay"))
+    if record and replay:
+        pytest.exit("use only one of --record and --replay", returncode=2)
+
     library = ReplayHarness(CASSETTE_ROOT)
 
     @contextmanager
     def open_cassette(name: str | None = None) -> Iterator[ScenarioModel]:
         cassette_name = name or request.node.name
+        if replay:
+            if not library.has(cassette_name):
+                path = library.path(cassette_name)
+                pytest.exit(
+                    f"cassette {cassette_name!r} missing at {path}; record with --record",
+                    returncode=1,
+                )
+            yield library.replay(cassette_name)
+            return
         if record:
             with library.capture(cassette_name, _live_model()) as recording:
                 yield recording
             return
-        if not library.has(cassette_name):
-            pytest.skip(f"cassette {cassette_name!r} not recorded; run with --record-cassettes")
-        yield library.replay(cassette_name)
+        yield _live_model()
 
     return open_cassette
 
@@ -95,4 +118,4 @@ def _live_model() -> Model:
 
         return OpenAIModel()
     except Exception as exc:
-        pytest.skip(f"--record-cassettes needs OPENAI_API_KEY: {exc}")
+        pytest.exit(f"live model needs OPENAI_API_KEY: {exc}", returncode=1)
