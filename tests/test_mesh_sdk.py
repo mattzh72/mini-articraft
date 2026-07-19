@@ -265,6 +265,55 @@ def test_sweep_sections_change_profile_scale_rotation_and_offset() -> None:
     ) / 2 == pytest.approx(-0.002)
 
 
+def test_sweep_materializes_sections_between_sparse_path_points() -> None:
+    profile = [(-0.01, -0.006), (0.01, -0.006), (0.01, 0.006), (-0.01, 0.006)]
+    sweep = PipeGeometry(
+        profile,
+        [(0.0, 0.0, 0.0), (0.0, 0.0, 0.1)],
+        cap=True,
+        sections=(SweepSection(0.5, scale=2.0),),
+    )
+    middle_ring = sweep.vertices[len(profile) : 2 * len(profile)]
+
+    assert len(sweep.vertices) == 3 * len(profile)
+    assert max(point[0] for point in middle_ring) - min(point[0] for point in middle_ring) == (
+        pytest.approx(0.04)
+    )
+    assert sweep.is_watertight
+
+
+def test_sweep_sections_support_smooth_tension_control() -> None:
+    profile = [(-0.01, -0.006), (0.01, -0.006), (0.01, 0.006), (-0.01, 0.006)]
+    path = [
+        (0.0, 0.0, 0.0),
+        (0.0, 0.0, 0.0125),
+        (0.0, 0.0, 0.05),
+        (0.0, 0.0, 0.1),
+    ]
+    sections = (
+        SweepSection(0.0, scale=1.0),
+        SweepSection(0.5, scale=2.0),
+        SweepSection(1.0, scale=1.0),
+    )
+    linear = PipeGeometry(profile, path, cap=True, sections=sections)
+    smooth = PipeGeometry(
+        profile,
+        path,
+        cap=True,
+        sections=sections,
+        section_interpolation="catmull_rom",
+        section_tension=0.0,
+    )
+    ring_size = len(profile)
+    linear_ring = linear.vertices[ring_size : 2 * ring_size]
+    smooth_ring = smooth.vertices[ring_size : 2 * ring_size]
+    linear_width = max(point[0] for point in linear_ring) - min(point[0] for point in linear_ring)
+    smooth_width = max(point[0] for point in smooth_ring) - min(point[0] for point in smooth_ring)
+
+    assert smooth_width != pytest.approx(linear_width)
+    assert smooth.is_watertight
+
+
 def test_closed_sweep_uses_one_shared_seam_and_checks_section_match() -> None:
     path = [
         (0.05 * math.cos(angle), 0.05 * math.sin(angle), 0.006 * math.sin(2.0 * angle))

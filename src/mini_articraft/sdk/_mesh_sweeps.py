@@ -64,6 +64,8 @@ class SweepSection:
     scale: float | Sequence[float] = 1.0
     rotation: float = 0.0
     offset: Sequence[float] = (0.0, 0.0)
+    interpolation: str | None = None
+    tension: float | None = None
 
     def __post_init__(self) -> None:
         position = float(self.position)
@@ -86,12 +88,45 @@ class SweepSection:
         object.__setattr__(self, "rotation", rotation)
         object.__setattr__(self, "offset", _vec2(self.offset, name="sweep section offset"))
 
+        if self.interpolation is not None:
+            interpolation = str(self.interpolation).strip().lower().replace("-", "_")
+            if interpolation not in {"linear", "catmull_rom"}:
+                raise ValueError("sweep section interpolation must be 'linear' or 'catmull_rom'")
+            object.__setattr__(self, "interpolation", interpolation)
+        if self.tension is not None:
+            tension = float(self.tension)
+            if not math.isfinite(tension) or not 0.0 <= tension <= 1.0:
+                raise ValueError("sweep section tension must be finite and between 0 and 1")
+            object.__setattr__(self, "tension", tension)
+
         if self.profile is not None:
             object.__setattr__(
                 self,
                 "profile",
                 tuple(_profile_2d(self.profile, minimum=2)),
             )
+
+
+@dataclass(frozen=True)
+class _SectionProfile:
+    position: float
+    points: list[Vec2]
+    interpolation: str
+    tension: float
+
+
+def _section_interpolation(value: str) -> str:
+    interpolation = str(value).strip().lower().replace("-", "_")
+    if interpolation not in {"linear", "catmull_rom"}:
+        raise ValueError("section_interpolation must be 'linear' or 'catmull_rom'")
+    return interpolation
+
+
+def _section_tension(value: float) -> float:
+    tension = float(value)
+    if not math.isfinite(tension) or not 0.0 <= tension <= 1.0:
+        raise ValueError("section_tension must be finite and between 0 and 1")
+    return tension
 
 
 class SweepGeometry(MeshGeometry):
@@ -106,6 +141,8 @@ class SweepGeometry(MeshGeometry):
         up_hint: Vec3 = (0.0, 0.0, 1.0),
         frame_mode: str = "parallel_transport",
         sections: Sequence[SweepSection] = (),
+        section_interpolation: str = "linear",
+        section_tension: float = 0.0,
     ):
         sweep = PipeGeometry(
             profile,
@@ -116,6 +153,8 @@ class SweepGeometry(MeshGeometry):
             up_hint=up_hint,
             frame_mode=frame_mode,
             sections=sections,
+            section_interpolation=section_interpolation,
+            section_tension=section_tension,
         )
         super().__init__(sweep.vertices, sweep.faces)
 
@@ -191,6 +230,44 @@ def _path_fractions(path: Sequence[Vec3], *, closed: bool) -> tuple[list[float],
     if total <= _EPS:
         raise ValueError("sweep path length must be positive")
     return [length / total for length in lengths], total
+
+
+def _path_point_at_distance(
+    path: Sequence[Vec3],
+    distance: float,
+    *,
+    closed: bool,
+) -> Vec3:
+    segment_count = len(path) if closed else len(path) - 1
+    traveled = 0.0
+    for index in range(segment_count):
+        start, end = path[index], path[(index + 1) % len(path)]
+        length = _v_norm(_v_sub(end, start))
+        if distance <= traveled + length + _EPS or index == segment_count - 1:
+            amount = 0.0 if length <= _EPS else (distance - traveled) / length
+            return _v_lerp(start, end, max(0.0, min(1.0, amount)))
+        traveled += length
+    return path[0] if closed else path[-1]
+
+
+def _insert_path_fractions(
+    path: Sequence[Vec3],
+    targets: Iterable[float],
+    *,
+    closed: bool,
+) -> list[Vec3]:
+    fractions, total = _path_fractions(path, closed=closed)
+    values = list(fractions)
+    for target in targets:
+        fraction = float(target)
+        if closed and fraction >= 1.0 - _EPS:
+            continue
+        if not any(abs(existing - fraction) <= _EPS for existing in values):
+            values.append(fraction)
+    values.sort()
+    return [
+        _path_point_at_distance(path, fraction * total, closed=closed) for fraction in values
+    ]
 
 
 def _path_frames(
@@ -314,7 +391,9 @@ def _sweep_section_profiles(
     *,
     closed: bool,
     path_closed: bool,
-) -> list[tuple[float, list[Vec2]]]:
+    interpolation: str,
+    tension: float,
+) -> list[_SectionProfile]:
     values = list(sections)
     if any(not isinstance(section, SweepSection) for section in values):
         raise TypeError("sections must contain SweepSection values")
@@ -347,25 +426,137 @@ def _sweep_section_profiles(
             sampled = _align_profile(reference, sampled, closed=closed)
         aligned.append(sampled)
     profiles = [
-        (section.position, _transform_profile(profile, section))
+        _SectionProfile(
+            section.position,
+            _transform_profile(profile, section),
+            section.interpolation or interpolation,
+            tension if section.tension is None else section.tension,
+        )
         for section, profile in zip(values, aligned, strict=True)
     ]
     if path_closed and not has_final:
-        profiles[-1] = (1.0, list(profiles[0][1]))
-    if path_closed and _profile_distance(profiles[0][1], profiles[-1][1]) > 1e-12:
+        profiles[-1] = _SectionProfile(
+            1.0,
+            list(profiles[0].points),
+            profiles[0].interpolation,
+            profiles[0].tension,
+        )
+    if path_closed and _profile_distance(profiles[0].points, profiles[-1].points) > 1e-12:
         raise ValueError("a closed sweep path needs matching section profiles at positions 0 and 1")
     return profiles
 
 
-def _profile_at(profiles: Sequence[tuple[float, list[Vec2]]], position: float) -> list[Vec2]:
-    if position <= profiles[0][0]:
-        return list(profiles[0][1])
+def _profile_derivative(
+    previous: _SectionProfile,
+    following: _SectionProfile,
+    *,
+    previous_position: float,
+    following_position: float,
+    tension: float,
+) -> list[Vec2]:
+    span = following_position - previous_position
+    if span <= _EPS:
+        return [(0.0, 0.0) for _ in previous.points]
+    scale = (1.0 - tension) / span
+    return [
+        ((end[0] - start[0]) * scale, (end[1] - start[1]) * scale)
+        for start, end in zip(previous.points, following.points, strict=True)
+    ]
+
+
+def _smooth_profile_span(
+    profiles: Sequence[_SectionProfile],
+    start_index: int,
+    end_index: int,
+    amount: float,
+    *,
+    path_closed: bool,
+) -> list[Vec2]:
+    start, end = profiles[start_index], profiles[end_index]
+    if start_index > 0:
+        previous = profiles[start_index - 1]
+        previous_position = previous.position
+    elif path_closed:
+        previous = profiles[-2]
+        previous_position = previous.position - 1.0
+    else:
+        previous = start
+        previous_position = start.position - (end.position - start.position)
+
+    if end_index + 1 < len(profiles):
+        following = profiles[end_index + 1]
+        following_position = following.position
+    elif path_closed:
+        following = profiles[1]
+        following_position = following.position + 1.0
+    else:
+        following = end
+        following_position = end.position + (end.position - start.position)
+
+    start_derivative = _profile_derivative(
+        previous,
+        end,
+        previous_position=previous_position,
+        following_position=end.position,
+        tension=start.tension,
+    )
+    end_derivative = _profile_derivative(
+        start,
+        following,
+        previous_position=start.position,
+        following_position=following_position,
+        tension=start.tension,
+    )
+    amount2, amount3 = amount * amount, amount * amount * amount
+    h00 = 2.0 * amount3 - 3.0 * amount2 + 1.0
+    h10 = amount3 - 2.0 * amount2 + amount
+    h01 = -2.0 * amount3 + 3.0 * amount2
+    h11 = amount3 - amount2
+    span = end.position - start.position
+    return [
+        (
+            h00 * first[0]
+            + h10 * span * first_derivative[0]
+            + h01 * second[0]
+            + h11 * span * second_derivative[0],
+            h00 * first[1]
+            + h10 * span * first_derivative[1]
+            + h01 * second[1]
+            + h11 * span * second_derivative[1],
+        )
+        for first, second, first_derivative, second_derivative in zip(
+            start.points,
+            end.points,
+            start_derivative,
+            end_derivative,
+            strict=True,
+        )
+    ]
+
+
+def _profile_at(
+    profiles: Sequence[_SectionProfile],
+    position: float,
+    *,
+    path_closed: bool,
+) -> list[Vec2]:
+    if position <= profiles[0].position:
+        return list(profiles[0].points)
     for index in range(1, len(profiles)):
-        end_position, end_profile = profiles[index]
+        end_position, end_profile = profiles[index].position, profiles[index].points
         if position <= end_position + _EPS:
-            start_position, start_profile = profiles[index - 1]
+            start = profiles[index - 1]
+            start_position, start_profile = start.position, start.points
             span = end_position - start_position
             amount = 0.0 if span <= _EPS else (position - start_position) / span
+            if start.interpolation == "catmull_rom":
+                return _smooth_profile_span(
+                    profiles,
+                    index - 1,
+                    index,
+                    amount,
+                    path_closed=path_closed,
+                )
             return [
                 (
                     start[0] + (end[0] - start[0]) * amount,
@@ -373,7 +564,7 @@ def _profile_at(profiles: Sequence[tuple[float, list[Vec2]]], position: float) -
                 )
                 for start, end in zip(start_profile, end_profile, strict=True)
             ]
-    return list(profiles[-1][1])
+    return list(profiles[-1].points)
 
 
 class PipeGeometry(MeshGeometry):
@@ -390,18 +581,35 @@ class PipeGeometry(MeshGeometry):
         up_hint: Vec3 = (0.0, 0.0, 1.0),
         frame_mode: str = "parallel_transport",
         sections: Sequence[SweepSection] = (),
+        section_interpolation: str = "linear",
+        section_tension: float = 0.0,
     ):
         base_profile = (
             _ensure_ccw(_profile_2d(profile)) if closed else _profile_2d(profile, minimum=2)
         )
         path_values = _path_points(path)
         up_hint = _validated_up_hint(up_hint)
+        section_interpolation = _section_interpolation(section_interpolation)
+        section_tension = _section_tension(section_tension)
         if path_closed:
             if _v_norm(_v_sub(path_values[0], path_values[-1])) <= _EPS:
                 path_values.pop()
             if len(path_values) < 3:
                 raise ValueError("a closed sweep path requires at least three distinct points")
             cap = False
+        section_profiles = _sweep_section_profiles(
+            base_profile,
+            sections,
+            closed=closed,
+            path_closed=path_closed,
+            interpolation=section_interpolation,
+            tension=section_tension,
+        )
+        path_values = _insert_path_fractions(
+            path_values,
+            (section.position for section in section_profiles),
+            closed=path_closed,
+        )
         tangent_values = _tangents(path_values, closed=path_closed)
         normals, binormals = _path_frames(
             path_values,
@@ -411,17 +619,14 @@ class PipeGeometry(MeshGeometry):
             frame_mode=frame_mode,
         )
         fractions, _ = _path_fractions(path_values, closed=path_closed)
-        section_profiles = _sweep_section_profiles(
-            base_profile,
-            sections,
-            closed=closed,
-            path_closed=path_closed,
-        )
-
         rings: list[list[Vec3]] = []
         ring_profiles: list[list[Vec2]] = []
         for index, point in enumerate(path_values):
-            profile_points = _profile_at(section_profiles, fractions[index])
+            profile_points = _profile_at(
+                section_profiles,
+                fractions[index],
+                path_closed=path_closed,
+            )
             ring_profiles.append(profile_points)
             rings.append(
                 [
@@ -474,6 +679,8 @@ class ArcPipeGeometry(MeshGeometry):
         up_hint: Vec3 = (0.0, 0.0, 1.0),
         frame_mode: str = "parallel_transport",
         sections: Sequence[SweepSection] = (),
+        section_interpolation: str = "linear",
+        section_tension: float = 0.0,
     ):
         pipe = PipeGeometry(
             profile,
@@ -489,6 +696,8 @@ class ArcPipeGeometry(MeshGeometry):
             up_hint=up_hint,
             frame_mode=frame_mode,
             sections=sections,
+            section_interpolation=section_interpolation,
+            section_tension=section_tension,
         )
         super().__init__(pipe.vertices, pipe.faces)
 
@@ -560,6 +769,8 @@ class WirePolylineGeometry(MeshGeometry):
         up_hint: Vec3 = (0.0, 0.0, 1.0),
         frame_mode: str = "parallel_transport",
         sections: Sequence[SweepSection] = (),
+        section_interpolation: str = "linear",
+        section_tension: float = 0.0,
         min_segment_length: float = 1e-6,
     ):
         radius = float(radius)
@@ -604,6 +815,8 @@ class WirePolylineGeometry(MeshGeometry):
             up_hint=up_hint,
             frame_mode=frame_mode,
             sections=sections,
+            section_interpolation=section_interpolation,
+            section_tension=section_tension,
         )
         super().__init__(pipe.vertices, pipe.faces)
 
@@ -621,6 +834,8 @@ def wire_from_points(
     up_hint: Vec3 = (0.0, 0.0, 1.0),
     frame_mode: str = "parallel_transport",
     sections: Sequence[SweepSection] = (),
+    section_interpolation: str = "linear",
+    section_tension: float = 0.0,
     min_segment_length: float = 1e-6,
 ) -> MeshGeometry:
     return WirePolylineGeometry(
@@ -635,6 +850,8 @@ def wire_from_points(
         up_hint=up_hint,
         frame_mode=frame_mode,
         sections=sections,
+        section_interpolation=section_interpolation,
+        section_tension=section_tension,
         min_segment_length=min_segment_length,
     )
 
@@ -677,6 +894,8 @@ def tube_from_spline_points(
     up_hint: Vec3 = (0.0, 0.0, 1.0),
     frame_mode: str = "parallel_transport",
     sections: Sequence[SweepSection] = (),
+    section_interpolation: str = "linear",
+    section_tension: float = 0.0,
     min_segment_length: float = 1e-6,
 ) -> MeshGeometry:
     return wire_from_points(
@@ -695,6 +914,8 @@ def tube_from_spline_points(
         up_hint=up_hint,
         frame_mode=frame_mode,
         sections=sections,
+        section_interpolation=section_interpolation,
+        section_tension=section_tension,
         min_segment_length=min_segment_length,
     )
 
@@ -711,6 +932,8 @@ def sweep_profile_along_spline(
     up_hint: Vec3 = (0.0, 0.0, 1.0),
     frame_mode: str = "parallel_transport",
     sections: Sequence[SweepSection] = (),
+    section_interpolation: str = "linear",
+    section_tension: float = 0.0,
     min_segment_length: float = 1e-6,
 ) -> MeshGeometry:
     min_segment_length = float(min_segment_length)
@@ -737,6 +960,8 @@ def sweep_profile_along_spline(
         up_hint=up_hint,
         frame_mode=frame_mode,
         sections=sections,
+        section_interpolation=section_interpolation,
+        section_tension=section_tension,
     )
 
 

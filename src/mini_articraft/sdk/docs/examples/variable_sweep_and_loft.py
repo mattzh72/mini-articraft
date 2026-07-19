@@ -64,6 +64,8 @@ def build_object_model() -> ArticulatedObject:
             ),
             SweepSection(1.0, scale=0.72),
         ),
+        section_interpolation="catmull_rom",
+        section_tension=0.15,
     )
 
     model = ArticulatedObject("variable_sweep_and_loft")

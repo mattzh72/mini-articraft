@@ -52,6 +52,8 @@ SweepSection(
     scale: float | Sequence[float] = 1.0,
     rotation: float = 0.0,
     offset: Sequence[float] = (0.0, 0.0),
+    interpolation: str | None = None,
+    tension: float | None = None,
 )
 ```
 
@@ -68,11 +70,22 @@ Each field changes the local two dimensional profile at that position.
   for separate profile X and Y scale.
 - `rotation` rotates the profile in its local plane. Angles use radians.
 - `offset` moves the profile in its local X and Y directions.
+- `interpolation` can override the outgoing span with `"linear"` or
+  `"catmull_rom"`.
+- `tension` can override the outgoing span tension from zero through one. Zero
+  gives the fullest smooth curve. One eases into and out of the section without
+  using neighboring section slopes.
 
-The sweep applies scale first, then rotation, then offset. It linearly blends
-the resulting profile points between sections. Profiles may have different
-point counts. The sweep samples them to one shared count and aligns their point
-order before blending.
+The sweep applies scale first, then rotation, then offset. Profiles may have
+different point counts. The sweep samples them to one shared count and aligns
+their point order before blending. Every authored section position creates an
+actual path ring, even when it lies between two input path points.
+
+Sweep constructors also accept `section_interpolation` and `section_tension`.
+These values apply to spans whose starting `SweepSection` does not provide an
+override. Linear interpolation connects corresponding profile points directly.
+Catmull Rom interpolation uses the neighboring sections to make the profile
+change smoothly.
 
 Section positions must be unique. When position zero or one is omitted, the
 sweep inserts the unchanged base profile at that end. A closed path requires
@@ -120,6 +133,8 @@ SweepGeometry(
     up_hint: tuple[float, float, float] = (0.0, 0.0, 1.0),
     frame_mode: str = "parallel_transport",
     sections: Sequence[SweepSection] = (),
+    section_interpolation: str = "linear",
+    section_tension: float = 0.0,
 )
 ```
 
@@ -145,6 +160,8 @@ PipeGeometry(
     up_hint: tuple[float, float, float] = (0.0, 0.0, 1.0),
     frame_mode: str = "parallel_transport",
     sections: Sequence[SweepSection] = (),
+    section_interpolation: str = "linear",
+    section_tension: float = 0.0,
 )
 ```
 
@@ -199,6 +216,8 @@ ArcPipeGeometry(
     up_hint: tuple[float, float, float] = (0.0, 0.0, 1.0),
     frame_mode: str = "parallel_transport",
     sections: Sequence[SweepSection] = (),
+    section_interpolation: str = "linear",
+    section_tension: float = 0.0,
 )
 ```
 
@@ -293,6 +312,8 @@ WirePolylineGeometry(
     up_hint: tuple[float, float, float] = (0.0, 0.0, 1.0),
     frame_mode: str = "parallel_transport",
     sections: Sequence[SweepSection] = (),
+    section_interpolation: str = "linear",
+    section_tension: float = 0.0,
     min_segment_length: float = 1e-6,
 )
 
@@ -309,6 +330,8 @@ wire_from_points(
     up_hint: tuple[float, float, float] = (0.0, 0.0, 1.0),
     frame_mode: str = "parallel_transport",
     sections: Sequence[SweepSection] = (),
+    section_interpolation: str = "linear",
+    section_tension: float = 0.0,
     min_segment_length: float = 1e-6,
 ) -> MeshGeometry
 ```
@@ -363,6 +386,8 @@ tube_from_spline_points(
     up_hint: tuple[float, float, float] = (0.0, 0.0, 1.0),
     frame_mode: str = "parallel_transport",
     sections: Sequence[SweepSection] = (),
+    section_interpolation: str = "linear",
+    section_tension: float = 0.0,
     min_segment_length: float = 1e-6,
 ) -> MeshGeometry
 ```
@@ -407,6 +432,8 @@ sweep_profile_along_spline(
     up_hint: tuple[float, float, float] = (0.0, 0.0, 1.0),
     frame_mode: str = "parallel_transport",
     sections: Sequence[SweepSection] = (),
+    section_interpolation: str = "linear",
+    section_tension: float = 0.0,
     min_segment_length: float = 1e-6,
 ) -> MeshGeometry
 ```
