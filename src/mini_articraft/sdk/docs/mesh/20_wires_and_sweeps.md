@@ -6,8 +6,8 @@ arcs, and tube networks.
 All coordinates, radii, and tolerances use meters. All angles use radians.
 Path points are three dimensional values in the final mesh coordinate frame.
 
-This page documents `SweepGeometry`, `PipeGeometry`, `ArcPipeGeometry`,
-`WirePath`, `WirePolylineGeometry`, `wire_from_points`,
+This page documents `SweepSection`, `SweepGeometry`, `PipeGeometry`,
+`ArcPipeGeometry`, `WirePath`, `WirePolylineGeometry`, `wire_from_points`,
 `tube_from_spline_points`, `sweep_profile_along_spline`, and
 `tube_network_from_paths`.
 
@@ -15,6 +15,7 @@ This page documents `SweepGeometry`, `PipeGeometry`, `ArcPipeGeometry`,
 from mini_articraft.sdk import (
     ArcPipeGeometry,
     PipeGeometry,
+    SweepSection,
     SweepGeometry,
     WirePath,
     WirePolylineGeometry,
@@ -38,6 +39,74 @@ from mini_articraft.sdk import (
 - Use `tube_network_from_paths(...)` when several circular paths must be joined
   into one mesh.
 
+Use `SweepSection` with any single path sweep when the profile should change
+along the path. A section can change the profile shape, size, local rotation,
+or local offset.
+
+## SweepSection
+
+```python
+SweepSection(
+    position: float,
+    profile: Sequence[tuple[float, float]] | None = None,
+    scale: float | Sequence[float] = 1.0,
+    rotation: float = 0.0,
+    offset: Sequence[float] = (0.0, 0.0),
+)
+```
+
+`position` is the normalized distance along the complete path. Zero is the
+start and one is the end. The sweep measures distance along the path, so a
+section at `0.5` lies halfway along its length rather than at the middle path
+index.
+
+Each field changes the local two dimensional profile at that position.
+
+- `profile` replaces the base profile. When omitted, the section uses the base
+  profile passed to the sweep.
+- `scale` accepts one positive value for uniform scale or two positive values
+  for separate profile X and Y scale.
+- `rotation` rotates the profile in its local plane. Angles use radians.
+- `offset` moves the profile in its local X and Y directions.
+
+The sweep applies scale first, then rotation, then offset. It linearly blends
+the resulting profile points between sections. Profiles may have different
+point counts. The sweep samples them to one shared count and aligns their point
+order before blending.
+
+Section positions must be unique. When position zero or one is omitted, the
+sweep inserts the unchanged base profile at that end. A closed path requires
+the final profile to match the first profile. When no final section is given,
+the sweep uses the first result at the seam.
+
+```python
+blade = PipeGeometry(
+    rounded_rect_profile(0.012, 0.006, 0.001),
+    [(0.0, 0.0, 0.0), (0.04, 0.0, 0.02), (0.10, 0.0, 0.01)],
+    cap=True,
+    sections=(
+        SweepSection(0.0, scale=0.7),
+        SweepSection(0.45, scale=(1.4, 0.8), rotation=0.25),
+        SweepSection(1.0, scale=0.25, rotation=0.6),
+    ),
+)
+```
+
+## Path frames
+
+Single path sweeps accept `frame_mode="parallel_transport"` or
+`frame_mode="fixed_up"`.
+
+The default parallel transport mode carries the initial profile orientation
+along the path while limiting unwanted roll. On a closed path, the sweep
+spreads the remaining frame rotation around the complete loop and shares the
+first profile ring at the seam.
+
+Fixed up mode uses `up_hint` at every path point. This is useful when a flat
+profile should stay upright as a path turns. When the path tangent becomes
+parallel to the up hint, the sweep continues from the previous frame at that
+point.
+
 ## SweepGeometry
 
 ```python
@@ -47,11 +116,16 @@ SweepGeometry(
     *,
     cap: bool = False,
     closed: bool = True,
+    path_closed: bool = False,
+    up_hint: tuple[float, float, float] = (0.0, 0.0, 1.0),
+    frame_mode: str = "parallel_transport",
+    sections: Sequence[SweepSection] = (),
 )
 ```
 
-`SweepGeometry` is a short form of `PipeGeometry` for an open path with the
-default up hint. The path needs at least two distinct finite points.
+`SweepGeometry` is a short form of `PipeGeometry`. The path needs at least two
+distinct finite points. Its path closure, frame, and section behavior match
+`PipeGeometry`.
 
 `closed` describes the profile, not the path. With `closed=True`, the profile
 must contain at least three distinct points and have nonzero area. With
@@ -69,6 +143,8 @@ PipeGeometry(
     closed: bool = True,
     path_closed: bool = False,
     up_hint: tuple[float, float, float] = (0.0, 0.0, 1.0),
+    frame_mode: str = "parallel_transport",
+    sections: Sequence[SweepSection] = (),
 )
 ```
 
@@ -84,8 +160,9 @@ change the profile roll without changing the path.
 The path needs at least two distinct finite points. Consecutive duplicate path
 points are removed. The up hint must be nonzero.
 
-With `path_closed=True`, the helper appends the first point when needed, joins
-the last ring to the first ring, and disables caps. With an open path, `cap=True`
+With `path_closed=True`, the helper removes a repeated final path point when
+needed, joins the last ring to the shared first ring, and disables caps. A
+closed path needs at least three distinct points. With an open path, `cap=True`
 adds a cap at each end when the profile is closed.
 
 Pipe caps use the average of the profile ring as a fan center. Use a profile
@@ -120,6 +197,8 @@ ArcPipeGeometry(
     cap: bool = False,
     closed: bool = True,
     up_hint: tuple[float, float, float] = (0.0, 0.0, 1.0),
+    frame_mode: str = "parallel_transport",
+    sections: Sequence[SweepSection] = (),
 )
 ```
 
@@ -129,7 +208,7 @@ The angle follows the right hand rule around that normal.
 
 The start point must differ from the center. The radius direction must not be
 collinear with the normal. Arc segments are clamped to at least 2. Profile,
-cap, and up hint behavior match `PipeGeometry`.
+cap, frame, and section behavior match `PipeGeometry`.
 
 ```python
 elbow = ArcPipeGeometry(
@@ -212,6 +291,8 @@ WirePolylineGeometry(
     corner_radius: float = 0.0,
     corner_segments: int = 8,
     up_hint: tuple[float, float, float] = (0.0, 0.0, 1.0),
+    frame_mode: str = "parallel_transport",
+    sections: Sequence[SweepSection] = (),
     min_segment_length: float = 1e-6,
 )
 
@@ -226,6 +307,8 @@ wire_from_points(
     corner_radius: float = 0.0,
     corner_segments: int = 8,
     up_hint: tuple[float, float, float] = (0.0, 0.0, 1.0),
+    frame_mode: str = "parallel_transport",
+    sections: Sequence[SweepSection] = (),
     min_segment_length: float = 1e-6,
 ) -> MeshGeometry
 ```
@@ -248,6 +331,9 @@ is clamped to at least 2 when a fillet is built.
 With `closed_path=True`, the helper closes the path and ignores `cap_ends`.
 With an open path, `cap_ends=True` creates a watertight tube. The default
 `cap_ends=False` leaves both ends open.
+
+Sweep sections scale the circular profile by default. A two value scale can
+turn it into an ellipse. A section may also provide a different profile.
 
 ```python
 guard = wire_from_points(
@@ -275,6 +361,8 @@ tube_from_spline_points(
     radial_segments: int = 16,
     cap_ends: bool = True,
     up_hint: tuple[float, float, float] = (0.0, 0.0, 1.0),
+    frame_mode: str = "parallel_transport",
+    sections: Sequence[SweepSection] = (),
     min_segment_length: float = 1e-6,
 ) -> MeshGeometry
 ```
@@ -289,7 +377,7 @@ control points. A closed Bezier chain must already end where it starts.
 
 `closed_spline=True` closes the tube and disables end caps. With an open
 spline, `cap_ends=True` creates closed ends. Radius, radial segment, up hint,
-and minimum segment behavior match the polyline wire helper.
+frame, section, and minimum segment behavior match the polyline wire helper.
 
 ```python
 handle = tube_from_spline_points(
@@ -317,6 +405,8 @@ sweep_profile_along_spline(
     alpha: float = 0.5,
     cap_profile: bool = True,
     up_hint: tuple[float, float, float] = (0.0, 0.0, 1.0),
+    frame_mode: str = "parallel_transport",
+    sections: Sequence[SweepSection] = (),
     min_segment_length: float = 1e-6,
 ) -> MeshGeometry
 ```
@@ -330,8 +420,10 @@ centerline contains a segment shorter than `min_segment_length`. Lower the
 minimum only after checking that the control points do not contain accidental
 duplicates.
 
-The profile orientation follows the transported path frame. Use `up_hint` to
-control its initial roll.
+The profile orientation follows the selected path frame. Use `up_hint` to
+control its initial roll, or use fixed up mode to keep the profile aligned to
+the hint along the complete path. Sweep sections use normalized distance along
+the sampled spline.
 
 ```python
 from mini_articraft.sdk import rounded_rect_profile
@@ -397,11 +489,15 @@ frame = tube_network_from_paths(
 
 - A path with fewer than two distinct points raises `ValueError`.
 - A zero up hint or a zero arc normal raises `ValueError`.
+- An unknown frame mode raises `ValueError`.
 - An invalid corner mode raises `ValueError`.
 - A circular wire radius must be positive.
 - A custom profile must contain enough distinct points for its `closed` mode.
 - A network boolean requires closed input tubes, so keep `cap_ends=True` when
   you need a closed network solid.
+- Sweep section positions must be unique and between zero and one.
+- Sweep section scale values must be positive.
+- A closed path requires matching section results at positions zero and one.
 
 ## Related references
 

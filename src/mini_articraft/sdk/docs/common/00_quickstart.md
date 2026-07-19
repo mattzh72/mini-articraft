@@ -46,8 +46,10 @@ Read only the reference that applies to the next piece of geometry:
 - Mesh editing, primitives, lathes, lofts, and extrusions:
   `docs/sdk/mesh/00_mesh_geometry.md`.
 - Profiles and curve sampling: `docs/sdk/mesh/10_profiles.md`.
-- Wires, pipes, and sweeps: `docs/sdk/mesh/20_wires_and_sweeps.md`.
-- Section lofts and repair: `docs/sdk/mesh/30_section_lofts.md`.
+- Wires, pipes, and sweeps, including changing profiles and frame control:
+  `docs/sdk/mesh/20_wires_and_sweeps.md`.
+- Section lofts, smooth interpolation, closed paths, and repair:
+  `docs/sdk/mesh/30_section_lofts.md`.
 - Mesh booleans, openings, shell partitioning, and `weld`/`snap_to` (fuse a
   same-material protrusion into a body, snapping it to close a small gap first):
   `docs/sdk/mesh/40_booleans_and_shells.md`.
@@ -70,6 +72,8 @@ Read only the executable example closest to the current task:
 - Mixed build123d and mesh assembly: `docs/sdk/examples/mixed_articulated_assembly.py`.
 - Molding a handle/protrusion into a body (no mounting pads):
   `docs/sdk/examples/molded_mug.py`.
+- Variable profile sweep and smooth section loft:
+  `docs/sdk/examples/variable_sweep_and_loft.py`.
 
 Run `compile` after meaningful edits. Treat checks as design evidence. A failed check is not a
 reason to remove or simplify geometry that the prompt requires.

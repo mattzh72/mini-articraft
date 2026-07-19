@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import math
 from collections.abc import Iterable, Sequence
+from dataclasses import dataclass
+from typing import cast
 
 from mini_articraft.sdk._mesh_core import (
     _EPS,
@@ -20,6 +22,7 @@ from mini_articraft.sdk._mesh_core import (
     _v_normalize,
     _v_scale,
     _v_sub,
+    _vec2,
 )
 from mini_articraft.sdk._mesh_profiles import (
     sample_arc_3d,
@@ -52,6 +55,45 @@ def _validated_up_hint(value: Sequence[float]) -> Vec3:
     return hint
 
 
+@dataclass(frozen=True)
+class SweepSection:
+    """A profile control at one normalized position along a sweep path."""
+
+    position: float
+    profile: Sequence[Vec2] | None = None
+    scale: float | Sequence[float] = 1.0
+    rotation: float = 0.0
+    offset: Sequence[float] = (0.0, 0.0)
+
+    def __post_init__(self) -> None:
+        position = float(self.position)
+        if not math.isfinite(position) or not 0.0 <= position <= 1.0:
+            raise ValueError("sweep section position must be finite and between 0 and 1")
+        object.__setattr__(self, "position", position)
+
+        scale = (
+            (float(self.scale), float(self.scale))
+            if isinstance(self.scale, (int, float))
+            else _vec2(self.scale, name="sweep section scale")
+        )
+        if not all(math.isfinite(value) and value > 0.0 for value in scale):
+            raise ValueError("sweep section scale values must be finite and positive")
+        object.__setattr__(self, "scale", scale)
+
+        rotation = float(self.rotation)
+        if not math.isfinite(rotation):
+            raise ValueError("sweep section rotation must be finite")
+        object.__setattr__(self, "rotation", rotation)
+        object.__setattr__(self, "offset", _vec2(self.offset, name="sweep section offset"))
+
+        if self.profile is not None:
+            object.__setattr__(
+                self,
+                "profile",
+                tuple(_profile_2d(self.profile, minimum=2)),
+            )
+
+
 class SweepGeometry(MeshGeometry):
     def __init__(
         self,
@@ -60,15 +102,30 @@ class SweepGeometry(MeshGeometry):
         *,
         cap: bool = False,
         closed: bool = True,
+        path_closed: bool = False,
+        up_hint: Vec3 = (0.0, 0.0, 1.0),
+        frame_mode: str = "parallel_transport",
+        sections: Sequence[SweepSection] = (),
     ):
-        sweep = PipeGeometry(profile, path, cap=cap, closed=closed)
+        sweep = PipeGeometry(
+            profile,
+            path,
+            cap=cap,
+            closed=closed,
+            path_closed=path_closed,
+            up_hint=up_hint,
+            frame_mode=frame_mode,
+            sections=sections,
+        )
         super().__init__(sweep.vertices, sweep.faces)
 
 
-def _tangents(path: Sequence[Vec3]) -> list[Vec3]:
+def _tangents(path: Sequence[Vec3], *, closed: bool) -> list[Vec3]:
     result = []
     for index in range(len(path)):
-        if index == 0:
+        if closed:
+            direction = _v_sub(path[(index + 1) % len(path)], path[index - 1])
+        elif index == 0:
             direction = _v_sub(path[1], path[0])
         elif index == len(path) - 1:
             direction = _v_sub(path[-1], path[-2])
@@ -86,6 +143,239 @@ def _initial_frame(tangent: Vec3, up_hint: Vec3) -> tuple[Vec3, Vec3]:
     return normal, _v_normalize(_v_cross(tangent, normal))
 
 
+def _rotate_vector(value: Vec3, axis: Vec3, angle: float) -> Vec3:
+    cosine, sine = math.cos(angle), math.sin(angle)
+    return _v_add(
+        _v_add(_v_scale(value, cosine), _v_scale(_v_cross(axis, value), sine)),
+        _v_scale(axis, _v_dot(axis, value) * (1.0 - cosine)),
+    )
+
+
+def _transport_frame(
+    normal: Vec3,
+    binormal: Vec3,
+    previous_tangent: Vec3,
+    tangent: Vec3,
+) -> tuple[Vec3, Vec3]:
+    axis = _v_cross(previous_tangent, tangent)
+    sine = _v_norm(axis)
+    cosine = max(-1.0, min(1.0, _v_dot(previous_tangent, tangent)))
+    if sine > _EPS:
+        next_normal = _rotate_vector(
+            normal,
+            _v_scale(axis, 1.0 / sine),
+            math.atan2(sine, cosine),
+        )
+    elif cosine < 0.0:
+        next_normal = _rotate_vector(normal, binormal, math.pi)
+    else:
+        next_normal = normal
+    next_normal = _v_sub(next_normal, _v_scale(tangent, _v_dot(next_normal, tangent)))
+    if _v_norm(next_normal) <= _EPS:
+        next_normal = _v_cross(binormal, tangent)
+    next_normal = _v_normalize(next_normal)
+    return next_normal, _v_normalize(_v_cross(tangent, next_normal))
+
+
+def _signed_angle(start: Vec3, end: Vec3, axis: Vec3) -> float:
+    return math.atan2(_v_dot(axis, _v_cross(start, end)), _v_dot(start, end))
+
+
+def _path_fractions(path: Sequence[Vec3], *, closed: bool) -> tuple[list[float], float]:
+    lengths = [0.0]
+    for index in range(1, len(path)):
+        lengths.append(lengths[-1] + _v_norm(_v_sub(path[index], path[index - 1])))
+    total = lengths[-1]
+    if closed:
+        total += _v_norm(_v_sub(path[0], path[-1]))
+    if total <= _EPS:
+        raise ValueError("sweep path length must be positive")
+    return [length / total for length in lengths], total
+
+
+def _path_frames(
+    path: Sequence[Vec3],
+    tangents: Sequence[Vec3],
+    *,
+    closed: bool,
+    up_hint: Vec3,
+    frame_mode: str,
+) -> tuple[list[Vec3], list[Vec3]]:
+    if frame_mode not in {"parallel_transport", "fixed_up"}:
+        raise ValueError("frame_mode must be 'parallel_transport' or 'fixed_up'")
+    normal, binormal = _initial_frame(tangents[0], up_hint)
+    normals = [normal]
+    binormals = [binormal]
+    for index, tangent in enumerate(tangents[1:], start=1):
+        if frame_mode == "fixed_up" and _v_norm(_v_cross(up_hint, tangent)) > _EPS:
+            normal = _v_normalize(_v_cross(up_hint, tangent))
+            binormal = _v_normalize(_v_cross(tangent, normal))
+        else:
+            normal, binormal = _transport_frame(
+                normals[-1],
+                binormals[-1],
+                tangents[index - 1],
+                tangent,
+            )
+        normals.append(normal)
+        binormals.append(binormal)
+
+    if not closed or frame_mode == "fixed_up":
+        return normals, binormals
+
+    closing_normal, _ = _transport_frame(
+        normals[-1],
+        binormals[-1],
+        tangents[-1],
+        tangents[0],
+    )
+    correction = _signed_angle(closing_normal, normals[0], tangents[0])
+    fractions, _ = _path_fractions(path, closed=True)
+    for index in range(1, len(path)):
+        angle = correction * fractions[index]
+        normals[index] = _v_normalize(_rotate_vector(normals[index], tangents[index], angle))
+        binormals[index] = _v_normalize(_v_cross(tangents[index], normals[index]))
+    return normals, binormals
+
+
+def _resample_profile(points: Sequence[Vec2], count: int, *, closed: bool) -> list[Vec2]:
+    if len(points) == count:
+        return list(points)
+    edge_count = len(points) if closed else len(points) - 1
+    lengths = [0.0]
+    for index in range(edge_count):
+        start, end = points[index], points[(index + 1) % len(points)]
+        lengths.append(lengths[-1] + math.dist(start, end))
+    total = lengths[-1]
+    if total <= _EPS:
+        raise ValueError("sweep profile perimeter must be positive")
+    targets = (
+        [total * index / count for index in range(count)]
+        if closed
+        else [total * index / (count - 1) for index in range(count)]
+    )
+    result: list[Vec2] = []
+    edge = 0
+    for target in targets:
+        while edge + 1 < len(lengths) - 1 and lengths[edge + 1] < target:
+            edge += 1
+        span = lengths[edge + 1] - lengths[edge]
+        amount = 0.0 if span <= _EPS else (target - lengths[edge]) / span
+        start, end = points[edge], points[(edge + 1) % len(points)]
+        result.append(
+            (
+                start[0] + (end[0] - start[0]) * amount,
+                start[1] + (end[1] - start[1]) * amount,
+            )
+        )
+    return result
+
+
+def _profile_distance(a: Sequence[Vec2], b: Sequence[Vec2]) -> float:
+    return sum(
+        (left[0] - right[0]) ** 2 + (left[1] - right[1]) ** 2
+        for left, right in zip(a, b, strict=True)
+    )
+
+
+def _align_profile(
+    reference: Sequence[Vec2], candidate: Sequence[Vec2], *, closed: bool
+) -> list[Vec2]:
+    values = list(candidate)
+    if not closed:
+        return (
+            values
+            if _profile_distance(reference, values)
+            <= _profile_distance(reference, list(reversed(values)))
+            else list(reversed(values))
+        )
+    shift = min(
+        range(len(values)),
+        key=lambda index: _profile_distance(reference, values[index:] + values[:index]),
+    )
+    return values[shift:] + values[:shift]
+
+
+def _transform_profile(points: Sequence[Vec2], section: SweepSection) -> list[Vec2]:
+    scale_x, scale_y = cast(Vec2, section.scale)
+    cosine, sine = math.cos(section.rotation), math.sin(section.rotation)
+    return [
+        (
+            x * scale_x * cosine - y * scale_y * sine + section.offset[0],
+            x * scale_x * sine + y * scale_y * cosine + section.offset[1],
+        )
+        for x, y in points
+    ]
+
+
+def _sweep_section_profiles(
+    base_profile: Sequence[Vec2],
+    sections: Sequence[SweepSection],
+    *,
+    closed: bool,
+    path_closed: bool,
+) -> list[tuple[float, list[Vec2]]]:
+    values = list(sections)
+    if any(not isinstance(section, SweepSection) for section in values):
+        raise TypeError("sections must contain SweepSection values")
+    values.sort(key=lambda section: section.position)
+    if any(
+        abs(values[index].position - values[index - 1].position) <= _EPS
+        for index in range(1, len(values))
+    ):
+        raise ValueError("sweep section positions must be unique")
+    if not values or values[0].position > _EPS:
+        values.insert(0, SweepSection(0.0))
+    has_final = values[-1].position >= 1.0 - _EPS
+    if not has_final:
+        values.append(SweepSection(1.0))
+
+    raw_profiles = [
+        list(base_profile)
+        if section.profile is None
+        else (_ensure_ccw(list(section.profile)) if closed else list(section.profile))
+        for section in values
+    ]
+    count = max(len(base_profile), *(len(profile) for profile in raw_profiles))
+    aligned: list[list[Vec2]] = []
+    for index, profile in enumerate(raw_profiles):
+        sampled = _resample_profile(profile, count, closed=closed)
+        if aligned:
+            reference = (
+                aligned[0] if path_closed and values[index].position >= 1.0 - _EPS else aligned[-1]
+            )
+            sampled = _align_profile(reference, sampled, closed=closed)
+        aligned.append(sampled)
+    profiles = [
+        (section.position, _transform_profile(profile, section))
+        for section, profile in zip(values, aligned, strict=True)
+    ]
+    if path_closed and not has_final:
+        profiles[-1] = (1.0, list(profiles[0][1]))
+    if path_closed and _profile_distance(profiles[0][1], profiles[-1][1]) > 1e-12:
+        raise ValueError("a closed sweep path needs matching section profiles at positions 0 and 1")
+    return profiles
+
+
+def _profile_at(profiles: Sequence[tuple[float, list[Vec2]]], position: float) -> list[Vec2]:
+    if position <= profiles[0][0]:
+        return list(profiles[0][1])
+    for index in range(1, len(profiles)):
+        end_position, end_profile = profiles[index]
+        if position <= end_position + _EPS:
+            start_position, start_profile = profiles[index - 1]
+            span = end_position - start_position
+            amount = 0.0 if span <= _EPS else (position - start_position) / span
+            return [
+                (
+                    start[0] + (end[0] - start[0]) * amount,
+                    start[1] + (end[1] - start[1]) * amount,
+                )
+                for start, end in zip(start_profile, end_profile, strict=True)
+            ]
+    return list(profiles[-1][1])
+
+
 class PipeGeometry(MeshGeometry):
     """Sweep a profile along a path using a parallel-transport style frame."""
 
@@ -98,32 +388,41 @@ class PipeGeometry(MeshGeometry):
         closed: bool = True,
         path_closed: bool = False,
         up_hint: Vec3 = (0.0, 0.0, 1.0),
+        frame_mode: str = "parallel_transport",
+        sections: Sequence[SweepSection] = (),
     ):
-        profile_points = (
+        base_profile = (
             _ensure_ccw(_profile_2d(profile)) if closed else _profile_2d(profile, minimum=2)
         )
         path_values = _path_points(path)
         up_hint = _validated_up_hint(up_hint)
         if path_closed:
-            if _v_norm(_v_sub(path_values[0], path_values[-1])) > _EPS:
-                path_values.append(path_values[0])
+            if _v_norm(_v_sub(path_values[0], path_values[-1])) <= _EPS:
+                path_values.pop()
+            if len(path_values) < 3:
+                raise ValueError("a closed sweep path requires at least three distinct points")
             cap = False
-        tangent_values = _tangents(path_values)
-        normal, binormal = _initial_frame(tangent_values[0], up_hint)
-        normals = [normal]
-        binormals = [binormal]
-        for tangent in tangent_values[1:]:
-            projected = _v_sub(normals[-1], _v_scale(tangent, _v_dot(normals[-1], tangent)))
-            if _v_norm(projected) <= _EPS:
-                projected = _v_cross(binormals[-1], tangent)
-            normal = _v_normalize(projected)
-            normals.append(normal)
-            binormals.append(_v_normalize(_v_cross(tangent, normal)))
-        if path_closed:
-            normals[-1], binormals[-1] = normals[0], binormals[0]
+        tangent_values = _tangents(path_values, closed=path_closed)
+        normals, binormals = _path_frames(
+            path_values,
+            tangent_values,
+            closed=path_closed,
+            up_hint=up_hint,
+            frame_mode=frame_mode,
+        )
+        fractions, _ = _path_fractions(path_values, closed=path_closed)
+        section_profiles = _sweep_section_profiles(
+            base_profile,
+            sections,
+            closed=closed,
+            path_closed=path_closed,
+        )
 
         rings: list[list[Vec3]] = []
+        ring_profiles: list[list[Vec2]] = []
         for index, point in enumerate(path_values):
+            profile_points = _profile_at(section_profiles, fractions[index])
+            ring_profiles.append(profile_points)
             rings.append(
                 [
                     _v_add(
@@ -133,13 +432,14 @@ class PipeGeometry(MeshGeometry):
                     for x, y in profile_points
                 ]
             )
-        count = len(profile_points)
+        count = len(ring_profiles[0])
         vertices = [point for ring in rings for point in ring]
         faces: list[tuple[int, int, int]] = []
         segment_count = count if closed else count - 1
-        for ring_index in range(len(rings) - 1):
+        path_segment_count = len(rings) if path_closed else len(rings) - 1
+        for ring_index in range(path_segment_count):
             start = ring_index * count
-            following_start = start + count
+            following_start = ((ring_index + 1) % len(rings)) * count
             for index in range(segment_count):
                 following = (index + 1) % count
                 faces.extend(
@@ -149,10 +449,13 @@ class PipeGeometry(MeshGeometry):
                     )
                 )
         if cap and closed:
-            triangles = _triangulate_simple(profile_points)
+            start_triangles = _triangulate_simple(ring_profiles[0])
+            end_triangles = _triangulate_simple(ring_profiles[-1])
             end_offset = (len(rings) - 1) * count
-            faces.extend((c, b, a) for a, b, c in triangles)
-            faces.extend((end_offset + a, end_offset + b, end_offset + c) for a, b, c in triangles)
+            faces.extend((c, b, a) for a, b, c in start_triangles)
+            faces.extend(
+                (end_offset + a, end_offset + b, end_offset + c) for a, b, c in end_triangles
+            )
         super().__init__(vertices, faces)
 
 
@@ -169,6 +472,8 @@ class ArcPipeGeometry(MeshGeometry):
         cap: bool = False,
         closed: bool = True,
         up_hint: Vec3 = (0.0, 0.0, 1.0),
+        frame_mode: str = "parallel_transport",
+        sections: Sequence[SweepSection] = (),
     ):
         pipe = PipeGeometry(
             profile,
@@ -182,6 +487,8 @@ class ArcPipeGeometry(MeshGeometry):
             cap=cap,
             closed=closed,
             up_hint=up_hint,
+            frame_mode=frame_mode,
+            sections=sections,
         )
         super().__init__(pipe.vertices, pipe.faces)
 
@@ -251,6 +558,8 @@ class WirePolylineGeometry(MeshGeometry):
         corner_radius: float = 0.0,
         corner_segments: int = 8,
         up_hint: Vec3 = (0.0, 0.0, 1.0),
+        frame_mode: str = "parallel_transport",
+        sections: Sequence[SweepSection] = (),
         min_segment_length: float = 1e-6,
     ):
         radius = float(radius)
@@ -293,6 +602,8 @@ class WirePolylineGeometry(MeshGeometry):
             cap=cap_ends and not closed_path,
             path_closed=closed_path,
             up_hint=up_hint,
+            frame_mode=frame_mode,
+            sections=sections,
         )
         super().__init__(pipe.vertices, pipe.faces)
 
@@ -308,6 +619,8 @@ def wire_from_points(
     corner_radius: float = 0.0,
     corner_segments: int = 8,
     up_hint: Vec3 = (0.0, 0.0, 1.0),
+    frame_mode: str = "parallel_transport",
+    sections: Sequence[SweepSection] = (),
     min_segment_length: float = 1e-6,
 ) -> MeshGeometry:
     return WirePolylineGeometry(
@@ -320,6 +633,8 @@ def wire_from_points(
         corner_radius=corner_radius,
         corner_segments=corner_segments,
         up_hint=up_hint,
+        frame_mode=frame_mode,
+        sections=sections,
         min_segment_length=min_segment_length,
     )
 
@@ -360,6 +675,8 @@ def tube_from_spline_points(
     radial_segments: int = 16,
     cap_ends: bool = True,
     up_hint: Vec3 = (0.0, 0.0, 1.0),
+    frame_mode: str = "parallel_transport",
+    sections: Sequence[SweepSection] = (),
     min_segment_length: float = 1e-6,
 ) -> MeshGeometry:
     return wire_from_points(
@@ -376,6 +693,8 @@ def tube_from_spline_points(
         cap_ends=cap_ends,
         corner_mode="miter",
         up_hint=up_hint,
+        frame_mode=frame_mode,
+        sections=sections,
         min_segment_length=min_segment_length,
     )
 
@@ -390,6 +709,8 @@ def sweep_profile_along_spline(
     alpha: float = 0.5,
     cap_profile: bool = True,
     up_hint: Vec3 = (0.0, 0.0, 1.0),
+    frame_mode: str = "parallel_transport",
+    sections: Sequence[SweepSection] = (),
     min_segment_length: float = 1e-6,
 ) -> MeshGeometry:
     min_segment_length = float(min_segment_length)
@@ -414,6 +735,8 @@ def sweep_profile_along_spline(
         cap=cap_profile and not closed_spline,
         path_closed=closed_spline,
         up_hint=up_hint,
+        frame_mode=frame_mode,
+        sections=sections,
     )
 
 
@@ -499,6 +822,7 @@ __all__ = [
     "ArcPipeGeometry",
     "PipeGeometry",
     "SweepGeometry",
+    "SweepSection",
     "WirePolylineGeometry",
     "sweep_profile_along_spline",
     "tube_from_spline_points",

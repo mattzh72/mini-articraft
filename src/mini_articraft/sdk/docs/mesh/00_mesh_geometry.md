@@ -358,6 +358,9 @@ LoftGeometry(
     *,
     cap: bool = True,
     closed: bool = True,
+    interpolation: str = "linear",
+    samples_per_span: int = 1,
+    close_path: bool = False,
 )
 ```
 
@@ -366,14 +369,31 @@ different point counts, need path offsets, need symmetry, or need repair.
 
 At least two profiles are required. Every profile must have the same point
 count. With `closed=True`, each profile needs at least three distinct points
-and must enclose a nonzero planar area. The first and last profile centers must
-be different. The helper corrects reversed loop winding, but corresponding
-points should still describe the same feature around each profile.
+and must enclose a nonzero planar area. Adjacent profile centers must be
+different. The helper corrects reversed loop winding by comparing each profile
+with the previous one, but corresponding points should still describe the same
+feature around each profile.
 
 With `closed=False`, profiles are treated as open polylines with at least two
 points. Only adjacent points are connected. Caps are only added when both
 `cap` and `closed` are true. Use planar first and last profiles when you need
 reliable caps.
+
+`interpolation="linear"` connects the authored profiles directly. Set
+`interpolation="catmull_rom"` to fit a smooth path through corresponding
+profile points. `samples_per_span` controls how many rings the helper creates
+from one authored profile to the next. It must be at least one. Smooth
+interpolation needs a value greater than one to add a visible curve between
+authored profiles.
+
+Smooth interpolation passes through every authored profile. It can extend
+outside the straight span when profile size or position changes sharply. Add
+another authored profile or use linear interpolation when the surface must
+stay within a strict boundary.
+
+With `close_path=True`, the helper connects the final profile back to the first
+profile and does not add caps. A closed path needs at least three profiles.
+This supports ring forms whose profile changes around a complete loop.
 
 ```python
 loft = LoftGeometry(
@@ -381,6 +401,8 @@ loft = LoftGeometry(
         [(-0.05, -0.04, 0.0), (0.05, -0.04, 0.0), (0.05, 0.04, 0.0), (-0.05, 0.04, 0.0)],
         [(-0.03, -0.02, 0.12), (0.03, -0.02, 0.12), (0.03, 0.02, 0.12), (-0.03, 0.02, 0.12)],
     ],
+    interpolation="catmull_rom",
+    samples_per_span=6,
 )
 ```
 

@@ -664,6 +664,83 @@ class LatheGeometry(MeshGeometry):
         super().__init__(converted.vertices, converted.faces)
 
 
+def _interpolate_loft_point(
+    p0: Vec3,
+    p1: Vec3,
+    p2: Vec3,
+    p3: Vec3,
+    amount: float,
+    *,
+    interpolation: str,
+) -> Vec3:
+    if interpolation == "linear":
+        return _v_lerp(p1, p2, amount)
+    amount2, amount3 = amount * amount, amount * amount * amount
+    return cast(
+        Vec3,
+        tuple(
+            0.5
+            * (
+                2.0 * p1[axis]
+                + (-p0[axis] + p2[axis]) * amount
+                + (2.0 * p0[axis] - 5.0 * p1[axis] + 4.0 * p2[axis] - p3[axis]) * amount2
+                + (-p0[axis] + 3.0 * p1[axis] - 3.0 * p2[axis] + p3[axis]) * amount3
+            )
+            for axis in range(3)
+        ),
+    )
+
+
+def _interpolate_loft_rings(
+    rings: Sequence[Sequence[Vec3]],
+    *,
+    interpolation: str,
+    samples_per_span: int,
+    close_path: bool,
+) -> list[list[Vec3]]:
+    if interpolation not in {"linear", "catmull_rom"}:
+        raise ValueError("loft interpolation must be 'linear' or 'catmull_rom'")
+    samples = int(samples_per_span)
+    if samples < 1:
+        raise ValueError("loft samples_per_span must be at least 1")
+    span_count = len(rings) if close_path else len(rings) - 1
+    result: list[list[Vec3]] = []
+    for span in range(span_count):
+        p1 = rings[span]
+        p2 = rings[(span + 1) % len(rings)]
+        if close_path:
+            p0 = rings[span - 1]
+            p3 = rings[(span + 2) % len(rings)]
+        else:
+            p0 = (
+                rings[span - 1]
+                if span > 0
+                else [
+                    _v_sub(_v_scale(point, 2.0), following)
+                    for point, following in zip(p1, p2, strict=True)
+                ]
+            )
+            p3 = (
+                rings[span + 2]
+                if span + 2 < len(rings)
+                else [
+                    _v_sub(_v_scale(point, 2.0), previous)
+                    for point, previous in zip(p2, p1, strict=True)
+                ]
+            )
+        for sample in range(samples):
+            amount = sample / samples
+            result.append(
+                [
+                    _interpolate_loft_point(a, b, c, d, amount, interpolation=interpolation)
+                    for a, b, c, d in zip(p0, p1, p2, p3, strict=True)
+                ]
+            )
+    if not close_path:
+        result.append(list(rings[-1]))
+    return result
+
+
 class LoftGeometry(MeshGeometry):
     def __init__(
         self,
@@ -671,10 +748,15 @@ class LoftGeometry(MeshGeometry):
         *,
         cap: bool = True,
         closed: bool = True,
+        interpolation: str = "linear",
+        samples_per_span: int = 1,
+        close_path: bool = False,
     ):
         rings = [_profile_3d(profile, minimum=3 if closed else 2) for profile in profiles]
         if len(rings) < 2:
             raise ValueError("loft requires at least two profiles")
+        if close_path and len(rings) < 3:
+            raise ValueError("a closed loft path requires at least three profiles")
         count = len(rings[0])
         if any(len(ring) != count for ring in rings):
             raise ValueError("loft profiles must have the same point count")
@@ -699,24 +781,40 @@ class LoftGeometry(MeshGeometry):
                 raise ValueError("loft profiles must enclose a non-zero planar area")
             return _v_normalize(normal)
 
+        centers = [ring_center(ring) for ring in rings]
+        center_span_count = len(rings) if close_path else len(rings) - 1
+        if any(
+            _v_norm(_v_sub(centers[(index + 1) % len(rings)], centers[index])) <= _EPS
+            for index in range(center_span_count)
+        ):
+            raise ValueError("adjacent loft profiles must have distinct centers")
+
         if closed:
-            path_direction = _v_sub(ring_center(rings[-1]), ring_center(rings[0]))
-            if _v_norm(path_direction) <= _EPS:
-                raise ValueError("first and last loft profiles must have distinct centers")
             reference_normal = ring_normal(rings[0])
-            if _v_dot(reference_normal, path_direction) < 0.0:
+            if not close_path and _v_dot(reference_normal, _v_sub(centers[-1], centers[0])) < 0.0:
                 rings = [list(reversed(ring)) for ring in rings]
                 reference_normal = _v_scale(reference_normal, -1.0)
             for index in range(1, len(rings)):
-                if _v_dot(ring_normal(rings[index]), reference_normal) < 0.0:
+                current_normal = ring_normal(rings[index])
+                if _v_dot(current_normal, reference_normal) < 0.0:
                     rings[index] = list(reversed(rings[index]))
+                    current_normal = _v_scale(current_normal, -1.0)
+                reference_normal = current_normal
+
+        rings = _interpolate_loft_rings(
+            rings,
+            interpolation=interpolation,
+            samples_per_span=samples_per_span,
+            close_path=close_path,
+        )
 
         vertices = [point for ring in rings for point in ring]
         faces: list[Face] = []
         segment_count = count if closed else count - 1
-        for ring_index in range(len(rings) - 1):
+        path_segment_count = len(rings) if close_path else len(rings) - 1
+        for ring_index in range(path_segment_count):
             start = ring_index * count
-            following_start = start + count
+            following_start = ((ring_index + 1) % len(rings)) * count
             for point_index in range(segment_count):
                 following = (point_index + 1) % count
                 faces.extend(
@@ -729,7 +827,7 @@ class LoftGeometry(MeshGeometry):
                         ),
                     )
                 )
-        if cap and closed:
+        if cap and closed and not close_path:
             for ring_index, neighbor_index, offset in (
                 (0, 1, 0),
                 (len(rings) - 1, len(rings) - 2, (len(rings) - 1) * count),

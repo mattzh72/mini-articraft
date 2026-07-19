@@ -13,6 +13,7 @@ from mini_articraft.sdk.mesh import LoftGeometry, MeshGeometry, boolean_union
 
 Vec3 = tuple[float, float, float]
 RepairMode = Literal["off", "mesh"]
+LoftInterpolation = Literal["linear", "catmull_rom"]
 
 
 def _as_vec3(value: Sequence[float], *, name: str) -> Vec3:
@@ -55,6 +56,10 @@ class SectionLoftSpec:
     cap: bool = True
     symmetry: Literal["mirror_yz"] | None = None
     repair: RepairMode = "mesh"
+    interpolation: LoftInterpolation = "linear"
+    samples_per_span: int = 1
+    close_path: bool = False
+    align_sections: bool = True
 
     def __post_init__(self) -> None:
         sections = tuple(
@@ -73,6 +78,14 @@ class SectionLoftSpec:
             raise ValidationError("symmetry must be 'mirror_yz' or None")
         if self.repair not in {"off", "mesh"}:
             raise ValidationError("repair must be 'off' or 'mesh'")
+        if self.interpolation not in {"linear", "catmull_rom"}:
+            raise ValidationError("interpolation must be 'linear' or 'catmull_rom'")
+        samples = int(self.samples_per_span)
+        if samples < 1:
+            raise ValidationError("samples_per_span must be at least 1")
+        object.__setattr__(self, "samples_per_span", samples)
+        if self.close_path and len(sections) < 3:
+            raise ValidationError("close_path requires at least three sections")
 
 
 def _coerce_spec(
@@ -165,10 +178,11 @@ def _sample_polyline(points: Sequence[Vec3], amount: float) -> Vec3:
 
 def _path_adjusted_sections(spec: SectionLoftSpec, count: int) -> list[list[Vec3]]:
     sections = [_resample_loop(section.points, count) for section in spec.sections]
-    aligned_sections = [sections[0]]
-    for section in sections[1:]:
-        aligned_sections.append(_align_loop(aligned_sections[-1], section))
-    sections = aligned_sections
+    if spec.align_sections:
+        aligned_sections = [sections[0]]
+        for section in sections[1:]:
+            aligned_sections.append(_align_loop(aligned_sections[-1], section))
+        sections = aligned_sections
     path = spec.path
     if path is None:
         return sections
@@ -214,7 +228,14 @@ def section_loft(
         value = replace(value, **overrides)
     count = max(len(section.points) for section in value.sections)
     profiles = _path_adjusted_sections(value, count)
-    geometry = LoftGeometry(profiles, cap=value.cap, closed=True)
+    geometry = LoftGeometry(
+        profiles,
+        cap=value.cap,
+        closed=True,
+        interpolation=value.interpolation,
+        samples_per_span=value.samples_per_span,
+        close_path=value.close_path,
+    )
     if value.symmetry == "mirror_yz":
         mirrored = geometry.copy().scale(-1.0, 1.0, 1.0)
         if geometry.is_watertight:

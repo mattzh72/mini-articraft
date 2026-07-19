@@ -22,6 +22,7 @@ from mini_articraft.sdk.mesh import (
     PipeGeometry,
     SphereGeometry,
     SweepGeometry,
+    SweepSection,
     TorusGeometry,
     WirePath,
     WirePolylineGeometry,
@@ -226,6 +227,81 @@ def test_sweep_orients_profiles_and_caps_concave_profiles() -> None:
     assert concave.to_trimesh().volume == pytest.approx(10.0)
 
 
+def test_sweep_sections_change_profile_scale_rotation_and_offset() -> None:
+    base = [(-0.01, -0.006), (0.01, -0.006), (0.01, 0.006), (-0.01, 0.006)]
+    middle = rounded_rect_profile(0.03, 0.01, 0.003, corner_segments=2)
+    sweep = PipeGeometry(
+        base,
+        [(0.0, 0.0, 0.0), (0.0, 0.0, 0.05), (0.0, 0.0, 0.10)],
+        cap=True,
+        sections=(
+            SweepSection(0.0, scale=0.5),
+            SweepSection(
+                0.5,
+                profile=tuple(middle),
+                scale=(1.2, 0.8),
+                rotation=math.pi / 4,
+                offset=(0.004, -0.002),
+            ),
+            SweepSection(1.0, scale=1.5),
+        ),
+    )
+
+    ring_size = len(middle)
+    first = sweep.vertices[:ring_size]
+    middle_ring = sweep.vertices[ring_size : ring_size * 2]
+    last = sweep.vertices[ring_size * 2 : ring_size * 3]
+
+    assert sweep.is_watertight
+    assert max(point[0] for point in last) - min(point[0] for point in last) == pytest.approx(0.03)
+    assert max(point[0] for point in first) - min(point[0] for point in first) == pytest.approx(
+        0.01
+    )
+    assert (
+        max(point[0] for point in middle_ring) + min(point[0] for point in middle_ring)
+    ) / 2 == pytest.approx(0.004)
+    assert (
+        max(point[1] for point in middle_ring) + min(point[1] for point in middle_ring)
+    ) / 2 == pytest.approx(-0.002)
+
+
+def test_closed_sweep_uses_one_shared_seam_and_checks_section_match() -> None:
+    path = [
+        (0.05 * math.cos(angle), 0.05 * math.sin(angle), 0.006 * math.sin(2.0 * angle))
+        for angle in (2.0 * math.pi * index / 16 for index in range(16))
+    ]
+    profile = rounded_rect_profile(0.006, 0.004, 0.001, corner_segments=2)
+    sweep = PipeGeometry(profile, path, path_closed=True)
+
+    assert len(sweep.vertices) == len(path) * len(profile)
+    assert sweep.is_watertight
+    assert sweep.to_trimesh().body_count == 1
+
+    with pytest.raises(ValueError, match="matching section profiles"):
+        PipeGeometry(
+            profile,
+            path,
+            path_closed=True,
+            sections=(SweepSection(0.0), SweepSection(1.0, scale=1.2)),
+        )
+
+
+def test_sweep_fixed_up_frame_keeps_profile_vertical() -> None:
+    profile = [(-0.004, -0.002), (0.004, -0.002), (0.004, 0.002), (-0.004, 0.002)]
+    sweep = PipeGeometry(
+        profile,
+        [(0.0, 0.0, 0.0), (0.05, 0.02, 0.0), (0.10, 0.0, 0.0)],
+        frame_mode="fixed_up",
+        up_hint=(0.0, 0.0, 1.0),
+    )
+    ring_size = len(profile)
+    for index in range(3):
+        ring = sweep.vertices[index * ring_size : (index + 1) * ring_size]
+        assert max(point[2] for point in ring) - min(point[2] for point in ring) == pytest.approx(
+            0.004
+        )
+
+
 def test_tube_network_unions_crossing_paths() -> None:
     network = tube_network_from_paths(
         [
@@ -350,6 +426,63 @@ def test_section_loft_supports_path_symmetry_and_repair() -> None:
     assert repaired.is_watertight
     assert len(repaired.vertices) < len(dirty.vertices)
     assert repair_loft(dirty, repair="off").faces == dirty.faces
+
+
+def test_loft_interpolates_smoothly_between_authored_sections() -> None:
+    profiles = [
+        [(-0.04, -0.03, 0.0), (0.04, -0.03, 0.0), (0.04, 0.03, 0.0), (-0.04, 0.03, 0.0)],
+        [(-0.08, -0.02, 0.1), (0.08, -0.02, 0.1), (0.08, 0.02, 0.1), (-0.08, 0.02, 0.1)],
+        [(-0.03, -0.04, 0.2), (0.03, -0.04, 0.2), (0.03, 0.04, 0.2), (-0.03, 0.04, 0.2)],
+    ]
+    linear = LoftGeometry(profiles, interpolation="linear", samples_per_span=4)
+    smooth = LoftGeometry(profiles, interpolation="catmull_rom", samples_per_span=4)
+
+    assert linear.is_watertight and smooth.is_watertight
+    assert len(smooth.vertices) == 9 * 4
+    assert smooth.vertices[4 * 4] == profiles[1][0]
+    assert smooth.vertices[2 * 4] != pytest.approx(linear.vertices[2 * 4])
+
+
+def test_loft_can_close_around_a_curved_section_path() -> None:
+    profiles = []
+    major_radius, minor_radius = 0.06, 0.01
+    for theta in (2.0 * math.pi * index / 8 for index in range(8)):
+        radial = (math.cos(theta), math.sin(theta), 0.0)
+        center = (major_radius * radial[0], major_radius * radial[1], 0.0)
+        profiles.append(
+            [
+                (
+                    center[0] + minor_radius * math.cos(phi) * radial[0],
+                    center[1] + minor_radius * math.cos(phi) * radial[1],
+                    minor_radius * math.sin(phi),
+                )
+                for phi in (2.0 * math.pi * sample / 12 for sample in range(12))
+            ]
+        )
+    loft = LoftGeometry(
+        profiles,
+        close_path=True,
+        interpolation="catmull_rom",
+        samples_per_span=2,
+    )
+
+    assert len(loft.vertices) == 8 * 2 * 12
+    assert loft.is_watertight
+    assert loft.to_trimesh().body_count == 1
+
+
+def test_section_loft_can_preserve_authored_point_correspondence() -> None:
+    lower = LoftSection(((-1.0, -1.0, 0.0), (1.0, -1.0, 0.0), (1.0, 1.0, 0.0), (-1.0, 1.0, 0.0)))
+    shifted_upper = LoftSection(
+        ((1.0, -1.0, 1.0), (1.0, 1.0, 1.0), (-1.0, 1.0, 1.0), (-1.0, -1.0, 1.0))
+    )
+    aligned = section_loft(SectionLoftSpec((lower, shifted_upper)))
+    preserved = section_loft(
+        SectionLoftSpec((lower, shifted_upper), align_sections=False, repair="off")
+    )
+
+    assert aligned.vertices[4] == (-1.0, -1.0, 1.0)
+    assert preserved.vertices[4] == (1.0, -1.0, 1.0)
 
 
 def test_section_loft_aligns_cyclic_sections_and_preserves_open_boundaries() -> None:
