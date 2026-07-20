@@ -1,6 +1,6 @@
 """Manage generation tapes: list, show, record, replay, erase.
 
-The tape library lives in tests/cassettes by default. Capturing costs a
+The tape library lives in tests/tapes by default. Recording costs a
 real generation (OPENAI_API_KEY); replaying is free. Examples:
 
     uv run python scripts/tape.py list
@@ -24,15 +24,15 @@ import typer
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tests"))
 
 import harness
-from harness import CASSETTE_ROOT, ReplayHarness, WarmEnvironment
+from harness import TAPE_ROOT, ReplayHarness, WarmEnvironment
 
 app = typer.Typer(help=__doc__, no_args_is_help=True)
 
-Root = Annotated[Path, typer.Option("--root", "-r", help="Cassette library root.")]
+Root = Annotated[Path, typer.Option("--root", "-r", help="Tape library root.")]
 
 
 @app.command()
-def list(root: Root = CASSETTE_ROOT) -> None:
+def list(root: Root = TAPE_ROOT) -> None:
     """List recordings in the library."""
     library = ReplayHarness(root)
     names = library.names()
@@ -47,7 +47,7 @@ def list(root: Root = CASSETTE_ROOT) -> None:
 
 
 @app.command()
-def show(name: str, root: Root = CASSETTE_ROOT) -> None:
+def show(name: str, root: Root = TAPE_ROOT) -> None:
     """Show one recording's exchanges."""
     library = ReplayHarness(root)
     meta = library.meta(name)
@@ -70,7 +70,7 @@ def show(name: str, root: Root = CASSETTE_ROOT) -> None:
 def record(
     name: str,
     prompt: str,
-    root: Root = CASSETTE_ROOT,
+    root: Root = TAPE_ROOT,
     max_turns: int = 100,
 ) -> None:
     """Run a live generation and record it as a tape (pays for model calls)."""
@@ -82,7 +82,7 @@ def record(
     settings = get_settings()
     library = ReplayHarness(root)
     meta = {"prompt": prompt, "model": settings.openai_model}
-    with library.capture(name, OpenAIModel(settings), meta=meta) as model:
+    with library.record(name, OpenAIModel(settings), meta=meta) as model:
         result = harness.run(
             Agent(model, LocalEnvironment(), max_turns=max_turns, on_event=_print_event).run(prompt)
         )
@@ -93,7 +93,7 @@ def record(
 @app.command()
 def replay(
     name: str,
-    root: Root = CASSETTE_ROOT,
+    root: Root = TAPE_ROOT,
     prompt: Annotated[str | None, typer.Option("--prompt", "-p")] = None,
     output_dir: Annotated[Path, typer.Option("--output-dir", "-o")] = Path("runs"),
 ) -> None:
@@ -118,7 +118,7 @@ def replay(
 
 
 @app.command()
-def erase(name: str, root: Root = CASSETTE_ROOT) -> None:
+def erase(name: str, root: Root = TAPE_ROOT) -> None:
     """Remove one recording."""
     library = ReplayHarness(root)
     if library.erase(name):

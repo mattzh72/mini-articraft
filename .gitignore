@@ -233,6 +233,6 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-# Recorded generation cassettes stay local unless deliberately curated.
-tests/cassettes/*
-!tests/cassettes/.gitkeep
+# Recorded generation tapes stay local unless deliberately curated.
+tests/tapes/*
+!tests/tapes/.gitkeep

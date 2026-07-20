@@ -291,7 +291,7 @@ def test_script_exhaustion_surfaces_as_a_model_failure(tmp_path: Path) -> None:
     assert "ScriptExhaustedError" in artifacts.record.error
 
 
-def test_hand_authored_cassette_drives_a_real_run(
+def test_hand_authored_tape_drives_a_real_run(
     tmp_path: Path, replay_harness: ReplayHarness
 ) -> None:
     replay_harness.set(

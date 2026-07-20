@@ -1,12 +1,12 @@
-"""Live/e2e generation tests backed by the cassette lane.
+"""Live/e2e generation tests backed by the tape lane.
 
-Default: always live (real model). Cassettes are opt-in via flags:
+Default: always live (real model). Tapes are opt-in via flags:
 
     uv run pytest tests/test_live_generation.py --replay
     OPENAI_API_KEY=... uv run pytest tests/test_live_generation.py --record
 
-Cassette names default to the test function name
-(``cassette_model("latest")`` for an explicit name).
+Tape names default to the test function name
+(``tape_model("latest")`` for an explicit name).
 """
 
 from __future__ import annotations
@@ -16,8 +16,8 @@ from pathlib import Path
 from harness import WarmEnvironment, run_scenario
 
 
-def test_box_generation(cassette_model, tmp_path: Path) -> None:
-    with cassette_model() as model:
+def test_box_generation(tape_model, tmp_path: Path) -> None:
+    with tape_model() as model:
         artifacts = run_scenario(
             "a simple box",
             model=model,

@@ -6,7 +6,7 @@ from contextlib import AbstractContextManager, contextmanager
 from pathlib import Path
 
 import pytest
-from harness import CASSETTE_ROOT, ReplayHarness
+from harness import TAPE_ROOT, ReplayHarness
 
 from mini_articraft import Model
 
@@ -44,71 +44,69 @@ def _use_session_loop(_event_loop):
 
 @pytest.fixture
 def replay_harness(tmp_path: Path) -> ReplayHarness:
-    """A scratch cassette library under the test's tmp dir."""
-    return ReplayHarness(tmp_path / "cassettes")
+    """A scratch tape library under the test's tmp dir."""
+    return ReplayHarness(tmp_path / "tapes")
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
-    group = parser.getgroup("cassettes")
+    group = parser.getgroup("tapes")
     group.addoption(
         "--record",
         action="store_true",
         default=False,
-        help=(
-            "run cassette-backed tests live and (re)record named cassettes (needs OPENAI_API_KEY)"
-        ),
+        help=("run tape-backed tests live and (re)record named tapes (needs OPENAI_API_KEY)"),
     )
     group.addoption(
         "--replay",
         action="store_true",
         default=False,
         help=(
-            "replay named cassettes offline; exit if a cassette is missing "
-            "(without this flag, cassette-backed tests always run live)"
+            "replay named tapes offline; exit if a tape is missing "
+            "(without this flag, tape-backed tests always run live)"
         ),
     )
 
 
-CassetteModelOpener = Callable[[str | None], AbstractContextManager[Model]]
+TapeModelOpener = Callable[[str | None], AbstractContextManager[Model]]
 
 
 @pytest.fixture
-def cassette_model(request: pytest.FixtureRequest) -> CassetteModelOpener:
+def tape_model(request: pytest.FixtureRequest) -> TapeModelOpener:
     """Open a named model for live/e2e tests.
 
-    Names default to the test function (``cassette_model()``), or pass an
-    explicit name such as ``cassette_model("latest")``.
+    Names default to the test function (``tape_model()``), or pass an
+    explicit name such as ``tape_model("latest")``.
 
     - default (no flags): always live (real model)
-    - ``--record``: live + (re)write the cassette
-    - ``--replay``: offline cassette only; exit if missing
+    - ``--record``: live + (re)write the tape
+    - ``--replay``: offline tape only; exit if missing
     """
     record = bool(request.config.getoption("--record"))
     replay = bool(request.config.getoption("--replay"))
     if record and replay:
         pytest.exit("use only one of --record and --replay", returncode=2)
 
-    library = ReplayHarness(CASSETTE_ROOT)
+    library = ReplayHarness(TAPE_ROOT)
 
     @contextmanager
-    def open_cassette(name: str | None = None) -> Iterator[Model]:
-        cassette_name = name or request.node.name
+    def open_tape(name: str | None = None) -> Iterator[Model]:
+        tape_name = name or request.node.name
         if replay:
-            if not library.has(cassette_name):
-                path = library.path(cassette_name)
+            if not library.has(tape_name):
+                path = library.path(tape_name)
                 pytest.exit(
-                    f"cassette {cassette_name!r} missing at {path}; record with --record",
+                    f"tape {tape_name!r} missing at {path}; record with --record",
                     returncode=1,
                 )
-            yield library.replay(cassette_name)
+            yield library.replay(tape_name)
             return
         if record:
-            with library.capture(cassette_name, _live_model()) as recording:
+            with library.record(tape_name, _live_model()) as recording:
                 yield recording
             return
         yield _live_model()
 
-    return open_cassette
+    return open_tape
 
 
 def _live_model() -> Model:

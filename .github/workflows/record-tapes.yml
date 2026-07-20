@@ -1,7 +1,7 @@
-name: record-cassettes
+name: record-tapes
 
-# Records the live generation tests into cassettes and uploads them as the
-# `cassettes` artifact. The main CI workflow downloads the latest artifact
+# Records the live generation tests into tapes and uploads them as the
+# `tapes` artifact. The main CI workflow downloads the latest artifact
 # and replays it offline, so replay coverage tracks the real model without
 # paying on every PR. Run by hand any time; also weekly.
 # Requires the OPENAI_API_KEY repository secret.
@@ -15,7 +15,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: record-cassettes
+  group: record-tapes
   cancel-in-progress: false
 
 jobs:
@@ -43,15 +43,15 @@ jobs:
       - name: Install dependencies
         run: uv sync --group dev --frozen
 
-      - name: Record live generations into cassettes
+      - name: Record live generations into tapes
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: uv run --frozen pytest tests/test_live_generation.py --record -q
 
-      - name: Upload cassettes
+      - name: Upload tapes
         uses: actions/upload-artifact@v4
         with:
-          name: cassettes
-          path: tests/cassettes/*.jsonl
+          name: tapes
+          path: tests/tapes/*.jsonl
           retention-days: 30
           if-no-files-found: error
