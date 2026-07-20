@@ -198,6 +198,7 @@ class QueuedModel(Generic[Item]):
     ):
         self._queue = list(items)
         self.queries: list[ModelQuery] = []
+        self.close_calls = 0
         self.config = ModelIdentity(model_name, reasoning_effort)
         self.context_window_tokens = context_window_tokens
 
@@ -221,7 +222,7 @@ class QueuedModel(Generic[Item]):
             )
 
     async def close(self) -> None:
-        pass
+        self.close_calls += 1
 
 
 class ScriptedModel(QueuedModel[Step]):

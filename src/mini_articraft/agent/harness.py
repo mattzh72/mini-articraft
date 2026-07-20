@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import re
 import time
@@ -164,6 +165,11 @@ class Agent:
                 hit_max_turns = True
         finally:
             await context.exec_sessions.aclose()
+            # The agent owns the model for the run's duration, so a finished
+            # run never leaves a live websocket behind. Close failures are
+            # inconsequential teardown noise and must not change the outcome.
+            with contextlib.suppress(Exception):
+                await self.model.close()
 
         workspace_is_compiled = _latest_workspace_is_compiled(context)
         record = Record.load(record_path)
