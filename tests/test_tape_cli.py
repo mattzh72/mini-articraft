@@ -26,7 +26,7 @@ def cli(*args: str, root: Path, cwd: Path) -> subprocess.CompletedProcess[str]:
 
 @pytest.fixture
 def library_root(tmp_path: Path) -> Path:
-    root = tmp_path / "cassettes"
+    root = tmp_path / "tapes"
     library = ReplayHarness(root)
     library.set(
         "box",

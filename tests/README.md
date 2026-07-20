@@ -10,7 +10,7 @@ This suite verifies the generation loop without paid model calls.
 | Unit | ~0s | pure functions: SDK checks, `compile_feedback`, signals |
 | Warm compile | ~0.1s per compile | compile behavior via `WarmEnvironment` |
 | Scripted agent | ~0.5s per run | the full agent loop via `ScriptedModel` + `run_scenario` |
-| Cassette replay | free | recorded real runs via `ReplayHarness` |
+| Tape replay | free | recorded real runs via `ReplayHarness` |
 
 ```python
 from harness import WarmEnvironment, run_scenario, calls, text, tool_call
@@ -51,18 +51,18 @@ lifecycle:
 Agent-loop tests that monkeypatch the compile tool (`compile_success_tool()`)
 never compile at all and can use either environment.
 
-## Cassettes: pay once, replay forever
+## Tapes: pay once, replay forever
 
 `ReplayHarness` manages any number of named recordings as
 `<name>.jsonl` files under one root. The `replay_harness` pytest fixture
 gives each test a scratch library.
 
 ```python
-# capture: record a real run once (or a scripted run, for free authoring)
-with replay_harness.capture("hinged-box", OpenAIModel()) as model:
+# record a real run once (or a scripted run, for free authoring)
+with replay_harness.record("hinged-box", OpenAIModel()) as model:
     run(Agent(model, env).run("a hinged box"))
 
-# set: install or transform a cassette without running anything
+# set: install or transform a tape without running anything
 replay_harness.set("plain-box", [calls(tool_call("compile")), text("done")])
 
 # replay: plug any recording into a run; strict mode fails on trajectory drift
@@ -76,29 +76,29 @@ Strict replay compares a structural fingerprint (roles, tool names, call
 ids), not payload text, because tool outputs embed machine-specific run
 paths. Rows installed by `set()` carry no fingerprint and match any request.
 
-Curated regression cassettes belong in `tests/cassettes/` (git-ignored by
-default; force-add the ones worth keeping). Scratch cassettes belong under
+Curated regression tapes belong in `tests/tapes/` (git-ignored by
+default; force-add the ones worth keeping). Scratch tapes belong under
 `tmp_path`.
 
 ## Live tests: `--record` / `--replay`
 
-Tests using the `cassette_model` fixture are **live by default**. Named
-cassettes (`tests/cassettes/<name>.jsonl`; default name = test function,
-or e.g. `cassette_model("latest")`) are used only when you ask:
+Tests using the `tape_model` fixture are **live by default**. Named
+tapes (`tests/tapes/<name>.jsonl`; default name = test function,
+or e.g. `tape_model("latest")`) are used only when you ask:
 
 ```bash
 # default: always live (needs OPENAI_API_KEY)
 uv run pytest tests/test_live_generation.py
 
-# offline: replay the named cassette; exit if missing
+# offline: replay the named tape; exit if missing
 uv run pytest tests/test_live_generation.py --replay
 
-# live + (re)record the cassette (needs OPENAI_API_KEY)
+# live + (re)record the tape (needs OPENAI_API_KEY)
 OPENAI_API_KEY=... uv run pytest tests/test_live_generation.py --record
 ```
 
-Commit a cassette (`git add -f`) and run CI with `--replay` for a hard
-offline gate. No `--replay` means no cassette — always the real model.
+Commit a tape (`git add -f`) and run CI with `--replay` for a hard
+offline gate. No `--replay` means no tape — always the real model.
 
 ## The tape CLI
 
@@ -112,20 +112,20 @@ uv run python scripts/tape.py record box "a small box"   # live, pays once
 uv run python scripts/tape.py erase box
 ```
 
-`record` stores the prompt as cassette metadata, which is what `replay`
+`record` stores the prompt as tape metadata, which is what `replay`
 replays against. `--root` points at another library (the default is
-`tests/cassettes/`).
+`tests/tapes/`).
 
 ## CI: record once, replay everywhere
 
 Two workflows close the loop:
 
-- `record-cassettes.yml` (weekly + `workflow_dispatch`, needs the
+- `record-tapes.yml` (weekly + `workflow_dispatch`, needs the
   `OPENAI_API_KEY` secret) runs the live generation tests with `--record`
-  and uploads `tests/cassettes/` as the `cassettes` artifact.
-- `ci.yml` downloads the latest `cassettes` artifact before running
+  and uploads `tests/tapes/` as the `tapes` artifact.
+- `ci.yml` downloads the latest `tapes` artifact before running
   `pytest --replay`, so replay coverage tracks the real model for free;
-  with no artifact present it falls back to the committed cassettes.
+  with no artifact present it falls back to the committed tapes.
 
 The `dist` job also builds the sdist/wheel on 3.11 and 3.12, runs
 `twine check`, installs the wheel into a clean venv, and smoke-tests the

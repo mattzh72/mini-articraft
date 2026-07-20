@@ -12,8 +12,8 @@ lanes, cheapest first:
 3. Scripted agent lane -- :class:`ScriptedModel` plus :func:`run_scenario`
    drive the full agent loop (tools, reminders, compile freshness, record)
    with a deterministic model that can react to what the agent sends it.
-4. Cassette lane -- :class:`ReplayHarness` manages any number of named
-   recordings: capture one from a live (paid) model once, author one from a
+4. Tape lane -- :class:`ReplayHarness` manages any number of named
+   recordings: record one from a live (paid) model once, author one from a
    scripted model for free, or install one by hand; then plug any of them
    into :func:`run_scenario` by name for offline regression runs.
 
@@ -159,14 +159,14 @@ def _normalize_response(response: Response) -> Response:
 
 
 class ScriptExhaustedError(RuntimeError):
-    """The agent asked for more turns than the script (or cassette) provides."""
+    """The agent asked for more turns than the script (or tape) provides."""
 
 
-class CassetteError(RuntimeError):
+class TapeError(RuntimeError):
     """A recording is missing, empty, or otherwise unusable."""
 
 
-class CassetteMismatchError(CassetteError):
+class TapeMismatchError(TapeError):
     """A replayed run diverged from the recorded message trajectory."""
 
 
@@ -252,7 +252,7 @@ class ScriptedModel(QueuedModel[Step]):
 
 
 # ---------------------------------------------------------------------------
-# Cassette lane: record and replay models
+# Tape lane: record and replay models
 # ---------------------------------------------------------------------------
 
 
@@ -288,7 +288,7 @@ def _fingerprint(messages: Messages, tools: list[dict[str, Any]] | None = None) 
     return hashlib.sha1(raw.encode()).hexdigest()
 
 
-def _read_cassette(path: Path) -> list[dict[str, Any]]:
+def _read_tape(path: Path) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
         if not line.strip():
@@ -296,28 +296,28 @@ def _read_cassette(path: Path) -> list[dict[str, Any]]:
         try:
             rows.append(json.loads(line))
         except json.JSONDecodeError as exc:
-            raise CassetteError(f"invalid cassette row {path}:{lineno}: {exc}") from exc
+            raise TapeError(f"invalid tape row {path}:{lineno}: {exc}") from exc
     return rows
 
 
-def _append_cassette_row(path: Path, row: dict[str, Any]) -> None:
+def _append_tape_row(path: Path, row: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as file:
         file.write(json.dumps(row, default=str) + "\n")
 
 
 class RecordingModel:
-    """Wrap a live model and append every exchange to a JSONL cassette.
+    """Wrap a live model and append every exchange to a JSONL tape.
 
     Each line stores a structural fingerprint of the request messages plus the
     full response dict. Record once with real credentials, commit or keep the
-    cassette, then regression-test offline with :class:`ReplayModel`. Prefer
-    :meth:`ReplayHarness.capture` over constructing this directly.
+    tape, then regression-test offline with :class:`ReplayModel`. Prefer
+    :meth:`ReplayHarness.record` over constructing this directly.
     """
 
-    def __init__(self, model: Model, cassette: Path | str):
+    def __init__(self, model: Model, tape: Path | str):
         self.model = model
-        self.cassette = Path(cassette)
+        self.tape = Path(tape)
         self.queries: list[ModelQuery] = []
         self.config = getattr(model, "config", None)
         self.context_window_tokens = getattr(model, "context_window_tokens", 0)
@@ -330,8 +330,8 @@ class RecordingModel:
     ) -> Response:
         _record_query(self.queries, messages, tools)
         response = await self.model.query(messages, tools=tools)
-        _append_cassette_row(
-            self.cassette,
+        _append_tape_row(
+            self.tape,
             {"fingerprint": _fingerprint(messages, tools), "response": response},
         )
         return response
@@ -346,7 +346,7 @@ class RecordingModel:
 
 
 class ReplayModel(QueuedModel[dict[str, Any]]):
-    """Replay one cassette recorded by :class:`RecordingModel`.
+    """Replay one tape recorded by :class:`RecordingModel`.
 
     In strict mode every query's structural fingerprint (roles, message
     types, tool-call names, call ids, the offered tool set) must match the
@@ -358,18 +358,18 @@ class ReplayModel(QueuedModel[dict[str, Any]]):
     constructing this directly.
     """
 
-    noun: ClassVar[str] = "cassette row"
+    noun: ClassVar[str] = "tape row"
 
     def __init__(
         self,
-        cassette: Path | str,
+        tape: Path | str,
         *,
         strict: bool = True,
         model_name: str = "gpt-replay",
         reasoning_effort: str = "",
     ):
         super().__init__(
-            [row for row in _read_cassette(Path(cassette)) if "response" in row],
+            [row for row in _read_tape(Path(tape)) if "response" in row],
             model_name=model_name,
             reasoning_effort=reasoning_effort,
         )
@@ -382,9 +382,9 @@ class ReplayModel(QueuedModel[dict[str, Any]]):
         entry = self._next(query)
         expected = str(entry.get("fingerprint") or "")
         if self._strict and expected and expected != _fingerprint(messages, tools):
-            raise CassetteMismatchError(
+            raise TapeMismatchError(
                 f"turn {query.turn} diverged from the recorded trajectory; "
-                "re-record the cassette if this change is intentional"
+                "re-record the tape if this change is intentional"
             )
         return _normalize_response(entry["response"])
 
@@ -393,31 +393,31 @@ ScenarioModel = ScriptedModel | RecordingModel | ReplayModel
 
 
 # ---------------------------------------------------------------------------
-# Cassette lane: the replay harness
+# Tape lane: the replay harness
 # ---------------------------------------------------------------------------
 
-CASSETTE_ROOT = Path(__file__).resolve().parent / "cassettes"
-_CASSETTE_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*")
+TAPE_ROOT = Path(__file__).resolve().parent / "tapes"
+_TAPE_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*")
 
 
-def _cassette_name(name: str) -> str:
+def _tape_name(name: str) -> str:
     value = str(name).strip()
-    if not _CASSETTE_NAME.fullmatch(value):
-        raise ValueError("cassette name must be a simple file name (letters, digits, _ . -)")
+    if not _TAPE_NAME.fullmatch(value):
+        raise ValueError("tape name must be a simple file name (letters, digits, _ . -)")
     return value
 
 
 class ReplayHarness:
-    """A named library of cassette recordings for offline replay testing.
+    """A named library of tape recordings for offline replay testing.
 
-    One recording is one ``<name>.jsonl`` cassette under ``root``. Any number
+    One recording is one ``<name>.jsonl`` tape under ``root``. Any number
     of recordings coexist; each plugs into :func:`run_scenario` by name::
 
-        library = ReplayHarness(tmp_path / "cassettes")
+        library = ReplayHarness(tmp_path / "tapes")
 
-        # capture: record one run (paid with a live model, free with a
-        # ScriptedModel -- the cheap way to author a cassette)
-        with library.capture("hinged-box", model) as recording:
+        # record a run into a tape (paid with a live model, free with a
+        # ScriptedModel -- the cheap way to author one)
+        with library.record("hinged-box", model) as recording:
             run(Agent(recording, env).run("a hinged box"))
 
         # set: install a hand-authored recording without any run at all
@@ -429,16 +429,16 @@ class ReplayHarness:
         # erase: remove one recording, or clear() to wipe the library
         library.erase("plain-box")
 
-    ``CASSETTE_ROOT`` (``tests/cassettes/``) is the conventional root for
+    ``TAPE_ROOT`` (``tests/tapes/``) is the conventional root for
     curated recordings; use a ``tmp_path`` root for ephemeral ones.
     """
 
-    def __init__(self, root: Path | str = CASSETTE_ROOT):
+    def __init__(self, root: Path | str = TAPE_ROOT):
         self.root = Path(root)
 
     def path(self, name: str) -> Path:
-        """The cassette path for a recording name (validated, no traversal)."""
-        return self.root / f"{_cassette_name(name)}.jsonl"
+        """The tape path for a recording name (validated, no traversal)."""
+        return self.root / f"{_tape_name(name)}.jsonl"
 
     def has(self, name: str) -> bool:
         return self.path(name).is_file()
@@ -450,46 +450,46 @@ class ReplayHarness:
         return sorted(path.stem for path in self.root.glob("*.jsonl"))
 
     def entries(self, name: str) -> list[dict[str, Any]]:
-        """Parsed cassette rows, e.g. to transform and re-``set`` a recording."""
+        """Parsed tape rows, e.g. to transform and re-``set`` a recording."""
         path = self.path(name)
         if not path.is_file():
-            raise CassetteError(f"unknown recording: {name!r}")
-        return _read_cassette(path)
+            raise TapeError(f"unknown recording: {name!r}")
+        return _read_tape(path)
 
     @contextmanager
-    def capture(
+    def record(
         self,
         name: str,
         model: Model,
         *,
         meta: dict[str, Any] | None = None,
     ) -> Iterator[RecordingModel]:
-        """Record a fresh cassette for ``name`` from the exchanges in the block.
+        """Record a fresh tape for ``name`` from the exchanges in the block.
 
-        Any existing cassette is replaced immediately. ``meta`` is stored as
+        Any existing tape is replaced immediately. ``meta`` is stored as
         a leading metadata row (e.g. the original prompt); replay skips it.
         Exiting the block without a single recorded exchange raises
-        :class:`CassetteError` -- an empty cassette is always a broken
-        capture. If the block raises, whatever was recorded stays on disk for
-        inspection (the next capture replaces it).
+        :class:`TapeError` -- an empty tape is always a broken
+        record. If the block raises, whatever was recorded stays on disk for
+        inspection (the next record replaces it).
         """
         path = self.path(name)
         self.root.mkdir(parents=True, exist_ok=True)
         path.unlink(missing_ok=True)
         if meta:
-            _append_cassette_row(path, {"meta": dict(meta)})
+            _append_tape_row(path, {"meta": dict(meta)})
         recorder = RecordingModel(model, path)
         yield recorder
         if not recorder.queries:
-            raise CassetteError(f"capture {name!r} recorded no exchanges")
+            raise TapeError(f"record {name!r} recorded no exchanges")
 
     def set(self, name: str, rows: Iterable[dict[str, Any]]) -> Path:
-        """Install a cassette from response dicts or full cassette rows.
+        """Install a tape from response dicts or full tape rows.
 
         Plain response dicts (built with :func:`text`/:func:`calls`) get no
         fingerprint, so strict replay accepts them for any request. Full rows
         (e.g. from :meth:`entries`) keep their fingerprints. Returns the
-        cassette path.
+        tape path.
         """
         normalized: list[dict[str, Any]] = []
         for row in rows:
@@ -505,7 +505,7 @@ class ReplayHarness:
             else:
                 normalized.append({"fingerprint": "", "response": _normalize_response(row)})
         if not any("response" in row for row in normalized):
-            raise CassetteError(f"refusing to install an empty recording: {name!r}")
+            raise TapeError(f"refusing to install an empty recording: {name!r}")
         path = self.path(name)
         self.root.mkdir(parents=True, exist_ok=True)
         path.write_text(
@@ -515,7 +515,7 @@ class ReplayHarness:
         return path
 
     def meta(self, name: str) -> dict[str, Any]:
-        """Metadata recorded with the cassette (e.g. the prompt), or ``{}``."""
+        """Metadata recorded with the tape (e.g. the prompt), or ``{}``."""
         for row in self.entries(name):
             if "meta" in row:
                 return dict(row["meta"])
@@ -524,7 +524,7 @@ class ReplayHarness:
     def replay(self, name: str, *, strict: bool = True) -> ReplayModel:
         """Plug recording ``name`` into a run as a :class:`ReplayModel`."""
         if not self.has(name):
-            raise CassetteError(f"unknown recording: {name!r}")
+            raise TapeError(f"unknown recording: {name!r}")
         return ReplayModel(self.path(name), strict=strict)
 
     def erase(self, name: str) -> bool:
@@ -703,6 +703,9 @@ class _CompileServer:
                 self._lines.put((generation, line))
         finally:
             self._lines.put((generation, None))  # EOF: the worker exited
+            if proc.stdout is not None:
+                with contextlib.suppress(OSError):
+                    proc.stdout.close()  # the reader owns its pipe
 
     def _drain_stale_lines(self) -> None:
         while True:

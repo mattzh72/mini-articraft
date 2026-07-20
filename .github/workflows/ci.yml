@@ -52,20 +52,20 @@ jobs:
       - name: Type check
         run: uv run --frozen basedpyright
 
-      - name: Download latest recorded cassettes (best effort)
+      - name: Download latest recorded tapes (best effort)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          run_id=$(gh run list --workflow record-cassettes.yml --status success \
+          run_id=$(gh run list --workflow record-tapes.yml --status success \
             --limit 1 --json databaseId --jq '.[0].databaseId // empty')
           if [ -n "$run_id" ]; then
-            mkdir -p /tmp/ci-cassettes
-            gh run download "$run_id" --name cassettes --dir /tmp/ci-cassettes || true
-            cp /tmp/ci-cassettes/*.jsonl tests/cassettes/ 2>/dev/null || true
+            mkdir -p /tmp/ci-tapes
+            gh run download "$run_id" --name tapes --dir /tmp/ci-tapes || true
+            cp /tmp/ci-tapes/*.jsonl tests/tapes/ 2>/dev/null || true
           fi
 
       - name: Test
-        # --replay: cassette-backed tests stay offline (live is the local default)
+        # --replay: tape-backed tests stay offline (live is the local default)
         run: uv run --frozen pytest -q --replay
 
   dist:

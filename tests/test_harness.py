@@ -13,14 +13,14 @@ import harness
 import pytest
 from harness import (
     GOOD_MAIN_PY,
-    CassetteError,
-    CassetteMismatchError,
     CompileServerError,
     ModelQuery,
     ReplayHarness,
     Response,
     ScriptedModel,
     ScriptExhaustedError,
+    TapeError,
+    TapeMismatchError,
     WarmEnvironment,
     calls,
     compile_success_tool,
@@ -418,10 +418,10 @@ def test_warm_environment_enforces_the_timeout_contract(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_capture_set_replay_erase_cycle(replay_harness: ReplayHarness) -> None:
+def test_record_set_replay_erase_cycle(replay_harness: ReplayHarness) -> None:
     assert replay_harness.names() == []
 
-    with replay_harness.capture("box", ScriptedModel([text("hi")])) as recording:
+    with replay_harness.record("box", ScriptedModel([text("hi")])) as recording:
         run(recording.query([{"role": "user", "content": "go"}]))
     assert replay_harness.names() == ["box"]
     assert replay_harness.entries("box")[0]["response"]["text"] == "hi"
@@ -435,16 +435,16 @@ def test_capture_set_replay_erase_cycle(replay_harness: ReplayHarness) -> None:
     assert not replay_harness.has("box")
 
 
-def test_capture_replaces_existing_and_rejects_empty_captures(
+def test_record_replaces_existing_and_rejects_empty_records(
     replay_harness: ReplayHarness,
 ) -> None:
     replay_harness.set("run", [text("v1")])
     with (
-        pytest.raises(CassetteError, match="recorded no exchanges"),
-        replay_harness.capture("run", ScriptedModel([text("v2")])),
+        pytest.raises(TapeError, match="recorded no exchanges"),
+        replay_harness.record("run", ScriptedModel([text("v2")])),
     ):
-        pass  # never queried -> a broken capture
-    assert not replay_harness.has("run")  # the old cassette was replaced up front
+        pass  # never queried -> a broken record
+    assert not replay_harness.has("run")  # the old tape was replaced up front
 
 
 def test_set_installs_hand_authored_rows(replay_harness: ReplayHarness) -> None:
@@ -466,7 +466,7 @@ def test_set_preserves_full_rows_and_refuses_empty(replay_harness: ReplayHarness
     rows = replay_harness.entries("original")
     replay_harness.set("copy", rows)
     assert replay_harness.entries("copy") == rows
-    with pytest.raises(CassetteError, match="empty"):
+    with pytest.raises(TapeError, match="empty"):
         replay_harness.set("empty", [])
 
 
@@ -487,32 +487,32 @@ def test_clear_wipes_the_library(replay_harness: ReplayHarness) -> None:
 def test_strict_replay_detects_trajectory_drift(replay_harness: ReplayHarness) -> None:
     messages_1 = [{"role": "user", "content": "go"}]
     messages_2 = [*messages_1, {"role": "assistant", "content": "a"}]
-    with replay_harness.capture("run", ScriptedModel([text("a"), text("b")])) as recording:
+    with replay_harness.record("run", ScriptedModel([text("a"), text("b")])) as recording:
         run(recording.query(messages_1))
         run(recording.query(messages_2))
 
     replay = replay_harness.replay("run")
     assert run(replay.query(messages_1))["text"] == "a"
-    with pytest.raises(CassetteMismatchError, match="turn 2 diverged"):
+    with pytest.raises(TapeMismatchError, match="turn 2 diverged"):
         run(replay.query([{"role": "user", "content": "different"}]))
 
 
 def test_strict_replay_detects_tool_set_drift(replay_harness: ReplayHarness) -> None:
     recorded_tools = [{"name": "compile"}]
-    with replay_harness.capture("run", ScriptedModel([text("a"), text("b")])) as recording:
+    with replay_harness.record("run", ScriptedModel([text("a"), text("b")])) as recording:
         run(recording.query([{"role": "user", "content": "go"}], tools=recorded_tools))
         run(recording.query([{"role": "user", "content": "go"}], tools=recorded_tools))
 
     replay = replay_harness.replay("run")
     first = run(replay.query([{"role": "user", "content": "go"}], tools=recorded_tools))
     assert first["text"] == "a"
-    with pytest.raises(CassetteMismatchError, match="turn 2 diverged"):
+    with pytest.raises(TapeMismatchError, match="turn 2 diverged"):
         run(replay.query([{"role": "user", "content": "go"}], tools=[{"name": "different"}]))
 
 
 def test_strict_replay_ignores_payload_text(replay_harness: ReplayHarness) -> None:
     """Same structure, different words: payload text is not fingerprinted."""
-    with replay_harness.capture("run", ScriptedModel([text("a"), text("b")])) as recording:
+    with replay_harness.record("run", ScriptedModel([text("a"), text("b")])) as recording:
         run(recording.query([{"role": "user", "content": "first wording"}]))
         run(
             recording.query(
@@ -537,7 +537,7 @@ def test_strict_replay_ignores_payload_text(replay_harness: ReplayHarness) -> No
 
 
 def test_non_strict_replay_skips_fingerprint_checks(replay_harness: ReplayHarness) -> None:
-    with replay_harness.capture("run", ScriptedModel([text("a")])) as recording:
+    with replay_harness.record("run", ScriptedModel([text("a")])) as recording:
         run(recording.query([{"role": "user", "content": "go"}]))
 
     replay = replay_harness.replay("run", strict=False)
@@ -548,33 +548,33 @@ def test_recording_model_delegates_exhaustion_to_finite_models(
     replay_harness: ReplayHarness,
 ) -> None:
     inner = ScriptedModel([text("a"), text("leftover")])
-    with replay_harness.capture("run", inner) as recording:
+    with replay_harness.record("run", inner) as recording:
         run(recording.query([]))
     with pytest.raises(AssertionError, match="never consumed"):
         recording.assert_exhausted()
 
 
-def test_a_failed_capture_keeps_the_partial_cassette(replay_harness: ReplayHarness) -> None:
+def test_a_failed_record_keeps_the_partial_tape(replay_harness: ReplayHarness) -> None:
     with (
         pytest.raises(RuntimeError, match="boom"),
-        replay_harness.capture("run", ScriptedModel([text("a")])) as recording,
+        replay_harness.record("run", ScriptedModel([text("a")])) as recording,
     ):
         run(recording.query([]))
         raise RuntimeError("boom")
-    assert replay_harness.entries("run")  # the partial cassette stays for inspection
+    assert replay_harness.entries("run")  # the partial tape stays for inspection
 
-    with replay_harness.capture("run", ScriptedModel([text("b")])) as recording:
+    with replay_harness.record("run", ScriptedModel([text("b")])) as recording:
         run(recording.query([]))
     assert [row["response"]["text"] for row in replay_harness.entries("run")] == ["b"]
 
 
-def test_malformed_cassette_rows_report_their_location(replay_harness: ReplayHarness) -> None:
+def test_malformed_tape_rows_report_their_location(replay_harness: ReplayHarness) -> None:
     path = replay_harness.set("broken", [text("ok")])
     path.write_text(
         '{"fingerprint": "", "response": {"text": "ok"}}\nnot json\n',
         encoding="utf-8",
     )
-    with pytest.raises(CassetteError, match=r"invalid cassette row .*:2"):
+    with pytest.raises(TapeError, match=r"invalid tape row .*:2"):
         replay_harness.entries("broken")
 
 
@@ -584,23 +584,23 @@ def test_set_normalizes_plain_responses(replay_harness: ReplayHarness) -> None:
     assert row["response"] == {"text": "hi", "tool_calls": [], "cost": 0.0, "token_usage": {}}
 
 
-def test_replay_beyond_the_cassette_is_a_clear_error(replay_harness: ReplayHarness) -> None:
+def test_replay_beyond_the_tape_is_a_clear_error(replay_harness: ReplayHarness) -> None:
     replay_harness.set("short", [text("only")])
     replay = replay_harness.replay("short")
     run(replay.query([]))
-    with pytest.raises(ScriptExhaustedError, match="beyond the 1 cassette row"):
+    with pytest.raises(ScriptExhaustedError, match="beyond the 1 tape row"):
         run(replay.query([]))
 
 
 def test_unknown_recording_is_a_clear_error(replay_harness: ReplayHarness) -> None:
-    with pytest.raises(CassetteError, match="unknown recording"):
+    with pytest.raises(TapeError, match="unknown recording"):
         replay_harness.entries("missing")
-    with pytest.raises(CassetteError, match="unknown recording"):
+    with pytest.raises(TapeError, match="unknown recording"):
         replay_harness.replay("missing")
 
 
-def test_capture_stores_metadata_and_replay_skips_it(replay_harness: ReplayHarness) -> None:
-    with replay_harness.capture(
+def test_record_stores_metadata_and_replay_skips_it(replay_harness: ReplayHarness) -> None:
+    with replay_harness.record(
         "run",
         ScriptedModel([text("a")]),
         meta={"prompt": "a box"},
@@ -621,7 +621,7 @@ def test_set_preserves_metadata_rows_but_refuses_meta_only(
     rows = replay_harness.entries("with-meta")
     assert rows[0]["meta"] == {"prompt": "x"}
     assert rows[1]["response"]["text"] == "a"
-    with pytest.raises(CassetteError, match="empty"):
+    with pytest.raises(TapeError, match="empty"):
         replay_harness.set("meta-only", [{"meta": {"prompt": "x"}}])
 
 
@@ -711,7 +711,7 @@ def test_replay_leftovers_fail_the_scenario(tmp_path: Path, replay_harness: Repl
         "long",
         [write_good_main(), calls(tool_call("compile")), text("done"), text("unused")],
     )
-    with pytest.raises(AssertionError, match="cassette row"):
+    with pytest.raises(AssertionError, match="tape row"):
         run_scenario(
             "a box",
             model=replay_harness.replay("long"),
@@ -743,17 +743,17 @@ def test_stub_schema_has_the_function_wire_shape() -> None:
     }
 
 
-def test_captured_cassette_replays_a_full_scenario(
+def test_recorded_tape_replays_a_full_scenario(
     tmp_path: Path, replay_harness: ReplayHarness
 ) -> None:
     script = [write_good_main(), calls(tool_call("compile")), text("done", cost=0.25)]
-    with replay_harness.capture("box", ScriptedModel(script)) as recording:
-        captured = run_scenario(
+    with replay_harness.record("box", ScriptedModel(script)) as recording:
+        recorded = run_scenario(
             "a box",
             model=recording,
             env=WarmEnvironment(output_dir=tmp_path / "a"),
         )
-    assert captured.record.status == "success"
+    assert recorded.record.status == "success"
 
     replayed = run_scenario(
         "a box",
