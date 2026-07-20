@@ -21,6 +21,14 @@ uv run pytest -q
 uv run ruff check .
 ```
 
+Run the SDK speed and mesh quality benchmark:
+
+```bash
+uv run python benchmarks/sdk_benchmark.py --suite extended
+```
+
+See [benchmarks/README.md](benchmarks/README.md) for saved comparisons and smaller suites.
+
 ## Run
 
 Generate a model:

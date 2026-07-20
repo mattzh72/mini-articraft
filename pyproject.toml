@@ -71,7 +71,7 @@ mini_articraft = [
 ]
 
 [tool.basedpyright]
-include = ["src", "tests", "scripts"]
+include = ["src", "tests", "scripts", "benchmarks"]
 # The vendored build123d doc snippets are agent-facing content, not package code.
 exclude = ["src/mini_articraft/sdk/docs"]
 typeCheckingMode = "standard"
