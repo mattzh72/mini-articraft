@@ -163,6 +163,56 @@ def test_repeat_failure_guidance_escalates_across_compiles(tmp_path: Path) -> No
     assert "compile failure 3 in a row" in signals[2]
 
 
+def test_a_cached_success_does_not_recompile(tmp_path: Path) -> None:
+    """Reads and no-op inspections keep a fresh compile: no second worker call."""
+    env = WarmEnvironment(output_dir=tmp_path)
+
+    artifacts = run_scenario(
+        "a box",
+        [
+            write_main(GOOD_MAIN_PY),
+            compile_workspace(),
+            calls(tool_call("read", {"path": "main.py"})),
+            text("done"),
+        ],
+        env=env,
+        max_turns=4,
+    )
+
+    assert artifacts.record.status == "success"
+    assert env.compile_count == 1
+
+
+def test_failure_streak_resets_after_a_successful_compile(tmp_path: Path) -> None:
+    """A success clears the streak: the next failure is not flagged as repeated."""
+    env = WarmEnvironment(output_dir=tmp_path)
+
+    artifacts = run_scenario(
+        "a box",
+        [
+            write_main(BROKEN_NO_RUN_TESTS),
+            compile_workspace(),
+            write_main(GOOD_MAIN_PY),
+            compile_workspace(),
+            write_main(BROKEN_NO_RUN_TESTS),
+            compile_workspace(),
+            write_main(GOOD_MAIN_PY),
+            compile_workspace(),
+            text("done"),
+        ],
+        env=env,
+        max_turns=9,
+    )
+
+    assert artifacts.record.status == "success"
+    # the final write restores the exact content of the earlier successful
+    # compile, so the freshness cache serves it without a worker call
+    assert env.compile_count == 3
+    signals = compile_signals_shown(artifacts.tool_outputs())
+    assert "matches the previous compile attempt" not in signals[0]
+    assert "matches the previous compile attempt" not in signals[2]
+
+
 def test_overlap_allowance_flows_through_the_real_worker(tmp_path: Path) -> None:
     env = WarmEnvironment(output_dir=tmp_path)
 
