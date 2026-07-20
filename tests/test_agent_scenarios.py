@@ -214,6 +214,33 @@ def test_event_stream_is_ordered_and_complete(tmp_path: Path) -> None:
         assert started < stream.index(finished)
 
 
+def test_agent_hitting_max_turns_is_a_terminal_error(tmp_path: Path) -> None:
+    artifacts = run_scenario(
+        "a box",
+        [write_main(GOOD_MAIN_PY), compile_workspace()],
+        env=WarmEnvironment(output_dir=tmp_path),
+        max_turns=2,
+    )
+
+    assert artifacts.record.status == "error"
+    assert artifacts.record.error == "agent hit max turns limit"
+    finished = artifacts.recorder.finished
+    assert finished is not None
+    assert finished.turns == 2
+
+
+def test_script_exhaustion_surfaces_as_a_model_failure(tmp_path: Path) -> None:
+    artifacts = run_scenario(
+        "a box",
+        [text("no compile happened")],
+        env=WarmEnvironment(output_dir=tmp_path),
+        max_turns=3,
+    )
+
+    assert artifacts.record.status == "error"
+    assert "ScriptExhaustedError" in artifacts.record.error
+
+
 def test_hand_authored_cassette_drives_a_real_run(
     tmp_path: Path, replay_harness: ReplayHarness
 ) -> None:
