@@ -9,7 +9,16 @@ description = "A small reference agent for generating articulated build123d obje
 readme = "README.md"
 requires-python = ">=3.11"
 license = { file = "LICENSE" }
-authors = [{ name = "mini-articraft contributors" }]
+authors = [{ name = "Matthew Zhou" }]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+keywords = ["build123d", "agent", "cad", "articulation", "usd"]
 dependencies = [
     "build123d>=0.11.0",
     "gpytoolbox>=0.3.7,<0.4",
@@ -28,6 +37,10 @@ dependencies = [
     "usd-core>=26.5",
     "websockets>=15.0.0",
 ]
+
+[project.urls]
+Repository = "https://github.com/mattzh72/mini-articraft"
+Issues = "https://github.com/mattzh72/mini-articraft/issues"
 
 [dependency-groups]
 dev = [

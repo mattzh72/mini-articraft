@@ -1,0 +1,57 @@
+name: record-cassettes
+
+# Records the live generation tests into cassettes and uploads them as the
+# `cassettes` artifact. The main CI workflow downloads the latest artifact
+# and replays it offline, so replay coverage tracks the real model without
+# paying on every PR. Run by hand any time; also weekly.
+# Requires the OPENAI_API_KEY repository secret.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * 1" # Mondays 06:00 UTC
+
+permissions:
+  contents: read
+
+concurrency:
+  group: record-cassettes
+  cancel-in-progress: false
+
+jobs:
+  record:
+    name: record
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: "0.9.17"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: uv sync --group dev --frozen
+
+      - name: Record live generations into cassettes
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: uv run --frozen pytest tests/test_live_generation.py --record -q
+
+      - name: Upload cassettes
+        uses: actions/upload-artifact@v4
+        with:
+          name: cassettes
+          path: tests/cassettes/*.jsonl
+          retention-days: 30
+          if-no-files-found: error

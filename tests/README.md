@@ -116,6 +116,22 @@ uv run python scripts/tape.py erase box
 replays against. `--root` points at another library (the default is
 `tests/cassettes/`).
 
+## CI: record once, replay everywhere
+
+Two workflows close the loop:
+
+- `record-cassettes.yml` (weekly + `workflow_dispatch`, needs the
+  `OPENAI_API_KEY` secret) runs the live generation tests with `--record`
+  and uploads `tests/cassettes/` as the `cassettes` artifact.
+- `ci.yml` downloads the latest `cassettes` artifact before running
+  `pytest --replay`, so replay coverage tracks the real model for free;
+  with no artifact present it falls back to the committed cassettes.
+
+The `dist` job also builds the sdist/wheel on 3.11 and 3.12, runs
+`twine check`, installs the wheel into a clean venv, and smoke-tests the
+compile worker against `examples/mesh_knob` -- the distribution, not just
+the checkout.
+
 ## Known platform flakes
 
 On macOS, a few exec-output timing tests can fail with empty captured output

@@ -9,6 +9,8 @@ on:
 
 permissions:
   contents: read
+  actions: read
+  actions: read
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -51,6 +53,70 @@ jobs:
       - name: Type check
         run: uv run --frozen basedpyright
 
+      - name: Download latest recorded cassettes (best effort)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          run_id=$(gh run list --workflow record-cassettes.yml --status success \
+            --limit 1 --json databaseId --jq '.[0].databaseId // empty')
+          if [ -n "$run_id" ]; then
+            mkdir -p /tmp/ci-cassettes
+            gh run download "$run_id" --name cassettes --dir /tmp/ci-cassettes || true
+            cp /tmp/ci-cassettes/*.jsonl tests/cassettes/ 2>/dev/null || true
+          fi
+
       - name: Test
         # --replay: cassette-backed tests stay offline (live is the local default)
         run: uv run --frozen pytest -q --replay
+
+  dist:
+    name: dist (py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: "0.9.17"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Build sdist and wheel
+        run: uv build
+
+      - name: Check distributions
+        run: uvx twine check dist/*
+
+      - name: Smoke-test the wheel in a clean environment
+        run: |
+          uv venv /tmp/smoke
+          uv pip install --python /tmp/smoke/bin/python dist/*.whl
+          /tmp/smoke/bin/python -c "
+          import mini_articraft
+          from mini_articraft import package_dir
+          from mini_articraft.sdk import ArticulatedObject, TestContext
+          assert (package_dir / 'prompts' / 'system.md').is_file()
+          assert (package_dir / 'viewer.html').is_file()
+          assert (package_dir / 'sdk' / 'docs' / 'common' / '00_quickstart.md').is_file()
+          "
+          mkdir -p /tmp/smoke-run/workspace /tmp/smoke-run/result
+          cp examples/mesh_knob/main.py /tmp/smoke-run/workspace/main.py
+          /tmp/smoke/bin/python -m mini_articraft.environments.worker /tmp/smoke-run > /tmp/smoke-out.json
+          /tmp/smoke/bin/python -c "
+          import json
+          payload = json.load(open('/tmp/smoke-out.json'))
+          assert payload['status'] == 'success', payload
+          "
