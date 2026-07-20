@@ -212,11 +212,12 @@ def test_openai_model_returns_estimated_cost_for_gpt_5_6_sol(
 def test_openai_model_exposes_context_window() -> None:
     assert openai_model().config.openai_model == "gpt-5.5-2026-04-23"
     assert DEFAULT_MAX_TURNS == 100
-    assert openai_model().context_window_tokens == 1_050_000
-    assert context_window_tokens_for("gpt-5.6-sol") == 1_050_000
-    assert context_window_tokens_for("gpt-5.6") == 1_050_000
+    assert openai_model().context_window_tokens == 272_000
+    assert context_window_tokens_for("gpt-5.6-sol") == 272_000
+    assert context_window_tokens_for("gpt-5.6") == 272_000
     assert context_window_tokens_for("gpt-5.6-terra") is None
-    assert context_window_tokens_for("gpt-5.5-2026-04-23") == 1_050_000
+    assert context_window_tokens_for("gpt-5.5-2026-04-23") == 272_000
+    assert context_window_tokens_for("gpt-5.5-pro") == 272_000
     assert context_window_tokens_for("gpt-5.4-mini-2026-03-17") == 400_000
     assert context_window_tokens_for("gpt-test") is None
 

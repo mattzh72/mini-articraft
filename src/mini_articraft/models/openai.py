@@ -11,6 +11,8 @@ from mini_articraft.settings import Settings, get_settings
 
 _WEBSOCKET_URL = "wss://api.openai.com/v1/responses"
 _MAX_OUTPUT_TOKENS = 128_000
+# Codex caps the 1.05M API window at 272K to avoid much higher cost and lower quality.
+_CODEX_CONTEXT_WINDOW_TOKENS = 272_000
 
 
 @dataclass(frozen=True)
@@ -24,9 +26,9 @@ class _ModelSpec:
 
 # Prices are USD per million tokens: input, cached input, output, cache write.
 _MODELS = {
-    "gpt-5.6-sol": _ModelSpec(1_050_000, 5.0, 0.5, 30.0, 6.25),
-    "gpt-5.5-pro": _ModelSpec(1_050_000, 30.0, 30.0, 180.0),
-    "gpt-5.5": _ModelSpec(1_050_000, 5.0, 0.5, 30.0),
+    "gpt-5.6-sol": _ModelSpec(_CODEX_CONTEXT_WINDOW_TOKENS, 5.0, 0.5, 30.0, 6.25),
+    "gpt-5.5-pro": _ModelSpec(_CODEX_CONTEXT_WINDOW_TOKENS, 30.0, 30.0, 180.0),
+    "gpt-5.5": _ModelSpec(_CODEX_CONTEXT_WINDOW_TOKENS, 5.0, 0.5, 30.0),
     "gpt-5.4-pro": _ModelSpec(1_050_000, 30.0, 30.0, 180.0),
     "gpt-5.4-mini": _ModelSpec(400_000, 0.75, 0.075, 4.5),
     "gpt-5.4-nano": _ModelSpec(400_000, 0.2, 0.02, 1.25),
