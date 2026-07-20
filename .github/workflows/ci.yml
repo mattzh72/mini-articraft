@@ -56,8 +56,10 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # The workflow may not exist yet on the default branch (renames land
+          # on branches first); a lookup failure just means no artifact yet.
           run_id=$(gh run list --workflow record-tapes.yml --status success \
-            --limit 1 --json databaseId --jq '.[0].databaseId // empty')
+            --limit 1 --json databaseId --jq '.[0].databaseId // empty' || true)
           if [ -n "$run_id" ]; then
             mkdir -p /tmp/ci-tapes
             gh run download "$run_id" --name tapes --dir /tmp/ci-tapes || true
