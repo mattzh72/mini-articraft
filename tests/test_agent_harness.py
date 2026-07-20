@@ -480,6 +480,55 @@ def test_agent_records_model_query_failure(tmp_path) -> None:
     assert result["error"] == "model query failed: RuntimeError: socket closed"
 
 
+def test_agent_closes_the_model_after_a_successful_run(tmp_path) -> None:
+    model = ScriptedModel(
+        [
+            calls(tool_call("write", {"path": "main.py", "content": GOOD_MAIN_PY})),
+            calls(tool_call("compile")),
+            text("done"),
+        ]
+    )
+
+    result = run(Agent(model, LocalEnvironment(output_dir=tmp_path), max_turns=3).run("box"))
+
+    assert result["status"] == "success"
+    assert model.close_calls == 1
+
+
+def test_agent_closes_the_model_after_a_model_failure(tmp_path) -> None:
+    def fail(query: ModelQuery) -> Response:
+        raise RuntimeError("socket closed")
+
+    model = ScriptedModel([fail])
+
+    run(Agent(model, LocalEnvironment(output_dir=tmp_path), max_turns=3).run("box"))
+
+    assert model.close_calls == 1
+
+
+def test_agent_closes_the_model_on_cancellation(tmp_path) -> None:
+    waiting = asyncio.Event()
+
+    async def block_forever(query: ModelQuery) -> Response:
+        waiting.set()
+        pending: asyncio.Future[None] = asyncio.Future()
+        await pending
+        raise AssertionError("blocking query unexpectedly completed")
+
+    model = ScriptedModel([block_forever])
+
+    async def exercise() -> None:
+        env = LocalEnvironment(output_dir=tmp_path)
+        task = asyncio.create_task(Agent(model, env, max_turns=3).run("box", run_id="cancel"))
+        await asyncio.wait_for(waiting.wait(), timeout=5)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    run(exercise())
+    assert model.close_calls == 1
+
+
 def test_agent_emits_run_events(tmp_path) -> None:
     model = ScriptedModel(
         [

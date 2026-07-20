@@ -435,3 +435,15 @@ def test_openai_model_returns_completed_reasoning_only_response(
     assert result["text"] == ""
     assert "reasoning" not in result
     assert result["tool_calls"] == []
+
+
+def test_close_closes_the_websocket_and_is_idempotent(monkeypatch) -> None:
+    socket = FakeWebSocket([response_event("result")])
+    patch_websocket(monkeypatch, socket)
+    model = openai_model()
+
+    run(model.query([{"role": "user", "content": "hi"}]))
+    run(model.close())
+
+    assert socket.closed is True
+    run(model.close())  # idempotent: nothing left to close

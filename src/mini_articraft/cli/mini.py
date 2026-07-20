@@ -101,6 +101,8 @@ async def _generate(
             agent_kwargs["on_event"] = on_event
         return await Agent(model_client, env, **agent_kwargs).run(prompt)
     finally:
+        # Agent.run closes the model too; close() is idempotent, and this
+        # finally covers failures before the agent loop starts.
         await model_client.close()
 
 
