@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import math
+import warnings
+from typing import cast
 
+import igl
 import manifold3d
 import numpy as np
 from trimesh import Trimesh
-from trimesh.proximity import closest_point, signed_distance
+from trimesh.proximity import closest_point
 
 from mini_articraft.sdk._mesh_boolean import (
     _from_manifold,
@@ -16,7 +19,7 @@ from mini_articraft.sdk._mesh_core import MeshGeometry
 
 _AXES = {"x": 0, "y": 1, "z": 2}
 _FAR = 1.0e6
-_FIELD_CHUNK = 100_000
+_FIELD_CHUNK = 500_000
 _MAX_GRID_POINTS = 4_000_000
 _BLEND_PROFILES = {"tight": -0.5, "round": 0.0, "soft": 1.0}
 
@@ -64,12 +67,22 @@ def _smooth_max(
     )
 
 
-def _mesh_field(mesh: Trimesh, points: np.ndarray, band: float) -> np.ndarray:
+def _mesh_field(
+    mesh: Trimesh,
+    points: np.ndarray,
+    band: float,
+) -> np.ndarray:
     values = np.full(len(points), -_FAR, dtype=np.float64)
     minimum, maximum = mesh.bounds
     near = np.all((points >= minimum - band) & (points <= maximum + band), axis=1)
     if np.any(near):
-        values[near] = signed_distance(mesh, points[near])
+        signed, _faces, _closest, _normals = igl.signed_distance(
+            np.ascontiguousarray(points[near], dtype=np.float64),
+            np.ascontiguousarray(mesh.vertices, dtype=np.float64),
+            np.ascontiguousarray(mesh.faces, dtype=np.int64),
+        )
+        # libigl is negative inside, while the blend field is positive inside.
+        values[near] = -np.asarray(signed, dtype=np.float64)
     return values
 
 
@@ -89,31 +102,52 @@ def _grid_points(
     return lower + np.column_stack((x, y, z)) * spacing
 
 
-def _sample_grid(
+def _extract_level_set(
     field: np.ndarray,
+    dimensions: np.ndarray,
     lower: np.ndarray,
     spacing: np.ndarray,
-    upper: np.ndarray,
-    x: float,
-    y: float,
-    z: float,
-) -> float:
-    point = np.asarray((x, y, z), dtype=np.float64)
-    if np.any(point < lower) or np.any(point > upper):
-        return -_FAR
-    coordinate = (point - lower) / spacing
-    base = np.floor(coordinate).astype(np.int64)
-    base = np.minimum(base, np.asarray(field.shape) - 2)
-    fraction = coordinate - base
-    x0, y0, z0 = (int(value) for value in base)
-    fx, fy, fz = (float(value) for value in fraction)
-    x00 = field[x0, y0, z0] * (1.0 - fx) + field[x0 + 1, y0, z0] * fx
-    x10 = field[x0, y0 + 1, z0] * (1.0 - fx) + field[x0 + 1, y0 + 1, z0] * fx
-    x01 = field[x0, y0, z0 + 1] * (1.0 - fx) + field[x0 + 1, y0, z0 + 1] * fx
-    x11 = field[x0, y0 + 1, z0 + 1] * (1.0 - fx) + field[x0 + 1, y0 + 1, z0 + 1] * fx
-    xy0 = x00 * (1.0 - fy) + x10 * fy
-    xy1 = x01 * (1.0 - fy) + x11 * fy
-    return float(xy0 * (1.0 - fz) + xy1 * fz)
+    target_edge_length: float,
+) -> MeshGeometry:
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=DeprecationWarning, module="gpytoolbox")
+        from gpytoolbox import remesh_botsch
+
+    nx, ny, nz = (int(value) for value in dimensions)
+    point_count = len(field)
+    flat = np.arange(point_count, dtype=np.int64)
+    x = flat % nx
+    y = (flat // nx) % ny
+    z = flat // (nx * ny)
+    grid_vertices = lower + np.column_stack((x, y, z)) * spacing
+    samples = np.ascontiguousarray(field.reshape((nx, ny, nz)).ravel(order="F"))
+    vertices, faces, _edges = igl.marching_cubes(
+        samples,
+        np.ascontiguousarray(grid_vertices, dtype=np.float64),
+        nx,
+        ny,
+        nz,
+        0.0,
+    )
+    vertices, faces = cast(
+        "tuple[np.ndarray, np.ndarray]",
+        remesh_botsch(
+            np.asarray(vertices, dtype=np.float64),
+            np.asarray(faces, dtype=np.int64)[:, (0, 2, 1)],
+            i=1,
+            h=target_edge_length,
+            project=True,
+        ),
+    )
+    solid = manifold3d.Manifold(
+        manifold3d.Mesh(
+            np.ascontiguousarray(vertices, dtype=np.float32),
+            np.ascontiguousarray(faces, dtype=np.uint32),
+        )
+    )
+    if solid.status() != manifold3d.Error.NoError or solid.is_empty():
+        raise ValueError(f"weld level set produced an invalid solid (status={solid.status()})")
+    return _from_manifold(solid)
 
 
 def _validate_weld_inputs(geometries: tuple[MeshGeometry, ...]) -> list[Trimesh]:
@@ -232,18 +266,7 @@ def _smooth_operation(
                 field[start:stop] = -_smooth_max(-field[start:stop], values, radius, profile)
             else:
                 field[start:stop] = _smooth_max(field[start:stop], values, radius, profile)
-    shaped_field = field.reshape(tuple(int(value) for value in dimensions))
-
-    def distance(x: float, y: float, z: float) -> float:
-        return _sample_grid(shaped_field, lower, spacing, upper, x, y, z)
-
-    solid = manifold3d.Manifold.level_set(
-        distance,
-        [*lower, *upper],
-        tolerance,
-        0.0,
-    )
-    return _from_manifold(solid)
+    return _extract_level_set(field, dimensions, lower, spacing, tolerance)
 
 
 def snap_to(
