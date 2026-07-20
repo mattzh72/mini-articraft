@@ -71,6 +71,22 @@ def test_compile_report_classifies_required_run_tests_errors() -> None:
     assert invalid["signal_bundle"]["signals"][0]["kind"] == "invalid_run_tests_report"
 
 
+def test_compile_report_classifies_timeout_with_specific_guidance() -> None:
+    report = build_compile_report(
+        status="failure",
+        error=(
+            "Compile timed out after 900s while loading main.py and building the model. "
+            "The worker and its child processes were stopped."
+        ),
+    )
+
+    signal = report["signal_bundle"]["signals"][0]
+    assert signal["kind"] == "compile_timeout"
+    assert signal["code"] == "COMPILE_TIMEOUT"
+    assert "Inspect the phase named in the timeout" in report["signals_text"]
+    assert "coarser tolerance" in report["signals_text"]
+
+
 def test_compile_report_classifies_runtime_unknown_shape_as_missing_geometry() -> None:
     report = build_compile_report(
         status="failure",

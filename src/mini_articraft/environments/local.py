@@ -10,17 +10,19 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from mini_articraft import package_dir
 from mini_articraft.compile_feedback import build_compile_report_from_payload, empty_compile_payload
 from mini_articraft.record import Record
-from mini_articraft.settings import DEFAULT_OUTPUT_DIR
+from mini_articraft.settings import DEFAULT_COMPILE_TIMEOUT_SECONDS, DEFAULT_OUTPUT_DIR
+
+_COMPILE_PROGRESS_FILE = ".compile-progress.json"
 
 
 class LocalEnvironmentConfig(BaseModel):
     output_dir: Path = DEFAULT_OUTPUT_DIR
-    timeout_seconds: float = 300.0
+    timeout_seconds: float = Field(default=DEFAULT_COMPILE_TIMEOUT_SECONDS, gt=0.0)
 
 
 DEFAULT_MAIN_PY = """from build123d import Box
@@ -87,13 +89,23 @@ class LocalEnvironment:
             cwd=_project_root(),
             timeout_seconds=self.config.timeout_seconds,
         )
+        compile_stats = _read_compile_progress(run_dir)
         if completed.timed_out:
+            if not compile_stats:
+                compile_stats = {
+                    "total_seconds": self.config.timeout_seconds,
+                    "current_phase": "starting the compile worker",
+                    "current_phase_seconds": self.config.timeout_seconds,
+                    "phases": {},
+                    "model": {},
+                }
             return _error_result(
                 run_dir,
-                error=f"compile timed out after {self.config.timeout_seconds:g}s",
+                error=_timeout_error(self.config.timeout_seconds, compile_stats),
                 stdout=completed.stdout,
                 stderr=completed.stderr,
                 returncode=completed.returncode,
+                compile_stats=compile_stats,
             )
 
         try:
@@ -228,6 +240,33 @@ def _finalize_payload(
     return _with_paths(run_dir, payload)
 
 
+def _read_compile_progress(run_dir: Path) -> dict[str, Any]:
+    path = run_dir / "result" / _COMPILE_PROGRESS_FILE
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+        return value if isinstance(value, dict) else {}
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return {}
+    finally:
+        path.unlink(missing_ok=True)
+
+
+def _timeout_error(timeout_seconds: float, compile_stats: dict[str, Any]) -> str:
+    phase = str(compile_stats.get("current_phase") or "starting the compile worker")
+    phase_seconds = compile_stats.get("current_phase_seconds")
+    phase_detail = (
+        f" The compiler spent {float(phase_seconds):.1f}s in that phase before it was stopped."
+        if isinstance(phase_seconds, int | float)
+        else ""
+    )
+    return (
+        f"Compile timed out after {timeout_seconds:g}s while {phase}."
+        f"{phase_detail} The worker and its child processes were stopped. "
+        "Simplify the operation named above, increase weld tolerance when a dense mesh operation "
+        "is the cause, or raise MINI_ARTICRAFT_COMPILE_TIMEOUT_SECONDS."
+    )
+
+
 def _error_result(
     run_dir: Path,
     *,
@@ -235,6 +274,9 @@ def _error_result(
     stdout: str = "",
     stderr: str = "",
     returncode: int | None = None,
+    compile_stats: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     payload = empty_compile_payload(error=error, stdout=stdout)
+    if compile_stats:
+        payload["compile_stats"] = compile_stats
     return _finalize_payload(run_dir, payload, stderr=stderr, returncode=returncode)

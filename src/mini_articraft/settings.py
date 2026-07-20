@@ -8,6 +8,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEFAULT_OUTPUT_DIR = Path("runs")
 DEFAULT_MAX_TURNS = 100
+DEFAULT_COMPILE_TIMEOUT_SECONDS = 900.0
 DEFAULT_OPENAI_MODEL = "gpt-5.5-2026-04-23"
 
 
@@ -33,6 +34,11 @@ class Settings(BaseSettings):
     )
     openai_api_key: str = Field(validation_alias="OPENAI_API_KEY")
     max_turns: int = Field(default=DEFAULT_MAX_TURNS, validation_alias="MINI_ARTICRAFT_MAX_TURNS")
+    compile_timeout_seconds: float = Field(
+        default=DEFAULT_COMPILE_TIMEOUT_SECONDS,
+        gt=0.0,
+        validation_alias="MINI_ARTICRAFT_COMPILE_TIMEOUT_SECONDS",
+    )
 
 
 @cache

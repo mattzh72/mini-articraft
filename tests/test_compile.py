@@ -65,6 +65,14 @@ def test_compile_path_exports_usdz_but_only_updates_attempt_data(tmp_path) -> No
     assert result["compile_report"]["status"] == "success"
     assert result["compile_report"]["counts"]["failures"] == 0
     assert "<compile_signals>" in result["compile_report"]["signals_text"]
+    assert result["compile_stats"]["total_seconds"] > 0.0
+    assert result["compile_stats"]["model"] == {
+        "parts": 1,
+        "shapes": 1,
+        "articulations": 0,
+    }
+    assert "loading main.py and building the model" in result["compile_stats"]["phases"]
+    assert not run_dir.joinpath("result", ".compile-progress.json").exists()
     manifest = json.loads(run_dir.joinpath("result", "model.json").read_text())
     assert manifest["name"] == "object"
 
@@ -287,8 +295,14 @@ def test_compile_path_reports_timeout(tmp_path) -> None:
     result = env.compile_path(run_dir)
 
     assert result["status"] == "error"
-    assert "timed out" in result["error"]
+    assert "timed out after 0.2s" in result["error"].lower()
+    assert result["compile_stats"]["current_phase"] in result["error"]
+    assert "MINI_ARTICRAFT_COMPILE_TIMEOUT_SECONDS" in result["error"]
     assert result["compile_report"]["status"] == "failure"
+    signal = result["compile_report"]["signal_bundle"]["signals"][0]
+    assert signal["kind"] == "compile_timeout"
+    assert signal["code"] == "COMPILE_TIMEOUT"
+    assert not run_dir.joinpath("result", ".compile-progress.json").exists()
 
 
 def test_isolated_process_timeout_cleans_descendants(tmp_path) -> None:

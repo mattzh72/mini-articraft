@@ -186,9 +186,11 @@ class RunRenderer:
                 self._names[call_id] = name
                 self._activity = name
                 self._print_tool_call(name, arguments)
-            case events.ToolFinished(call_id=call_id, name=name, payload=payload):
+            case events.ToolFinished(
+                call_id=call_id, name=name, payload=payload, duration=duration
+            ):
                 self._names.setdefault(call_id, name)
-                self._print_tool_result(name, payload)
+                self._print_tool_result(name, payload, duration=duration)
             case events.RunFinished():
                 self._finished = event
 
@@ -275,7 +277,13 @@ class RunRenderer:
         line.append(f"{name}({summary})" if summary else f"{name}()", style=PRIMARY_STYLE)
         self._print(line)
 
-    def _print_tool_result(self, name: str, payload: dict[str, Any]) -> None:
+    def _print_tool_result(
+        self,
+        name: str,
+        payload: dict[str, Any],
+        *,
+        duration: float | None = None,
+    ) -> None:
         if "error" in payload:
             if name == "compile":
                 self._print_compile("error", str(payload["error"]))
@@ -298,6 +306,7 @@ class RunRenderer:
                     str(result.get("error") or ""),
                     traceback_text=str(result.get("traceback") or ""),
                     stderr=str(result.get("stderr") or ""),
+                    duration=duration,
                 )
                 self._print_compile_signals(
                     result.get("compile_report") or result.get("compile_signals")
@@ -316,9 +325,11 @@ class RunRenderer:
         *,
         traceback_text: str = "",
         stderr: str = "",
+        duration: float | None = None,
     ) -> None:
         if status == "success":
-            self._print(_indented("✓ compile ok", "green"))
+            suffix = f" ({duration:.1f}s)" if duration is not None else ""
+            self._print(_indented(f"✓ compile ok{suffix}", "green"))
             return
 
         self._print(_indented("✗ compile error", "bold red"))

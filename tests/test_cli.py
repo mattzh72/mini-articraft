@@ -85,6 +85,8 @@ def test_cli_runs_agent_with_only_core_overrides(monkeypatch, tmp_path: Path) ->
             str(output_dir),
             "--reasoning-effort",
             "low",
+            "--compile-timeout",
+            "45",
         ],
     )
 
@@ -93,7 +95,11 @@ def test_cli_runs_agent_with_only_core_overrides(monkeypatch, tmp_path: Path) ->
     assert FakeOpenAIModel.instances[0].settings.output_dir == output_dir
     assert FakeOpenAIModel.instances[0].settings.openai_reasoning_effort == "low"
     assert FakeOpenAIModel.instances[0].closed is True
-    assert FakeEnvironment.instances[0].kwargs == {"output_dir": output_dir}
+    assert FakeOpenAIModel.instances[0].settings.compile_timeout_seconds == 45
+    assert FakeEnvironment.instances[0].kwargs == {
+        "output_dir": output_dir,
+        "timeout_seconds": 45,
+    }
     assert FakeAgent.instances[0].kwargs == {"max_turns": 123}
     assert FakeAgent.instances[0].prompt == "make a hinge"
     assert "status: success" in result.output

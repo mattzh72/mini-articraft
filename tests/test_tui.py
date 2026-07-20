@@ -67,6 +67,20 @@ def test_renderer_shows_compile_and_errors() -> None:
     assert "read error: file not found" in out
 
 
+def test_renderer_shows_compile_duration() -> None:
+    renderer, console = _renderer()
+    renderer.handle(
+        events.ToolFinished(
+            "c1",
+            "compile",
+            {"result": {"status": "success"}},
+            12.34,
+        )
+    )
+
+    assert "compile ok (12.3s)" in _text(console)
+
+
 def test_renderer_shows_full_compile_traceback_without_truncation() -> None:
     renderer, console = _renderer()
     traceback_lines = ["Traceback (most recent call last):"]

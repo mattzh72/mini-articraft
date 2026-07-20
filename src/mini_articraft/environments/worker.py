@@ -6,6 +6,7 @@ import json
 import os
 import runpy
 import sys
+import time
 import traceback
 from collections.abc import Hashable, Iterable
 from dataclasses import asdict, replace
@@ -17,15 +18,78 @@ from mini_articraft.environments.export import export_object
 from mini_articraft.sdk import ArticulatedObject, TestContext, TestReport
 
 T = TypeVar("T", bound=Hashable)
+_COMPILE_PROGRESS_FILE = ".compile-progress.json"
+
+
+class _CompileTracker:
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self.started = time.perf_counter()
+        self.current_phase = "starting the compile worker"
+        self.phase_started = self.started
+        self.phases: dict[str, float] = {}
+        self.model: dict[str, int] = {}
+        self._write()
+
+    @contextlib.contextmanager
+    def phase(self, name: str):
+        self.current_phase = name
+        self.phase_started = time.perf_counter()
+        self._write()
+        try:
+            yield
+        finally:
+            self.phases[name] = round(time.perf_counter() - self.phase_started, 4)
+            self._write()
+
+    def set_model(self, obj: ArticulatedObject) -> None:
+        self.model = {
+            "parts": len(obj.parts),
+            "shapes": sum(1 for part in obj.parts for _shape in part._iter_shapes()),
+            "articulations": len(obj.articulations),
+        }
+        self._write()
+
+    def finish(self) -> dict[str, Any]:
+        self.current_phase = "finishing the compile"
+        self.phase_started = time.perf_counter()
+        self._write()
+        return self.snapshot()
+
+    def snapshot(self) -> dict[str, Any]:
+        now = time.perf_counter()
+        return {
+            "total_seconds": round(now - self.started, 4),
+            "current_phase": self.current_phase,
+            "current_phase_seconds": round(now - self.phase_started, 4),
+            "phases": dict(self.phases),
+            "model": dict(self.model),
+        }
+
+    def remove(self) -> None:
+        self.path.unlink(missing_ok=True)
+
+    def _write(self) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.path.write_text(json.dumps(self.snapshot()), encoding="utf-8")
 
 
 def compile_run(run_dir: Path) -> dict[str, Any]:
     workspace = run_dir / "workspace"
     result_dir = run_dir / "result"
-    return _compile_workspace(workspace, result_dir)
+    tracker = _CompileTracker(result_dir / _COMPILE_PROGRESS_FILE)
+    payload = _compile_workspace(workspace, result_dir, tracker=tracker)
+    payload["compile_stats"] = tracker.finish()
+    tracker.remove()
+    return payload
 
 
-def _compile_workspace(workspace: Path, export_dir: Path) -> dict[str, Any]:
+def _compile_workspace(
+    workspace: Path,
+    export_dir: Path,
+    *,
+    tracker: _CompileTracker,
+) -> dict[str, Any]:
     export_dir.mkdir(parents=True, exist_ok=True)
 
     captured_stdout = io.StringIO()
@@ -40,16 +104,20 @@ def _compile_workspace(workspace: Path, export_dir: Path) -> dict[str, Any]:
             contextlib.redirect_stdout(captured_stdout),
             contextlib.redirect_stderr(captured_stderr),
         ):
-            globals_dict = runpy.run_path(str(workspace / "main.py"), run_name="__main__")
+            with tracker.phase("loading main.py and building the model"):
+                globals_dict = runpy.run_path(str(workspace / "main.py"), run_name="__main__")
             object_model = globals_dict.get("object_model")
             if not isinstance(object_model, ArticulatedObject):
                 raise TypeError("main.py must define object_model as an ArticulatedObject")
-            authored_report = _run_required_tests(globals_dict)
-            baseline_report = _run_baseline_tests(object_model, authored_report)
+            tracker.set_model(object_model)
+            with tracker.phase("running authored tests"):
+                authored_report = _run_required_tests(globals_dict)
+            baseline_report = _run_baseline_tests(object_model, authored_report, tracker=tracker)
             test_report = _merge_test_reports(authored_report, baseline_report)
             payload["test_report"] = _serialize_test_report(test_report)
             _raise_for_failed_test_report(test_report)
-            result = export_object(object_model, export_dir)
+            with tracker.phase("exporting and validating the USDZ file"):
+                result = export_object(object_model, export_dir)
             payload.update(
                 {
                     "manifest": str(result.manifest),
@@ -99,7 +167,12 @@ def _run_required_tests(globals_dict: dict[str, Any]) -> TestReport:
     return report
 
 
-def _run_baseline_tests(obj: ArticulatedObject, authored_report: TestReport) -> TestReport:
+def _run_baseline_tests(
+    obj: ArticulatedObject,
+    authored_report: TestReport,
+    *,
+    tracker: _CompileTracker,
+) -> TestReport:
     ctx = TestContext(obj)
     for part_name in authored_report.allowed_isolated_parts:
         ctx.allow_isolated_part(
@@ -115,17 +188,23 @@ def _run_baseline_tests(obj: ArticulatedObject, authored_report: TestReport) -> 
             shape_b=overlap.shape_b,
         )
 
-    ctx.check_model_valid()
-    ctx.check_single_root_part()
+    with tracker.phase("checking the model structure"):
+        ctx.check_model_valid()
+        ctx.check_single_root_part()
     preliminary = ctx.report()
     if not preliminary.passed:
         return _without_allowance_notes(preliminary)
 
-    ctx.fail_if_isolated_parts()
-    ctx.warn_if_part_contains_disconnected_geometry_islands()
-    ctx.warn_if_absurd_dimensions()
-    ctx.fail_if_parts_overlap_in_current_pose()
-    ctx.fail_if_articulation_separates_child()
+    with tracker.phase("checking for isolated parts"):
+        ctx.fail_if_isolated_parts()
+    with tracker.phase("checking for disconnected geometry"):
+        ctx.warn_if_part_contains_disconnected_geometry_islands()
+    with tracker.phase("checking the model scale"):
+        ctx.warn_if_absurd_dimensions()
+    with tracker.phase("checking for part overlaps"):
+        ctx.fail_if_parts_overlap_in_current_pose()
+    with tracker.phase("checking articulation motion"):
+        ctx.fail_if_articulation_separates_child()
     return _without_allowance_notes(ctx.report())
 
 

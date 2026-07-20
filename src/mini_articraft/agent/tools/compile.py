@@ -52,6 +52,7 @@ def _internal_result(context: ToolContext, result: dict[str, Any]) -> dict[str, 
             "stderr",
             "traceback",
             "returncode",
+            "compile_stats",
             "test_report",
             "compile_report",
         )

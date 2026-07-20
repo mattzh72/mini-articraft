@@ -423,6 +423,16 @@ def _runtime_signal(error: str, *, traceback_text: str = "") -> CompileSignal:
     text = error.strip() or "Compile execution failed."
     details = _runtime_details(text, traceback_text)
     lower = text.lower()
+    if "compile timed out after" in lower:
+        return CompileSignal(
+            "failure",
+            "compile_timeout",
+            "COMPILE_TIMEOUT",
+            text,
+            "The compile worker and its child processes were stopped.",
+            blocking=True,
+            group="build",
+        )
     if any(
         marker in lower
         for marker in ("unknown shape", "missing named geometry", "missing exact geometry")
@@ -505,6 +515,7 @@ def _summary(status: Status, signals: list[CompileSignal]) -> str:
 
 def _primary_issue(signal: CompileSignal) -> str:
     issues = {
+        "compile_timeout": "the compile exceeded its time limit.",
         "missing_run_tests": "generated script is missing required run_tests().",
         "invalid_run_tests_report": "run_tests() returned the wrong type.",
         "single_root_policy": "compiler-owned root policy failed.",
@@ -538,7 +549,12 @@ def _rules(
             else []
         )
     kind = failures[0].kind
-    if kind in {"compile_runtime", "missing_run_tests", "invalid_run_tests_report"}:
+    if kind == "compile_timeout":
+        rules = [
+            "- Inspect the phase named in the timeout before editing.",
+            "- If model construction timed out, simplify the slow operation or use a coarser tolerance. If a compiler check timed out, reduce unnecessary shape count while preserving visible geometry.",
+        ]
+    elif kind in {"compile_runtime", "missing_run_tests", "invalid_run_tests_report"}:
         rules = [
             "- Fix the compile or runtime error first. Geometry checks are blocked until the script runs."
         ]
@@ -575,6 +591,8 @@ def _rules(
 
 
 def _inspection_advice(kind: str) -> str:
+    if kind == "compile_timeout":
+        return "Inspect the named compile phase and the densest operation in that phase before editing."
     if kind in {"compile_runtime", "missing_run_tests", "invalid_run_tests_report"}:
         return "Use one short `exec_command` inspection of the exception location or API before editing."
     if kind in {"single_root_policy", "model_validity"}:
@@ -613,6 +631,7 @@ def _ordered_signals(
 def _signal_sort_key(signal: CompileSignal) -> tuple[int, int, str, str, str, str]:
     severity_priority = {"failure": 0, "warning": 1, "note": 2}
     failure_priority = {
+        "compile_timeout": 0,
         "compile_runtime": 0,
         "missing_run_tests": 0,
         "invalid_run_tests_report": 0,

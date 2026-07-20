@@ -30,6 +30,12 @@ def generate(
         "--reasoning-effort",
         help="OpenAI reasoning effort.",
     ),
+    compile_timeout: float | None = typer.Option(
+        None,
+        "--compile-timeout",
+        min=1.0,
+        help="Maximum compile time in seconds.",
+    ),
     tui: bool | None = typer.Option(
         None,
         "--tui/--no-tui",
@@ -37,7 +43,7 @@ def generate(
     ),
 ) -> None:
     """Generate an object from a prompt."""
-    settings = _settings(model, output_dir, reasoning_effort)
+    settings = _settings(model, output_dir, reasoning_effort, compile_timeout)
     use_tui = tui if tui is not None else sys.stdout.isatty()
     if use_tui:
         _generate_with_tui(settings, prompt)
@@ -86,7 +92,10 @@ async def _generate(
 ) -> dict[str, Any]:
     model_client = OpenAIModel(settings)
     try:
-        env = LocalEnvironment(output_dir=settings.output_dir)
+        env = LocalEnvironment(
+            output_dir=settings.output_dir,
+            timeout_seconds=settings.compile_timeout_seconds,
+        )
         agent_kwargs: dict[str, Any] = {"max_turns": settings.max_turns}
         if on_event is not None:
             agent_kwargs["on_event"] = on_event
@@ -121,6 +130,7 @@ def _settings(
     model: str | None,
     output_dir: Path | None,
     reasoning_effort: str | None,
+    compile_timeout: float | None,
 ) -> Settings:
     updates = {
         key: value
@@ -128,6 +138,7 @@ def _settings(
             ("openai_model", model),
             ("output_dir", output_dir),
             ("openai_reasoning_effort", reasoning_effort),
+            ("compile_timeout_seconds", compile_timeout),
         )
         if value is not None
     }
