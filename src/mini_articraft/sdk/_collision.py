@@ -200,11 +200,22 @@ class MeshCollisionKernel:
         max_contacts: int = 16,
     ) -> list[DistanceQuery]:
         parts = [part.name for part in self.model.parts]
-        return [
-            self.distance_between(part_a, part_b, pose, max_contacts=max_contacts)
-            for index, part_a in enumerate(parts)
-            for part_b in parts[index + 1 :]
-        ]
+        by_part: dict[str, list[_CollisionEntry]] = {part: [] for part in parts}
+        for entry in self._all_entries(pose):
+            by_part[entry.part_name].append(entry)
+
+        results: list[DistanceQuery] = []
+        for index, part_a in enumerate(parts):
+            for part_b in parts[index + 1 :]:
+                distances = [
+                    _distance_entries(entry_a, entry_b, max_contacts=max_contacts)
+                    for entry_a in by_part[part_a]
+                    for entry_b in by_part[part_b]
+                ]
+                if not distances:
+                    raise ValidationError("parts must contain geometry")
+                results.append(min(distances, key=lambda item: item.distance))
+        return results
 
     def meaningful_overlaps(
         self,
@@ -559,9 +570,9 @@ def _geometry_to_mesh(geometry: Geometry, tolerance: float) -> trimesh.Trimesh:
         raw_vertices = np.asarray([[v.X, v.Y, v.Z] for v in vertices], dtype=np.float64)
         raw_faces = np.asarray(faces, dtype=np.int32)
     elif isinstance(geometry, MeshGeometry):
-        geometry.validate()
-        raw_vertices = np.asarray(geometry.vertices, dtype=np.float64)
-        raw_faces = np.asarray(geometry.faces, dtype=np.int32)
+        vertices, faces = geometry._mesh_arrays()
+        raw_vertices = np.asarray(vertices, dtype=np.float64)
+        raw_faces = np.asarray(faces, dtype=np.int32)
     else:
         raise ValidationError("geometry must be a build123d Shape or MeshGeometry")
     mesh = trimesh.Trimesh(vertices=raw_vertices, faces=raw_faces, process=False)
@@ -574,13 +585,7 @@ def _geometry_to_mesh(geometry: Geometry, tolerance: float) -> trimesh.Trimesh:
 
 def _geometry_cache_key(geometry: Geometry, tolerance: float) -> tuple[object, ...]:
     if isinstance(geometry, MeshGeometry):
-        return (
-            "mesh",
-            id(geometry),
-            hash(tuple(tuple(float(value) for value in vertex) for vertex in geometry.vertices)),
-            hash(tuple(tuple(int(value) for value in face) for face in geometry.faces)),
-            tolerance,
-        )
+        return ("mesh", *geometry._cache_token, tolerance)
     return ("build123d", id(geometry), hash(geometry), tolerance)
 
 

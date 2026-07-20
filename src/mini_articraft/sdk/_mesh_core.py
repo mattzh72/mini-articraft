@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from itertools import pairwise
 from numbers import Integral
-from typing import TYPE_CHECKING, TypeAlias, cast
+from typing import TYPE_CHECKING, Any, ClassVar, SupportsIndex, TypeAlias, cast
 
 import numpy as np
 import trimesh
@@ -21,6 +21,149 @@ Vec3: TypeAlias = tuple[float, float, float]
 Face: TypeAlias = tuple[int, int, int]
 
 _EPS = 1e-10
+
+
+class _RevisionList(list[Any]):
+    def __init__(
+        self,
+        values: Iterable[Any],
+        *,
+        changed: Callable[[], None] | None = None,
+    ) -> None:
+        super().__init__(_as_tuple(value) for value in values)
+        self._changed = changed or _ignore_change
+
+    def __setitem__(self, key: SupportsIndex | slice, value: Any) -> None:
+        normalized = (
+            [_as_tuple(item) for item in value] if isinstance(key, slice) else _as_tuple(value)
+        )
+        super().__setitem__(key, normalized)
+        self._changed()
+
+    def __delitem__(self, key: SupportsIndex | slice) -> None:
+        super().__delitem__(key)
+        self._changed()
+
+    def __iadd__(self, values: Iterable[Any]):
+        super().__iadd__([_as_tuple(value) for value in values])
+        self._changed()
+        return self
+
+    def __imul__(self, count: SupportsIndex):
+        super().__imul__(count)
+        self._changed()
+        return self
+
+    def append(self, value: Any) -> None:
+        super().append(_as_tuple(value))
+        self._changed()
+
+    def clear(self) -> None:
+        super().clear()
+        self._changed()
+
+    def extend(self, values: Iterable[Any]) -> None:
+        super().extend(_as_tuple(value) for value in values)
+        self._changed()
+
+    def insert(self, index: SupportsIndex, value: Any) -> None:
+        super().insert(index, _as_tuple(value))
+        self._changed()
+
+    def pop(self, index: SupportsIndex = -1) -> Any:
+        value = super().pop(index)
+        self._changed()
+        return value
+
+    def remove(self, value: Any) -> None:
+        super().remove(value)
+        self._changed()
+
+    def reverse(self) -> None:
+        super().reverse()
+        self._changed()
+
+    def sort(self, *, key: Callable[[Any], Any] | None = None, reverse: bool = False) -> None:
+        super().sort(key=key, reverse=reverse)
+        self._changed()
+
+
+def _as_tuple(value: Any) -> Any:
+    if isinstance(value, tuple):
+        return value
+    try:
+        return tuple(value)
+    except TypeError:
+        return value
+
+
+def _ignore_change() -> None:
+    pass
+
+
+def _vertex_array(vertices: Sequence[Sequence[float]]) -> np.ndarray:
+    if not vertices:
+        return np.empty((0, 3), dtype=np.float64)
+    try:
+        values = np.asarray(vertices, dtype=np.float64)
+    except (TypeError, ValueError):
+        values = np.empty((0, 3), dtype=np.float64)
+    if values.ndim != 2 or values.shape[1] != 3:
+        for index, vertex in enumerate(vertices):
+            try:
+                valid = len(vertex) == 3
+            except TypeError:
+                valid = False
+            if not valid:
+                raise ValidationError(f"vertices[{index}] must contain 3 finite values")
+        raise ValidationError("vertices must contain 3 finite values")
+    invalid = np.flatnonzero(~np.isfinite(values).all(axis=1))
+    if len(invalid):
+        raise ValidationError(f"vertices[{int(invalid[0])}] must contain 3 finite values")
+    return np.ascontiguousarray(values, dtype=np.float64)
+
+
+def _face_array(faces: Sequence[Sequence[int]], vertex_count: int) -> np.ndarray:
+    if not faces:
+        return np.empty((0, 3), dtype=np.int64)
+    try:
+        raw = np.asarray(faces)
+    except (TypeError, ValueError):
+        raw = np.empty((0, 3), dtype=np.int64)
+    if raw.ndim != 2 or raw.shape[1] != 3:
+        for index, face in enumerate(faces):
+            try:
+                valid = len(face) == 3
+            except TypeError:
+                valid = False
+            if not valid:
+                raise ValidationError(f"faces[{index}] must contain exactly 3 indices")
+        raise ValidationError("faces must contain exactly 3 indices")
+    if not np.issubdtype(raw.dtype, np.integer) or np.issubdtype(raw.dtype, np.bool_):
+        for index, face in enumerate(faces):
+            if any(not isinstance(value, Integral) or isinstance(value, bool) for value in face):
+                raise ValidationError(f"faces[{index}] indices must be integers")
+        raise ValidationError("face indices must be integers")
+    values = np.ascontiguousarray(raw, dtype=np.int64)
+    repeated = np.flatnonzero(
+        (values[:, 0] == values[:, 1])
+        | (values[:, 0] == values[:, 2])
+        | (values[:, 1] == values[:, 2])
+    )
+    if len(repeated):
+        raise ValidationError(f"faces[{int(repeated[0])}] must reference 3 distinct vertices")
+    outside = np.flatnonzero((values < 0).any(axis=1) | (values >= vertex_count).any(axis=1))
+    if len(outside):
+        raise ValidationError(f"faces[{int(outside[0])}] references a vertex outside the mesh")
+    return values
+
+
+def _validated_mesh_arrays(
+    vertices: Sequence[Sequence[float]],
+    faces: Sequence[Sequence[int]],
+) -> tuple[np.ndarray, np.ndarray]:
+    vertex_values = _vertex_array(vertices)
+    return vertex_values, _face_array(faces, len(vertex_values))
 
 
 def _mean_point(points: Sequence[Vec3]) -> Vec3:
@@ -246,42 +389,68 @@ class MeshGeometry:
 
     vertices: list[Vec3] = field(default_factory=list)
     faces: list[Face] = field(default_factory=list)
+    _revision: ClassVar[int] = 0
+    _array_cache: ClassVar[tuple[int, np.ndarray, np.ndarray] | None] = None
+    _watertight_cache: ClassVar[tuple[int, bool] | None] = None
 
     def __post_init__(self) -> None:
-        try:
-            self.vertices = [
-                _vec3(vertex, name=f"vertices[{index}]")
-                for index, vertex in enumerate(self.vertices)
-            ]
-        except (TypeError, ValueError) as exc:
-            raise ValidationError(str(exc)) from exc
-        normalized_faces: list[Face] = []
-        for index, face in enumerate(self.faces):
-            if len(face) != 3:
-                raise ValidationError(f"faces[{index}] must contain exactly 3 indices")
-            if any(not isinstance(value, Integral) or isinstance(value, bool) for value in face):
-                raise ValidationError(f"faces[{index}] indices must be integers")
-            normalized_faces.append((int(face[0]), int(face[1]), int(face[2])))
-        self.faces = normalized_faces
-        self.validate()
+        vertices, faces = _validated_mesh_arrays(self.vertices, self.faces)
+        object.__setattr__(self, "_revision", 0)
+        object.__setattr__(self, "_array_cache", None)
+        object.__setattr__(self, "_watertight_cache", None)
+        object.__setattr__(
+            self,
+            "vertices",
+            _RevisionList(
+                ((float(vertex[0]), float(vertex[1]), float(vertex[2])) for vertex in vertices),
+                changed=self._mark_changed,
+            ),
+        )
+        object.__setattr__(
+            self,
+            "faces",
+            _RevisionList(
+                ((int(face[0]), int(face[1]), int(face[2])) for face in faces),
+                changed=self._mark_changed,
+            ),
+        )
+        self._store_array_cache(vertices, faces)
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        if name in {"vertices", "faces"} and "_array_cache" in self.__dict__:
+            object.__setattr__(
+                self,
+                name,
+                _RevisionList(value, changed=self._mark_changed),
+            )
+            self._mark_changed()
+            return
+        object.__setattr__(self, name, value)
+
+    def _mark_changed(self) -> None:
+        object.__setattr__(self, "_revision", self._revision + 1)
+        object.__setattr__(self, "_array_cache", None)
+        object.__setattr__(self, "_watertight_cache", None)
+
+    def _store_array_cache(self, vertices: np.ndarray, faces: np.ndarray) -> None:
+        vertices.setflags(write=False)
+        faces.setflags(write=False)
+        object.__setattr__(self, "_array_cache", (self._revision, vertices, faces))
+
+    def _mesh_arrays(self) -> tuple[np.ndarray, np.ndarray]:
+        cached = self._array_cache
+        if cached is not None and cached[0] == self._revision:
+            return cached[1], cached[2]
+        vertices, faces = _validated_mesh_arrays(self.vertices, self.faces)
+        self._store_array_cache(vertices, faces)
+        return vertices, faces
+
+    @property
+    def _cache_token(self) -> tuple[int, int]:
+        return id(self), self._revision
 
     def validate(self) -> None:
-        for index, vertex in enumerate(self.vertices):
-            try:
-                valid = len(vertex) == 3 and all(math.isfinite(float(value)) for value in vertex)
-            except (TypeError, ValueError):
-                valid = False
-            if not valid:
-                raise ValidationError(f"vertices[{index}] must contain 3 finite values")
-        for index, face in enumerate(self.faces):
-            if len(face) != 3:
-                raise ValidationError(f"faces[{index}] must contain exactly 3 indices")
-            if any(not isinstance(value, Integral) or isinstance(value, bool) for value in face):
-                raise ValidationError(f"faces[{index}] indices must be integers")
-            if len(set(face)) != 3:
-                raise ValidationError(f"faces[{index}] must reference 3 distinct vertices")
-            if min(face) < 0 or max(face) >= len(self.vertices):
-                raise ValidationError(f"faces[{index}] references a vertex outside the mesh")
+        self._mesh_arrays()
 
     @classmethod
     def from_trimesh(cls, mesh: trimesh.Trimesh, *, process: bool = False) -> MeshGeometry:
@@ -298,10 +467,10 @@ class MeshGeometry:
         )
 
     def to_trimesh(self, *, process: bool = False) -> trimesh.Trimesh:
-        self.validate()
+        vertices, faces = self._mesh_arrays()
         return trimesh.Trimesh(
-            vertices=np.asarray(self.vertices, dtype=np.float64),
-            faces=np.asarray(self.faces, dtype=np.int64),
+            vertices=vertices.copy(),
+            faces=faces.copy(),
             process=process,
             validate=process,
         )
@@ -310,8 +479,7 @@ class MeshGeometry:
     def bounds(self) -> tuple[Vec3, Vec3]:
         if not self.vertices:
             raise ValidationError("mesh has no vertices")
-        self.validate()
-        values = np.asarray(self.vertices, dtype=np.float64)
+        values, _faces = self._mesh_arrays()
         return (
             (
                 float(values[:, 0].min()),
@@ -327,10 +495,32 @@ class MeshGeometry:
 
     @property
     def is_watertight(self) -> bool:
-        return bool(self.faces) and bool(self.to_trimesh().is_watertight)
+        cached = self._watertight_cache
+        if cached is not None and cached[0] == self._revision:
+            return cached[1]
+        watertight = bool(self.faces) and bool(self.to_trimesh().is_watertight)
+        object.__setattr__(self, "_watertight_cache", (self._revision, watertight))
+        return watertight
 
     def copy(self) -> MeshGeometry:
-        return MeshGeometry(vertices=list(self.vertices), faces=list(self.faces))
+        vertices, faces = self._mesh_arrays()
+        copied = MeshGeometry.__new__(MeshGeometry)
+        object.__setattr__(copied, "_revision", 0)
+        object.__setattr__(copied, "_array_cache", None)
+        watertight = None if self._watertight_cache is None else (0, self._watertight_cache[1])
+        object.__setattr__(copied, "_watertight_cache", watertight)
+        object.__setattr__(
+            copied,
+            "vertices",
+            _RevisionList(self.vertices, changed=copied._mark_changed),
+        )
+        object.__setattr__(
+            copied,
+            "faces",
+            _RevisionList(self.faces, changed=copied._mark_changed),
+        )
+        copied._store_array_cache(vertices.copy(), faces.copy())
+        return copied
 
     def add_vertex(self, x: float, y: float, z: float) -> int:
         vertex = _vec3((x, y, z), name="vertex")

@@ -8,6 +8,7 @@ from mini_articraft.sdk import (
     AllowedOverlap,
     ArticulatedObject,
     ArticulationType,
+    BoxGeometry,
     MotionLimits,
     Origin,
     TestContext,
@@ -87,6 +88,19 @@ def test_build123d_shape_bounds_refresh_after_location_mutation() -> None:
     shape.locate(Pos(X=2.0))
 
     assert ctx.shape_world_bounds("root", "body")[0][0] == pytest.approx(1.5)
+
+
+def test_mesh_collision_cache_refreshes_after_geometry_mutation() -> None:
+    model = ArticulatedObject("mutable_mesh")
+    root = model.part("root")
+    geometry = BoxGeometry((1.0, 1.0, 1.0))
+    root.add(geometry, name="body")
+    context = TestContext(model)
+
+    assert context.shape_world_bounds("root", "body")[0][0] == pytest.approx(-0.5)
+    geometry.translate(2.0, 0.0, 0.0)
+
+    assert context.shape_world_bounds("root", "body")[0][0] == pytest.approx(1.5)
 
 
 def test_exact_checks_target_named_shapes() -> None:

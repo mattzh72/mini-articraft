@@ -18,19 +18,17 @@ from mini_articraft.sdk._mesh_core import (
 def _as_manifold(geometry: MeshGeometry, *, name: str) -> manifold3d.Manifold:
     if not isinstance(geometry, MeshGeometry):
         raise TypeError(f"{name} must be MeshGeometry")
-    geometry.validate()
-    if not geometry.vertices or not geometry.faces:
+    vertices, faces = geometry._mesh_arrays()
+    if not len(vertices) or not len(faces):
         raise ValueError(f"{name} must be a non-empty closed manifold solid")
-    if not geometry.is_watertight:
-        raise ValueError(f"{name} must be a closed manifold solid for boolean operations")
     mesh = manifold3d.Mesh(
-        np.asarray(geometry.vertices, dtype=np.float32),
-        np.asarray(geometry.faces, dtype=np.uint32),
+        np.asarray(vertices, dtype=np.float32),
+        np.asarray(faces, dtype=np.uint32),
     )
     result = manifold3d.Manifold(mesh)
     if result.status() != manifold3d.Error.NoError:
         raise ValueError(
-            f"{name} is not a valid manifold solid for boolean operations "
+            f"{name} must be a closed manifold solid for boolean operations "
             f"(status={result.status()})"
         )
     return result

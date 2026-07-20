@@ -467,6 +467,20 @@ def test_mesh_booleans_return_closed_solids_and_reject_open_meshes() -> None:
         boolean_union(a, MeshGeometry())
 
 
+def test_cached_mesh_properties_refresh_after_direct_mutation() -> None:
+    geometry = BoxGeometry((1.0, 1.0, 1.0))
+
+    assert geometry.bounds[1][0] == pytest.approx(0.5)
+    assert geometry.is_watertight
+
+    geometry.vertices[0] = (2.0, -0.5, -0.5)
+    geometry.faces.pop()
+
+    assert geometry.bounds[1][0] == pytest.approx(2.0)
+    assert geometry.to_trimesh().vertices[:, 0].max() == pytest.approx(2.0)
+    assert not geometry.is_watertight
+
+
 def test_degenerate_boolean_results_raise_actionable_errors() -> None:
     small = BoxGeometry((0.1, 0.1, 0.1))
     big = BoxGeometry((1.0, 1.0, 1.0))
