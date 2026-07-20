@@ -65,8 +65,8 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         action="store_true",
         default=False,
         help=(
-            "replay named tapes offline and exit if one is missing; "
-            "without this flag a missing tape only skips (the default)"
+            "replay named tapes offline; exit if a tape is missing "
+            "(default is live and no tape is loaded)"
         ),
     )
 
@@ -78,8 +78,9 @@ class TapeModelOpener(Protocol):
 
 
 def _tape_model_opener(request: pytest.FixtureRequest) -> TapeModelOpener:
-    """The tape mode matrix: default replays (skip when missing), ``--replay``
-    makes a missing tape fatal, and only ``--record`` goes live.
+    """The tape mode matrix: default runs live (no tape is read or written),
+    ``--replay`` replays offline (exit when missing), and only ``--record``
+    writes a tape.
 
     Kept as a plain function so tests can drive it without pytest internals.
     """
@@ -97,13 +98,16 @@ def _tape_model_opener(request: pytest.FixtureRequest) -> TapeModelOpener:
             with library.record(tape_name, _live_model()) as recording:
                 yield recording
             return
-        if not library.has(tape_name):
-            path = library.path(tape_name)
-            message = f"tape {tape_name!r} missing at {path}; record with --record"
-            if replay:
-                pytest.exit(message, returncode=1)
-            pytest.skip(message)
-        yield library.replay(tape_name)
+        if replay:
+            if not library.has(tape_name):
+                path = library.path(tape_name)
+                pytest.exit(
+                    f"tape {tape_name!r} missing at {path}; record with --record",
+                    returncode=1,
+                )
+            yield library.replay(tape_name)
+            return
+        yield _live_model()
 
     return open_tape
 
@@ -115,7 +119,7 @@ def tape_model(request: pytest.FixtureRequest) -> TapeModelOpener:
     Names default to the test function (``tape_model()``), or pass an
     explicit name such as ``tape_model("latest")``.
 
-    - default (no flags): replay the tape offline; skip when missing
+    - default (no flags): run live (real model); no tape is read or written
     - ``--record``: live + (re)write the tape (paid, deliberate opt-in)
     - ``--replay``: replay offline; exit if missing (the CI contract)
     """
