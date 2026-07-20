@@ -196,9 +196,7 @@ def test_openai_model_returns_estimated_cost_for_gpt_5_6_sol(
     patch_websocket(monkeypatch, socket)
 
     result = run(
-        openai_model(openai_model="gpt-5.6-sol").query(
-            [{"role": "user", "content": "build"}]
-        )
+        openai_model(openai_model="gpt-5.6-sol").query([{"role": "user", "content": "build"}])
     )
 
     assert result["cost"] == 0.0054
