@@ -82,23 +82,24 @@ default; force-add the ones worth keeping). Scratch tapes belong under
 
 ## Live tests: `--record` / `--replay`
 
-Tests using the `tape_model` fixture are **live by default**. Named
-tapes (`tests/tapes/<name>.jsonl`; default name = test function,
-or e.g. `tape_model("latest")`) are used only when you ask:
+Tests using the `tape_model` fixture **replay offline by default** -- a bare
+`pytest` run never calls a paid model. Live recording is a deliberate
+opt-in via `--record`. Named tapes (`tests/tapes/<name>.jsonl`; default
+name = test function, or e.g. `tape_model("latest")`) drive the replay:
 
 ```bash
-# default: always live (needs OPENAI_API_KEY)
+# default: replay the tape offline; skip when no tape exists
 uv run pytest tests/test_live_generation.py
 
-# offline: replay the named tape; exit if missing
+# offline and strict: replay the tape; exit(1) if missing (the CI contract)
 uv run pytest tests/test_live_generation.py --replay
 
-# live + (re)record the tape (needs OPENAI_API_KEY)
+# live + (re)record the tape (paid, deliberate opt-in; needs OPENAI_API_KEY)
 OPENAI_API_KEY=... uv run pytest tests/test_live_generation.py --record
 ```
 
-Commit a tape (`git add -f`) and run CI with `--replay` for a hard
-offline gate. No `--replay` means no tape — always the real model.
+Commit a tape (`git add -f`) and CI replays it for free with `--replay`.
+Recording is only ever a conscious, flagged act.
 
 ## The tape CLI
 

@@ -67,7 +67,8 @@ jobs:
           fi
 
       - name: Test
-        # --replay: tape-backed tests stay offline (live is the local default)
+        # --replay: tape-backed tests stay offline; a missing tape fails CI
+        # (locally, a missing tape just skips -- recording is always opt-in)
         run: uv run --frozen pytest -q --replay
 
   dist:

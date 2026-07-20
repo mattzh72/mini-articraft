@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable, Iterator
+from collections.abc import Iterator
 from contextlib import AbstractContextManager, contextmanager
 from pathlib import Path
+from typing import Protocol
 
 import pytest
 from harness import TAPE_ROOT, ReplayHarness
@@ -54,32 +55,33 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         "--record",
         action="store_true",
         default=False,
-        help=("run tape-backed tests live and (re)record named tapes (needs OPENAI_API_KEY)"),
+        help=(
+            "run tape-backed tests live and (re)record named tapes "
+            "(paid, deliberate opt-in; needs OPENAI_API_KEY)"
+        ),
     )
     group.addoption(
         "--replay",
         action="store_true",
         default=False,
         help=(
-            "replay named tapes offline; exit if a tape is missing "
-            "(without this flag, tape-backed tests always run live)"
+            "replay named tapes offline and exit if one is missing; "
+            "without this flag a missing tape only skips (the default)"
         ),
     )
 
 
-TapeModelOpener = Callable[[str | None], AbstractContextManager[Model]]
+class TapeModelOpener(Protocol):
+    """Opens a tape-backed model by name (defaulting to the test's own name)."""
+
+    def __call__(self, name: str | None = None) -> AbstractContextManager[Model]: ...
 
 
-@pytest.fixture
-def tape_model(request: pytest.FixtureRequest) -> TapeModelOpener:
-    """Open a named model for live/e2e tests.
+def _tape_model_opener(request: pytest.FixtureRequest) -> TapeModelOpener:
+    """The tape mode matrix: default replays (skip when missing), ``--replay``
+    makes a missing tape fatal, and only ``--record`` goes live.
 
-    Names default to the test function (``tape_model()``), or pass an
-    explicit name such as ``tape_model("latest")``.
-
-    - default (no flags): always live (real model)
-    - ``--record``: live + (re)write the tape
-    - ``--replay``: offline tape only; exit if missing
+    Kept as a plain function so tests can drive it without pytest internals.
     """
     record = bool(request.config.getoption("--record"))
     replay = bool(request.config.getoption("--replay"))
@@ -91,22 +93,33 @@ def tape_model(request: pytest.FixtureRequest) -> TapeModelOpener:
     @contextmanager
     def open_tape(name: str | None = None) -> Iterator[Model]:
         tape_name = name or request.node.name
-        if replay:
-            if not library.has(tape_name):
-                path = library.path(tape_name)
-                pytest.exit(
-                    f"tape {tape_name!r} missing at {path}; record with --record",
-                    returncode=1,
-                )
-            yield library.replay(tape_name)
-            return
         if record:
             with library.record(tape_name, _live_model()) as recording:
                 yield recording
             return
-        yield _live_model()
+        if not library.has(tape_name):
+            path = library.path(tape_name)
+            message = f"tape {tape_name!r} missing at {path}; record with --record"
+            if replay:
+                pytest.exit(message, returncode=1)
+            pytest.skip(message)
+        yield library.replay(tape_name)
 
     return open_tape
+
+
+@pytest.fixture
+def tape_model(request: pytest.FixtureRequest) -> TapeModelOpener:
+    """Open a named model for live/e2e tests.
+
+    Names default to the test function (``tape_model()``), or pass an
+    explicit name such as ``tape_model("latest")``.
+
+    - default (no flags): replay the tape offline; skip when missing
+    - ``--record``: live + (re)write the tape (paid, deliberate opt-in)
+    - ``--replay``: replay offline; exit if missing (the CI contract)
+    """
+    return _tape_model_opener(request)
 
 
 def _live_model() -> Model:
