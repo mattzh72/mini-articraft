@@ -17,6 +17,8 @@ from typing import Any
 
 from rich.console import Console
 from rich.live import Live
+from rich.markup import escape
+from rich.panel import Panel
 from rich.rule import Rule
 from rich.spinner import Spinner
 from rich.text import Text
@@ -30,6 +32,36 @@ LiveRun = Callable[[EventHandler], Coroutine[Any, Any, dict[str, Any]]]
 PRIMARY_STYLE = "white"
 SIGNAL_STYLE = "grey70"
 TOKEN_BAR_WIDTH = 24
+
+
+def print_settings_error(
+    *,
+    missing: list[str] | None = None,
+    detail: str | None = None,
+    console: Console | None = None,
+) -> None:
+    """Print a setup error for missing or invalid settings."""
+    console = console or Console(stderr=True)
+    if missing:
+        names = ", ".join(escape(name) for name in missing)
+        body = Text.from_markup(
+            f"[bold]Missing required environment variable:[/bold] [yellow]{names}[/yellow]\n\n"
+            "Copy [cyan].env.example[/cyan] → [cyan].env[/cyan] and set your key,\n"
+            "or export it in the shell before running."
+        )
+        title = "setup needed"
+    else:
+        body = Text(detail or "invalid settings", style="red")
+        title = "invalid settings"
+    console.print(
+        Panel(
+            body,
+            title=f"[bold red]{title}[/bold red]",
+            border_style="red",
+            expand=False,
+            padding=(1, 2),
+        )
+    )
 
 
 def run_live(generate: LiveRun) -> dict[str, Any]:

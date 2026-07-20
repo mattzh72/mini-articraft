@@ -10,7 +10,7 @@ import typer
 from pydantic import ValidationError
 
 from mini_articraft.agent import Agent, events
-from mini_articraft.cli.tui import replay_run, run_live
+from mini_articraft.cli.tui import print_settings_error, replay_run, run_live
 from mini_articraft.environments import LocalEnvironment
 from mini_articraft.models import OpenAIModel
 from mini_articraft.settings import DEFAULT_OUTPUT_DIR, Settings, get_settings
@@ -131,7 +131,24 @@ def _settings(
         )
         if value is not None
     }
-    return get_settings().model_copy(update=updates)
+    try:
+        settings = get_settings()
+    except ValidationError as exc:
+        _report_settings_error(exc)
+        raise typer.Exit(1) from None
+    return settings.model_copy(update=updates)
+
+
+def _report_settings_error(exc: ValidationError) -> None:
+    missing = [
+        str(error["loc"][0])
+        for error in exc.errors()
+        if error.get("type") == "missing" and error.get("loc")
+    ]
+    if missing:
+        print_settings_error(missing=missing)
+        return
+    print_settings_error(detail=str(exc))
 
 
 def _print_result(result: dict[str, object]) -> None:
