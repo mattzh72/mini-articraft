@@ -274,9 +274,7 @@ def _insert_path_fractions(
         if not any(abs(existing - fraction) <= _EPS for existing in values):
             values.append(fraction)
     values.sort()
-    return [
-        _path_point_at_distance(path, fraction * total, closed=closed) for fraction in values
-    ]
+    return [_path_point_at_distance(path, fraction * total, closed=closed) for fraction in values]
 
 
 def _subdivide_path_segments(

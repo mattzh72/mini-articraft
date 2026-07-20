@@ -244,9 +244,7 @@ def _response_cost(response: dict[str, Any]) -> float:
 
     uncached_tokens = max(
         0,
-        usage["input_tokens"]
-        - usage["cached_input_tokens"]
-        - usage["cache_write_tokens"],
+        usage["input_tokens"] - usage["cached_input_tokens"] - usage["cache_write_tokens"],
     )
     cache_write_price = spec.cache_write_price or spec.input_price
     return round(
@@ -268,9 +266,7 @@ def _response_token_usage(response: dict[str, Any]) -> dict[str, int]:
 
     details = usage.get("input_tokens_details")
     cached_tokens = _int(details.get("cached_tokens")) if isinstance(details, dict) else 0
-    cache_write_tokens = (
-        _int(details.get("cache_write_tokens")) if isinstance(details, dict) else 0
-    )
+    cache_write_tokens = _int(details.get("cache_write_tokens")) if isinstance(details, dict) else 0
     input_tokens = _int(usage.get("input_tokens"))
     output_tokens = _int(usage.get("output_tokens"))
     total_tokens = _int(usage.get("total_tokens")) or input_tokens + output_tokens
