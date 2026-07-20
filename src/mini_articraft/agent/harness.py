@@ -50,7 +50,7 @@ class Agent:
     async def run(self, prompt: str, **kwargs: Any) -> dict[str, Any]:
         run_id = str(kwargs.get("run_id") or _run_id_for_prompt(prompt))
         run_dir = self.env.create_run(run_id)
-        context = ToolContext(self.env, run_dir, run_dir / "workspace")
+        context = ToolContext(self.env, run_dir, run_dir / "workspace", task_prompt=prompt)
         conversation_path = run_dir / "conversation.jsonl"
         record_path = run_dir / "record.json"
         record = Record.load(record_path)
@@ -59,12 +59,16 @@ class Agent:
         record.result = ""
         record.save(record_path)
 
+        model_config_flags = getattr(self.model, "config", None)
         self._inspect_view_enabled = bool(
-            getattr(getattr(self.model, "config", None), "inspect_view_enabled", False)
+            getattr(model_config_flags, "inspect_view_enabled", False)
         )
+        self._critique_enabled = bool(getattr(model_config_flags, "critique_enabled", False))
         system_content = _read_prompt("system.md")
         if self._inspect_view_enabled:
             system_content += "\n\n" + _read_prompt("inspect_view.md").rstrip()
+        if self._critique_enabled:
+            system_content += "\n\n" + _read_prompt("critique.md").rstrip()
         self.messages = [
             {
                 "role": "system",
@@ -106,7 +110,11 @@ class Agent:
                 self._emit(events.TurnStarted(turn))
                 try:
                     response = await self.model.query(
-                        self.messages, tools=tools.schemas(inspect_view=self._inspect_view_enabled)
+                        self.messages,
+                        tools=tools.schemas(
+                            inspect_view=self._inspect_view_enabled,
+                            critique=self._critique_enabled,
+                        ),
                     )
                 except Exception as exc:
                     termination_error = f"model query failed: {type(exc).__name__}: {exc}"
@@ -296,7 +304,9 @@ class Agent:
                     "finish the running exec_command with write_stdin before calling "
                     f"{name} (session_id={live_sessions[0]})"
                 )
-            tool = tools.get(name, inspect_view=self._inspect_view_enabled)
+            tool = tools.get(
+                name, inspect_view=self._inspect_view_enabled, critique=self._critique_enabled
+            )
             result = await tool.run(context, _arguments(call))
             payload = {"result": result}
         except Exception as exc:

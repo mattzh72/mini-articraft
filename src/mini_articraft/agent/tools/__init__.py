@@ -4,6 +4,7 @@ from typing import Any
 
 from mini_articraft.agent.tools._core import Tool, ToolContext, result_item
 from mini_articraft.agent.tools.compile import TOOL as compile_tool
+from mini_articraft.agent.tools.critique import TOOL as critique_tool
 from mini_articraft.agent.tools.edit import TOOL as edit_tool
 from mini_articraft.agent.tools.exec_command import TOOL as exec_command_tool
 from mini_articraft.agent.tools.inspect_view import TOOL as inspect_view_tool
@@ -21,16 +22,24 @@ TOOLS = {
         write_stdin_tool,
         compile_tool,
         inspect_view_tool,
+        critique_tool,
     )
 }
 
+# Tools that are hidden unless their toggle turns them on.
+_GATED = {"inspect_view": "inspect_view", "critique": "critique"}
 
-def schemas(*, inspect_view: bool = True) -> list[dict[str, Any]]:
-    return [tool.schema for name, tool in TOOLS.items() if inspect_view or name != "inspect_view"]
+
+def schemas(*, inspect_view: bool = True, critique: bool = True) -> list[dict[str, Any]]:
+    enabled = {"inspect_view": inspect_view, "critique": critique}
+    return [
+        tool.schema for name, tool in TOOLS.items() if name not in _GATED or enabled[_GATED[name]]
+    ]
 
 
-def get(name: str, *, inspect_view: bool = True) -> Tool:
-    if name == "inspect_view" and not inspect_view:
+def get(name: str, *, inspect_view: bool = True, critique: bool = True) -> Tool:
+    enabled = {"inspect_view": inspect_view, "critique": critique}
+    if name in _GATED and not enabled[_GATED[name]]:
         raise ValueError(f"unknown tool: {name}")
     try:
         return TOOLS[name]

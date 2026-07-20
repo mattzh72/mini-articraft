@@ -37,6 +37,10 @@ class Settings(BaseSettings):
         default=False,
         validation_alias="MINI_ARTICRAFT_INSPECT_VIEW",
     )
+    critique_enabled: bool = Field(
+        default=False,
+        validation_alias="MINI_ARTICRAFT_CRITIQUE",
+    )
 
 
 @cache
