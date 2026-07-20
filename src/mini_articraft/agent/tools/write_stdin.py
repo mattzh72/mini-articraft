@@ -4,19 +4,16 @@ from typing import Any
 
 from mini_articraft.agent.tools._core import Tool, ToolContext, schema
 from mini_articraft.agent.tools._exec import (
-    MANAGER,
     MAX_OUTPUT_TOKENS_PROPERTY,
     YIELD_TIME_MS_PROPERTY,
-    collect,
-    session_id,
-    write,
+    parse_session_id,
 )
 
 
 async def run(context: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
-    session = MANAGER.get(context, session_id(args.get("session_id")))
-    await write(session, str(args.get("chars") or ""))
-    return await collect(session, args)
+    session = context.exec_sessions.get(parse_session_id(args.get("session_id")))
+    await session.write(str(args.get("chars") or ""))
+    return await context.exec_sessions.poll(session, args)
 
 
 TOOL = Tool(

@@ -4,11 +4,13 @@ import hashlib
 import json
 import os
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from mini_articraft import package_dir
+from mini_articraft.agent.tools._exec import ExecSessions
+from mini_articraft.agent.tools._paths import scoped_path
 
 SDK_DOCS_ROOT = package_dir / "sdk" / "docs"
 WORKSPACE_SDK_DOCS_ROOT = Path("docs") / "sdk"
@@ -34,6 +36,7 @@ class ToolContext:
     successful_compile_digest: str | None = None
     last_compile_failure_signature: str | None = None
     consecutive_compile_failures: int = 0
+    exec_sessions: ExecSessions = field(default_factory=ExecSessions)
 
     def refresh_compile_freshness(self) -> bool:
         return (
@@ -69,20 +72,6 @@ def schema(
         },
         "strict": False,
     }
-
-
-def scoped_path(base: Path, raw: str, label: str) -> Path:
-    if not raw:
-        raise ValueError("path is required")
-    base = base.resolve()
-    target = Path(raw)
-    target = target if target.is_absolute() else base / target
-    target = target.resolve()
-    try:
-        target.relative_to(base)
-    except ValueError as exc:
-        raise ValueError(f"path must stay inside the {label}") from exc
-    return target
 
 
 def workspace_path(workspace: Path, raw: str) -> Path:

@@ -4,20 +4,24 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 import os
 import secrets
 import signal
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from mini_articraft.agent.tools._core import ToolContext, scoped_path
+from mini_articraft.agent.tools._paths import scoped_path
 
 DEFAULT_YIELD_TIME_MS = 10_000
 MAX_YIELD_TIME_MS = 30_000
 MAX_OUTPUT_TOKENS = 10_000
 MAX_OUTPUT_BYTES = 1024 * 1024
+SESSION_CLOSE_TIMEOUT = 5.0
+
+LOGGER = logging.getLogger(__name__)
 
 YIELD_TIME_MS_PROPERTY = {
     "type": "integer",
@@ -36,69 +40,205 @@ MAX_OUTPUT_TOKENS_PROPERTY = {
 
 
 class OutputBuffer:
+    """Head/tail byte buffer with a fixed budget.
+
+    Keeps the first ``head_budget`` bytes and the last ``tail_budget`` bytes,
+    counting whatever falls out of the middle as ``omitted``. One writer (the
+    stream pump) and one reader (poll) share it on a single event loop, so it
+    needs no lock.
+    """
+
     def __init__(self) -> None:
         self._head_budget = MAX_OUTPUT_BYTES // 2
         self._tail_budget = MAX_OUTPUT_BYTES - self._head_budget
         self._head = bytearray()
         self._tail = bytearray()
         self._omitted = 0
-        self._lock = asyncio.Lock()
 
-    async def append(self, chunk: bytes) -> None:
-        async with self._lock:
-            if len(self._head) < self._head_budget:
-                head = chunk[: self._head_budget - len(self._head)]
-                self._head.extend(head)
-                chunk = chunk[len(head) :]
-            if not chunk:
-                return
-            if len(chunk) >= self._tail_budget:
-                self._omitted += len(self._tail) + len(chunk) - self._tail_budget
-                self._tail = bytearray(chunk[-self._tail_budget :])
-                return
-            self._tail.extend(chunk)
-            overflow = len(self._tail) - self._tail_budget
-            if overflow > 0:
-                del self._tail[:overflow]
-                self._omitted += overflow
+    def append(self, chunk: bytes) -> None:
+        if len(self._head) < self._head_budget:
+            head = chunk[: self._head_budget - len(self._head)]
+            self._head.extend(head)
+            chunk = chunk[len(head) :]
+        if not chunk:
+            return
+        if len(chunk) >= self._tail_budget:
+            self._omitted += len(self._tail) + len(chunk) - self._tail_budget
+            self._tail = bytearray(chunk[-self._tail_budget :])
+            return
+        self._tail.extend(chunk)
+        overflow = len(self._tail) - self._tail_budget
+        if overflow > 0:
+            del self._tail[:overflow]
+            self._omitted += overflow
 
-    async def drain(self) -> tuple[bytes, int]:
-        async with self._lock:
-            data = bytes(self._head + self._tail)
-            omitted = self._omitted
-            self._head.clear()
-            self._tail.clear()
-            self._omitted = 0
-            return data, omitted
+    def drain(self) -> tuple[bytes, int]:
+        data = bytes(self._head + self._tail)
+        omitted = self._omitted
+        self._head.clear()
+        self._tail.clear()
+        self._omitted = 0
+        return data, omitted
 
 
 @dataclass
 class ExecSession:
+    """A running subprocess plus its output pumps.
+
+    Owns its own lifecycle: reader tasks are stored (not fire-and-forget) so
+    ``aclose`` can cancel them, and stdin is closed on teardown. A finished
+    session tears itself down from ``poll`` while the loop is still alive.
+    """
+
     session_id: int
     proc: asyncio.subprocess.Process
-    run_dir: Path
     stdout: OutputBuffer
     stderr: OutputBuffer
     output_event: asyncio.Event
-    output_closed: int = 0
+    _readers: list[asyncio.Task[None]] = field(default_factory=list)
+    _closed: bool = False
 
+    @property
     def alive(self) -> bool:
         return self.proc.returncode is None
 
+    @property
+    def _streams_closed(self) -> bool:
+        return bool(self._readers) and all(task.done() for task in self._readers)
 
-class ExecManager:
+    async def write(self, chars: str) -> None:
+        if not chars:
+            return
+        if not self.alive or self.proc.stdin is None:
+            raise ValueError(f"stdin is closed for exec session: {self.session_id}")
+        if chars == "\x03":
+            _signal_process_group(self.proc, signal.SIGINT)
+            return
+        self.proc.stdin.write(chars.encode("utf-8"))
+        await self.proc.stdin.drain()
+
+    async def poll(
+        self,
+        *,
+        yield_time: float,
+        timeout: float | None,
+        max_output_chars: int,
+    ) -> dict[str, Any]:
+        started = time.perf_counter()
+        deadline = started + yield_time
+        stdout: list[bytes] = []
+        stderr: list[bytes] = []
+        omitted = 0
+        while True:
+            out, out_omitted = self.stdout.drain()
+            err, err_omitted = self.stderr.drain()
+            if out or err:
+                stdout.append(out)
+                stderr.append(err)
+                omitted += out_omitted + err_omitted
+                continue
+            if not self.alive and self._streams_closed:
+                break
+            remaining = deadline - time.perf_counter()
+            if remaining <= 0:
+                break
+            self.output_event.clear()
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(self.output_event.wait(), timeout=remaining)
+
+        timed_out = self.alive and timeout is not None and time.perf_counter() - started >= timeout
+        if timed_out:
+            _signal_process_group(self.proc, signal.SIGKILL)
+            await self.proc.wait()
+            out, out_omitted = self.stdout.drain()
+            err, err_omitted = self.stderr.drain()
+            stdout.append(out)
+            stderr.append(err)
+            omitted += out_omitted + err_omitted
+
+        if not self.alive:
+            await self.aclose()
+
+        return {
+            "chunk_id": secrets.token_hex(3),
+            "stdout": _decode(b"".join(stdout), max_output_chars),
+            "stderr": _decode(b"".join(stderr), max_output_chars),
+            "returncode": self.proc.returncode,
+            "session_id": self.session_id if self.alive else None,
+            "running": self.alive,
+            "timed_out": timed_out,
+            "wall_time_seconds": round(time.perf_counter() - started, 4),
+            "omitted_bytes": omitted,
+        }
+
+    async def aclose(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        wait_error: Exception | None = None
+        if self.alive:
+            _signal_process_group(self.proc, signal.SIGKILL)
+            try:
+                await asyncio.wait_for(self.proc.wait(), timeout=SESSION_CLOSE_TIMEOUT)
+            except Exception as exc:
+                wait_error = exc
+        if self.proc.stdin is not None:
+            self.proc.stdin.close()
+        for task in self._readers:
+            task.cancel()
+        if self._readers:
+            await asyncio.gather(*self._readers, return_exceptions=True)
+        if wait_error is not None:
+            raise wait_error
+
+    def _spawn_readers(self) -> None:
+        assert self.proc.stdout is not None
+        assert self.proc.stderr is not None
+        self._readers = [
+            asyncio.create_task(self._read_stream(self.proc.stdout, self.stdout)),
+            asyncio.create_task(self._read_stream(self.proc.stderr, self.stderr)),
+            # Commands may not leave detached work running after the tracked
+            # shell exits; cancelled on aclose like the stream readers.
+            asyncio.create_task(self._reap_descendants_after_exit()),
+        ]
+
+    async def _reap_descendants_after_exit(self) -> None:
+        await self.proc.wait()
+        _signal_process_group(self.proc, signal.SIGKILL)
+
+    async def _read_stream(self, stream: asyncio.StreamReader, buffer: OutputBuffer) -> None:
+        try:
+            while chunk := await stream.read(8192):
+                buffer.append(chunk)
+                self.output_event.set()
+        finally:
+            self.output_event.set()
+
+
+class ExecSessions:
+    """Per-run owner of exec sessions.
+
+    Held on ``ToolContext`` so sessions live and die with a single run instead
+    of leaking through module-global state.
+    """
+
     def __init__(self) -> None:
         self._next_session_id = 1
         self._sessions: dict[int, ExecSession] = {}
 
-    async def start(self, context: ToolContext, args: dict[str, Any]) -> ExecSession:
-        live_sessions = self.live_session_ids(context)
-        if live_sessions:
+    def live_ids(self) -> tuple[int, ...]:
+        """Ids of sessions still running, oldest first."""
+        return tuple(
+            session_id for session_id, session in sorted(self._sessions.items()) if session.alive
+        )
+
+    async def start(self, run_dir: Path, workspace: Path, args: dict[str, Any]) -> ExecSession:
+        if live := self.live_ids():
             raise ValueError(
                 "an exec_command session is already running; finish it with write_stdin "
-                f"before starting another command (session_id={live_sessions[0]})"
+                f"before starting another command (session_id={live[0]})"
             )
-        cwd = _cwd(context, args.get("cwd"))
+        cwd = _cwd(workspace, args.get("cwd"))
         command = [
             _shell(args.get("shell")),
             "-lc" if _bool(args.get("login"), default=True) else "-c",
@@ -107,7 +247,7 @@ class ExecManager:
         proc = await asyncio.create_subprocess_exec(
             *command,
             cwd=cwd,
-            env=_env(context, command[0]),
+            env=_env(run_dir, workspace, command[0]),
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
@@ -116,49 +256,47 @@ class ExecManager:
         session = ExecSession(
             session_id=self._allocate(),
             proc=proc,
-            run_dir=context.run_dir.resolve(),
             stdout=OutputBuffer(),
             stderr=OutputBuffer(),
             output_event=asyncio.Event(),
         )
+        session._spawn_readers()
         self._sessions[session.session_id] = session
-        assert proc.stdout is not None
-        assert proc.stderr is not None
-        # Known fire-and-forget leak; the exec reactor refactor (PR #9) stores
-        # these tasks on the session and cancels them in aclose().
-        asyncio.create_task(_read_stream(session, proc.stdout, session.stdout))  # noqa: RUF006
-        asyncio.create_task(_read_stream(session, proc.stderr, session.stderr))  # noqa: RUF006
-        asyncio.create_task(_stop_descendants_after_exit(session))  # noqa: RUF006
         return session
 
-    def live_session_ids(self, context: ToolContext) -> tuple[int, ...]:
-        run_dir = context.run_dir.resolve()
-        return tuple(
-            session_id
-            for session_id, session in sorted(self._sessions.items())
-            if session.run_dir == run_dir and session.alive()
-        )
-
-    def has_live_session(self, context: ToolContext) -> bool:
-        return bool(self.live_session_ids(context))
-
-    async def terminate(self, context: ToolContext) -> None:
-        run_dir = context.run_dir.resolve()
-        sessions = [session for session in self._sessions.values() if session.run_dir == run_dir]
-        for session in sessions:
-            if session.alive():
-                _kill_process_group(session.proc)
-                await session.proc.wait()
-            self.release(session)
-
-    def get(self, context: ToolContext, session_id: int) -> ExecSession:
+    def get(self, session_id: int) -> ExecSession:
         session = self._sessions.get(session_id)
-        if session is None or session.run_dir != context.run_dir.resolve():
+        if session is None:
             raise ValueError(f"unknown exec session: {session_id}")
         return session
 
-    def release(self, session: ExecSession) -> None:
-        self._sessions.pop(session.session_id, None)
+    async def poll(self, session: ExecSession, args: dict[str, Any]) -> dict[str, Any]:
+        chunk = await session.poll(
+            yield_time=_yield_time(args),
+            timeout=_timeout(args),
+            max_output_chars=_char_budget(args.get("max_output_tokens")),
+        )
+        if not chunk["running"]:
+            self._sessions.pop(session.session_id, None)
+        return chunk
+
+    async def aclose(self) -> None:
+        sessions = list(self._sessions.values())
+        self._sessions.clear()
+        # Best-effort teardown: close sessions concurrently and log per-session
+        # errors so one stuck or failing session can't block the others or mask the
+        # run result when this is awaited from the harness `finally`.
+        results = await asyncio.gather(
+            *(session.aclose() for session in sessions),
+            return_exceptions=True,
+        )
+        for session, result in zip(sessions, results, strict=True):
+            if isinstance(result, BaseException):
+                LOGGER.warning(
+                    "failed to close exec session %s during run cleanup",
+                    session.session_id,
+                    exc_info=(type(result), result, result.__traceback__),
+                )
 
     def _allocate(self) -> int:
         session_id = self._next_session_id
@@ -166,73 +304,7 @@ class ExecManager:
         return session_id
 
 
-MANAGER = ExecManager()
-
-
-async def collect(session: ExecSession, args: dict[str, Any]) -> dict[str, Any]:
-    started = time.perf_counter()
-    deadline = started + _yield_time(args)
-    stdout: list[bytes] = []
-    stderr: list[bytes] = []
-    omitted = 0
-    while True:
-        out, out_omitted = await session.stdout.drain()
-        err, err_omitted = await session.stderr.drain()
-        if out or err:
-            stdout.append(out)
-            stderr.append(err)
-            omitted += out_omitted + err_omitted
-            if time.perf_counter() >= deadline:
-                break
-            continue
-        if not session.alive() and session.output_closed == 2:
-            break
-        remaining = deadline - time.perf_counter()
-        if remaining <= 0:
-            break
-        session.output_event.clear()
-        with contextlib.suppress(TimeoutError):
-            await asyncio.wait_for(session.output_event.wait(), timeout=remaining)
-
-    timed_out = session.alive() and _hit_timeout(started, args)
-    if timed_out:
-        _kill_process_group(session.proc)
-        await session.proc.wait()
-        out, out_omitted = await session.stdout.drain()
-        err, err_omitted = await session.stderr.drain()
-        stdout.append(out)
-        stderr.append(err)
-        omitted += out_omitted + err_omitted
-
-    if not session.alive():
-        MANAGER.release(session)
-
-    return {
-        "chunk_id": secrets.token_hex(3),
-        "stdout": _decode(b"".join(stdout), args.get("max_output_tokens")),
-        "stderr": _decode(b"".join(stderr), args.get("max_output_tokens")),
-        "returncode": session.proc.returncode,
-        "session_id": session.session_id if session.alive() else None,
-        "running": session.alive(),
-        "timed_out": timed_out,
-        "wall_time_seconds": round(time.perf_counter() - started, 4),
-        "omitted_bytes": omitted,
-    }
-
-
-async def write(session: ExecSession, chars: str) -> None:
-    if not chars:
-        return
-    if not session.alive() or session.proc.stdin is None:
-        raise ValueError(f"stdin is closed for exec session: {session.session_id}")
-    if chars == "\x03":
-        _interrupt_process_group(session.proc)
-        return
-    session.proc.stdin.write(chars.encode("utf-8"))
-    await session.proc.stdin.drain()
-
-
-def session_id(value: object) -> int:
+def parse_session_id(value: object) -> int:
     if not isinstance(value, (int, float, str)):
         raise ValueError("session_id must be a positive integer")
     try:
@@ -244,42 +316,21 @@ def session_id(value: object) -> int:
     return session_id
 
 
-async def _read_stream(
-    session: ExecSession,
-    stream: asyncio.StreamReader,
-    buffer: OutputBuffer,
-) -> None:
-    try:
-        while chunk := await stream.read(8192):
-            await buffer.append(chunk)
-            session.output_event.set()
-    finally:
-        session.output_closed += 1
-        session.output_event.set()
-
-
-async def _stop_descendants_after_exit(session: ExecSession) -> None:
-    await session.proc.wait()
-    # Commands may not leave detached work running after the tracked shell exits.
-    # This keeps workspace mutation serialized through exec_command/write_stdin.
-    _kill_process_group(session.proc)
-
-
-def _cwd(context: ToolContext, raw: object) -> Path:
+def _cwd(workspace: Path, raw: object) -> Path:
     if raw is None or str(raw).strip() == "":
-        return context.workspace.resolve()
-    path = scoped_path(context.workspace, str(raw), "run workspace")
+        return workspace.resolve()
+    path = scoped_path(workspace, str(raw), "run workspace")
     if not path.is_dir():
         raise ValueError("cwd must be a directory inside the run workspace")
     return path
 
 
-def _env(context: ToolContext, shell: str) -> dict[str, str]:
+def _env(run_dir: Path, workspace: Path, shell: str) -> dict[str, str]:
     env = os.environ.copy()
     env.setdefault("PATH", "/usr/bin:/bin:/usr/sbin:/sbin")
     env["SHELL"] = shell
-    env["MINI_ARTICRAFT_RUN_DIR"] = str(context.run_dir)
-    env["MINI_ARTICRAFT_WORKSPACE_DIR"] = str(context.workspace)
+    env["MINI_ARTICRAFT_RUN_DIR"] = str(run_dir)
+    env["MINI_ARTICRAFT_WORKSPACE_DIR"] = str(workspace)
     return env
 
 
@@ -310,15 +361,13 @@ def _yield_time(args: dict[str, Any]) -> float:
     return max(0.0, min(value, MAX_YIELD_TIME_MS) / 1000)
 
 
-def _hit_timeout(started: float, args: dict[str, Any]) -> bool:
-    return args.get("timeout") is not None and (
-        time.perf_counter() - started >= float(args["timeout"])
-    )
+def _timeout(args: dict[str, Any]) -> float | None:
+    raw = args.get("timeout")
+    return float(raw) if raw is not None else None
 
 
-def _decode(data: bytes, max_output_tokens: object) -> str:
+def _decode(data: bytes, budget: int) -> str:
     text = data.decode("utf-8", errors="replace")
-    budget = _char_budget(max_output_tokens)
     if len(text) <= budget:
         return text
     if budget == 0:
@@ -338,23 +387,18 @@ def _char_budget(raw_tokens: object) -> int:
     return max(0, min(MAX_OUTPUT_BYTES, tokens * 4))
 
 
-def _interrupt_process_group(proc: asyncio.subprocess.Process) -> None:
+def _signal_process_group(proc: asyncio.subprocess.Process, sig: int) -> None:
+    """Send ``sig`` to the process group, falling back to the direct child.
+
+    ``start_new_session=True`` makes each session its own group leader, so the
+    group id equals the child pid. ``killpg`` is unavailable on some platforms
+    (``AttributeError``); either signal may race process exit (``ProcessLookupError``).
+    """
     pid = proc.pid
     if pid is None:
         return
     try:
-        os.killpg(pid, signal.SIGINT)
+        os.killpg(pid, sig)
     except (AttributeError, ProcessLookupError):
         with contextlib.suppress(ProcessLookupError):
-            proc.send_signal(signal.SIGINT)
-
-
-def _kill_process_group(proc: asyncio.subprocess.Process) -> None:
-    pid = proc.pid
-    if pid is None:
-        return
-    try:
-        os.killpg(pid, signal.SIGKILL)
-    except (AttributeError, ProcessLookupError):
-        with contextlib.suppress(ProcessLookupError):
-            proc.kill()
+            proc.send_signal(sig)

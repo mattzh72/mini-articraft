@@ -29,7 +29,6 @@ from mini_articraft.agent.harness import (
 )
 from mini_articraft.agent.tools import Tool, ToolContext
 from mini_articraft.agent.tools._core import workspace_digest
-from mini_articraft.agent.tools._exec import MANAGER as EXEC_MANAGER
 from mini_articraft.environments.local import DEFAULT_MAIN_PY, LocalEnvironment
 from mini_articraft.record import Record, read_conversation
 
@@ -412,9 +411,19 @@ def test_cached_success_survives_a_later_failed_compile(monkeypatch, tmp_path) -
     assert result["result"] == "result/usdz/0000.usdz"
 
 
-def test_agent_cancellation_terminates_a_live_exec_session(tmp_path) -> None:
+def test_agent_cancellation_terminates_a_live_exec_session(monkeypatch, tmp_path) -> None:
     command = f"{shlex.quote(sys.executable)} -c 'import time; time.sleep(60)'"
     waiting = asyncio.Event()
+    contexts: list[ToolContext] = []
+
+    real_context = ToolContext
+
+    def spy_context(*args, **kwargs):
+        context = real_context(*args, **kwargs)
+        contexts.append(context)
+        return context
+
+    monkeypatch.setattr("mini_articraft.agent.harness.ToolContext", spy_context)
 
     async def block_forever(query: ModelQuery) -> Response:
         waiting.set()
@@ -439,12 +448,11 @@ def test_agent_cancellation_terminates_a_live_exec_session(tmp_path) -> None:
         env = LocalEnvironment(output_dir=tmp_path)
         task = asyncio.create_task(Agent(model, env, max_turns=3).run("box", run_id="cancel"))
         await asyncio.wait_for(waiting.wait(), timeout=5)
-        context = ToolContext(env, tmp_path / "cancel", tmp_path / "cancel" / "workspace")
-        assert EXEC_MANAGER.has_live_session(context)
+        assert contexts[0].exec_sessions.live_ids()
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
             await task
-        assert not EXEC_MANAGER.has_live_session(context)
+        assert contexts[0].exec_sessions.live_ids() == ()
 
     run(exercise())
 
