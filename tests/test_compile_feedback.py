@@ -8,6 +8,16 @@ from mini_articraft.compile_feedback import (
 from mini_articraft.sdk import TestFailure, TestReport
 
 
+def _failing_report(*failures: TestFailure, warnings: tuple[str, ...] = ()) -> TestReport:
+    return TestReport(
+        passed=False,
+        checks_run=len(failures),
+        checks=tuple(failure.name for failure in failures),
+        failures=failures,
+        warnings=warnings,
+    )
+
+
 def test_compile_report_clean_success_uses_articraft_style_block() -> None:
     report = build_compile_report(status="success")
 
@@ -201,3 +211,127 @@ def test_compile_failure_signature_and_rendering_are_stable() -> None:
     assert "This failure matches the previous compile attempt." in rendered
     assert "This is compile failure 3 in a row." in rendered
     assert "`exec_command` inspection" in rendered
+
+
+def test_contact_gap_is_classified_as_a_gap_not_an_overlap() -> None:
+    report = build_compile_report(
+        status="failure",
+        test_report=_failing_report(
+            TestFailure(
+                name="expect_contact(base,lid)",
+                details="pair=('base','lid') distance=0.0032 collided=False contact_tol=0.001",
+            )
+        ),
+    )
+
+    signal = report["signal_bundle"]["signals"][0]
+    assert signal["kind"] == "exact_contact_gap"
+    assert signal["code"] == "TEST_EXACT_CONTACT_GAP"
+    assert signal["source"] == "tests"
+    assert "a gap, not an overlap" in report["signals_text"]
+
+
+def test_compiler_owned_checks_keep_their_codes_and_sources() -> None:
+    report = build_compile_report(
+        status="failure",
+        test_report=_failing_report(
+            TestFailure(name="check_model_valid", details="ValidationError: bad shape"),
+            TestFailure(
+                name="check_single_root_part",
+                details="Expected exactly one root part, found 2: ['a', 'b']",
+            ),
+            TestFailure(name="fail_if_isolated_parts()", details="Isolated parts detected"),
+            TestFailure(
+                name="fail_if_parts_overlap_in_current_pose()",
+                details="Part overlaps detected",
+            ),
+        ),
+    )
+
+    by_name = {s["check_name"]: s for s in report["signal_bundle"]["signals"]}
+    assert by_name["check_model_valid"]["code"] == "QC_MODEL_VALIDITY"
+    assert by_name["check_model_valid"]["source"] == "compiler"
+    assert by_name["check_single_root_part"]["code"] == "QC_SINGLE_ROOT_POLICY"
+    assert by_name["check_single_root_part"]["group"] == "build"
+    assert by_name["fail_if_isolated_parts()"]["code"] == "QC_ISOLATED_PART"
+    assert by_name["fail_if_isolated_parts()"]["source"] == "compiler"
+    assert by_name["fail_if_parts_overlap_in_current_pose()"]["code"] == "QC_REAL_OVERLAP"
+
+
+def test_authored_checks_with_the_same_findings_map_to_test_codes() -> None:
+    report = build_compile_report(
+        status="failure",
+        test_report=_failing_report(
+            TestFailure(
+                name="fail_if_isolated_parts(tight)",
+                details="isolated parts detected: ['antenna']",
+            ),
+            TestFailure(
+                name="expect_no_collision(base,lid)",
+                details="pair=('base','lid') collided=true overlap_volume=1e-6",
+            ),
+        ),
+    )
+
+    kinds = {signal["kind"]: signal for signal in report["signal_bundle"]["signals"]}
+    assert kinds["isolated_part"]["code"] == "TEST_ISOLATED_PART"
+    assert kinds["isolated_part"]["source"] == "tests"
+    assert kinds["real_overlap"]["code"] == "TEST_REAL_OVERLAP"
+    assert kinds["real_overlap"]["source"] == "tests"
+
+
+def test_invalid_run_tests_return_type_is_a_build_signal() -> None:
+    report = build_compile_report(
+        status="failure",
+        error="ValueError: run_tests() must return TestReport (got dict)",
+    )
+
+    signal = report["signal_bundle"]["signals"][0]
+    assert signal["kind"] == "invalid_run_tests_report"
+    assert signal["code"] == "COMPILE_INVALID_RUN_TESTS_REPORT"
+    assert signal["group"] == "build"
+
+
+def test_repeat_and_streak_guidance_escalates() -> None:
+    report = build_compile_report(
+        status="failure",
+        test_report=_failing_report(TestFailure(name="expect_contact(a,b)", details="d")),
+    )
+
+    rendered = render_compile_report(report, repeated=True, failure_streak=3)
+
+    assert "This failure matches the previous compile attempt." in rendered["signals_text"]
+    assert "This is compile failure 3 in a row." in rendered["signals_text"]
+    assert "exec_command" in rendered["signals_text"]
+
+
+def test_failure_signature_ignores_warning_only_reports() -> None:
+    report = build_compile_report(
+        status="success",
+        test_report=TestReport(
+            passed=True,
+            checks_run=1,
+            checks=("check_model_valid",),
+            failures=(),
+            warnings=("Scale warning: geometry outlier dimensions",),
+        ),
+    )
+
+    assert compile_failure_signature(report) is None
+    codes = {signal["code"] for signal in report["signal_bundle"]["signals"]}
+    assert codes == {"WARN_GEOMETRY_SCALE"}
+
+
+def test_traceback_location_prefers_the_last_workspace_frame() -> None:
+    report = build_compile_report(
+        status="failure",
+        error="ValueError: boom",
+        traceback_text=(
+            '  File "/opt/venv/lib/python3.11/site-packages/build123d/x.py", line 1, in f\n'
+            '  File "/private/runs/demo/workspace/main.py", line 9, in build\n'
+            '  File "/private/runs/demo/workspace/parts/lid.py", line 42, in hinge\n'
+        ),
+    )
+
+    signal = report["signal_bundle"]["signals"][0]
+    assert signal["details"] == "location=parts/lid.py:42 in hinge"

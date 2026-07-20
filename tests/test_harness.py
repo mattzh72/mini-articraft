@@ -235,6 +235,30 @@ def test_warm_environment_matches_the_cold_subprocess_contract(tmp_path: Path) -
     assert outcomes["cold"] == outcomes["warm"] == ("success", "success", True)
 
 
+def test_cold_and_warm_lanes_fail_identically(tmp_path: Path) -> None:
+    """Failure payloads also match across lanes: status, signals, and codes."""
+    outcomes = {}
+    environments = {
+        "cold": LocalEnvironment(output_dir=tmp_path / "cold"),
+        "warm": WarmEnvironment(output_dir=tmp_path / "warm"),
+    }
+    for lane, env in environments.items():
+        run_dir = env.create_run("broken")
+        (run_dir / "workspace" / "main.py").write_text(
+            "object_model = 'not a model'\n", encoding="utf-8"
+        )
+        payload = env.compile_path(run_dir)
+        bundle = payload["compile_report"]["signal_bundle"]
+        outcomes[lane] = (
+            payload["status"],
+            payload["compile_report"]["status"],
+            tuple(signal["code"] for signal in bundle["signals"]),
+        )
+    assert outcomes["cold"] == outcomes["warm"]
+    assert outcomes["cold"][0] == "error"
+    assert outcomes["cold"][2] == ("COMPILE_RUNTIME_FAILURE",)
+
+
 HELPER_MAIN = """
 import helper
 
