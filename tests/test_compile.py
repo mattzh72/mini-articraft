@@ -5,6 +5,7 @@ import os
 import signal
 import sys
 import time
+from pathlib import Path
 
 import pytest
 
@@ -84,7 +85,7 @@ def test_compile_path_exports_usdz_but_only_updates_attempt_data(tmp_path) -> No
     assert read_conversation(run_dir / "conversation.jsonl") == []
 
 
-def test_failed_compile_does_not_create_or_publish_a_usdz(tmp_path) -> None:
+def test_failed_checks_save_a_usdz_without_publishing_it(tmp_path) -> None:
     env = LocalEnvironment(output_dir=tmp_path)
     run_dir = env.create_run("failure")
     write_main(
@@ -103,18 +104,22 @@ def run_tests() -> TestReport:
 """,
     )
 
-    result = env.compile_path(run_dir)
+    first = env.compile_path(run_dir)
+    second = env.compile_path(run_dir)
 
-    assert result["status"] == "error"
-    assert not list(run_dir.joinpath("result", "usdz").glob("*.usdz"))
-    assert not run_dir.joinpath("result", "model.json").exists()
+    assert first["status"] == second["status"] == "error"
+    assert first["usdz"] == str(run_dir / "result" / "usdz" / "0000.usdz")
+    assert second["usdz"] == str(run_dir / "result" / "usdz" / "0001.usdz")
+    assert Path(first["usdz"]).is_file()
+    assert Path(second["usdz"]).is_file()
+    assert run_dir.joinpath("result", "model.json").is_file()
     record = Record.load(run_dir / "record.json")
     assert record.status == "created"
-    assert record.attempts == 1
+    assert record.attempts == 2
     assert record.result == ""
 
 
-def test_a_failed_attempt_does_not_consume_the_next_usdz_number(tmp_path) -> None:
+def test_a_fatal_attempt_does_not_consume_the_next_usdz_number(tmp_path) -> None:
     env = LocalEnvironment(output_dir=tmp_path)
     run_dir = env.create_run("versions")
     first = env.compile_path(run_dir)
@@ -208,7 +213,7 @@ def run_tests():
     assert "must return TestReport" in env.compile_path(bad_report)["error"]
 
 
-def test_baseline_checks_adjacent_parent_child_penetration_before_export(tmp_path) -> None:
+def test_baseline_overlap_failure_still_saves_the_intermediate_usdz(tmp_path) -> None:
     env = LocalEnvironment(output_dir=tmp_path)
     run_dir = env.create_run("overlap")
     write_main(
@@ -230,7 +235,7 @@ def run_tests() -> TestReport:
 
     assert result["status"] == "error"
     assert "fail_if_parts_overlap_in_current_pose" in result["error"]
-    assert not list(run_dir.joinpath("result", "usdz").glob("*.usdz"))
+    assert Path(result["usdz"]).is_file()
 
 
 def test_disconnected_geometry_is_a_compiler_warning(tmp_path) -> None:

@@ -115,7 +115,6 @@ def _compile_workspace(
             baseline_report = _run_baseline_tests(object_model, authored_report, tracker=tracker)
             test_report = _merge_test_reports(authored_report, baseline_report)
             payload["test_report"] = _serialize_test_report(test_report)
-            _raise_for_failed_test_report(test_report)
             with tracker.phase("exporting and validating the USDZ file"):
                 result = export_object(object_model, export_dir)
             payload.update(
@@ -124,6 +123,7 @@ def _compile_workspace(
                     "usdz": str(result.usdz),
                 }
             )
+            _raise_for_failed_test_report(test_report)
 
         payload.update(
             {

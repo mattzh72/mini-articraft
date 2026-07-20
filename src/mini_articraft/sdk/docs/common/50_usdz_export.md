@@ -1,8 +1,9 @@
 # USDZ export
 
-The compile worker exports one USDZ package after the authored tests and compiler owned checks
-pass. In an agent run, use the `compile` tool. Do not call an environment export helper from
-`main.py`, because that would bypass the compiler owned checks and publication rules.
+The compile worker exports one USDZ package after it runs the authored tests and compiler owned
+checks. It saves the package when the object can be exported, even if a check fails. In an agent
+run, use the `compile` tool. Do not call an environment export helper from `main.py`, because that
+would bypass the compiler owned checks and publication rules.
 
 The exporter validates the object and tessellates build123d shapes with a default tolerance of
 `0.001` meter.
@@ -173,18 +174,19 @@ numbered packages remain in place.
 
 ## Compile failure behavior
 
-The compile worker runs all blocking checks before it calls the exporter. A runtime error, invalid
-model, authored test failure, physical isolation failure, or meaningful overlap failure therefore
-does not create a new USDZ or manifest. A disconnected geometry or scale warning does not block
-export.
+The compile worker runs the authored and baseline checks before it calls the exporter. A blocking
+check failure still creates a new numbered USDZ and updates the manifest when the object can be
+exported. This keeps intermediate models available for inspection. The compile result still has
+status `error`, so the agent must fix the checks before it can finish the run.
 
-A failed attempt does not consume a USDZ number. For example, success, failure, then success writes
-`0000.usdz` and `0001.usdz`.
+A fatal error before export does not create a USDZ or consume a USDZ number. This includes errors
+while loading `main.py`, building the object, or running the required test function. An invalid
+model or an OpenUSD export error also prevents the exporter from publishing a package.
 
 Compile attempts update only the attempt count in `record.json`. The agent writes run status
 `success` and the relative USDZ result only after the current workspace has a fresh successful
-compile and the model has returned a visible final response. A failed compile result does not
-publish a USDZ path in the run record.
+compile and the model has returned a visible final response. A failed compile result may contain
+an intermediate USDZ path, but it does not publish that path in the run record.
 
 If an earlier compile in the same run succeeded, a later failed compile does not delete the older
 package. The freshness check prevents the agent from publishing that older package for changed

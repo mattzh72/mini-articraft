@@ -311,8 +311,9 @@ allowances into a new context and runs these baseline checks before export:
 5. `warn_if_absurd_dimensions()`
 6. `fail_if_parts_overlap_in_current_pose()`
 
-If model validity or the root check fails, the worker stops the rest of the baseline pass. All
-blocking authored and baseline checks must pass before USDZ export starts.
+If model validity or the root check fails, the worker stops the rest of the baseline pass. When the
+object is valid enough to export, the worker saves the USDZ even if another blocking check fails.
+The failed check still makes the compile fail and prevents final publication.
 
 The merged report keeps one copy of each check name. A compiler failure replaces an authored
 failure with the same name. A passing compiler check never erases an authored failure. Exact
