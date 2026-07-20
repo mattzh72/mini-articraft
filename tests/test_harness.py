@@ -10,11 +10,13 @@ from harness import (
     GOOD_MAIN_PY,
     CassetteError,
     CassetteMismatchError,
+    CompileServerError,
     ModelQuery,
     ReplayHarness,
     Response,
     ScriptedModel,
     ScriptExhaustedError,
+    WarmEnvironment,
     calls,
     run,
     run_scenario,
@@ -24,6 +26,7 @@ from harness import (
 
 from mini_articraft.agent.events import TurnStarted
 from mini_articraft.environments.local import LocalEnvironment
+from mini_articraft.record import Record
 
 
 def write_good_main() -> Response:
@@ -78,6 +81,187 @@ def test_normalized_responses_do_not_mutate_step_dicts() -> None:
     model = ScriptedModel([step])
     run(model.query([]))
     assert step == {"text": "hi", "tool_calls": []}
+
+
+# ---------------------------------------------------------------------------
+# WarmEnvironment
+# ---------------------------------------------------------------------------
+
+
+def test_warm_environment_compiles_via_the_shared_worker(tmp_path: Path) -> None:
+    env = WarmEnvironment(output_dir=tmp_path)
+    run_dir = env.create_run("box")
+    (run_dir / "workspace" / "main.py").write_text(GOOD_MAIN_PY, encoding="utf-8")
+
+    payload = env.compile_path(run_dir)
+
+    assert payload["status"] == "success"
+    assert payload["returncode"] == 0
+    assert env.compile_count == 1
+    assert Path(payload["usdz"]).is_file()
+    assert payload["compile_report"]["status"] == "success"
+    assert Record.load(run_dir / "record.json").attempts == 1
+
+
+def test_warm_environment_surfaces_failures_with_signals(tmp_path: Path) -> None:
+    env = WarmEnvironment(output_dir=tmp_path)
+    run_dir = env.create_run("broken")
+    (run_dir / "workspace" / "main.py").write_text(
+        "object_model = 'not a model'\n", encoding="utf-8"
+    )
+
+    payload = env.compile_path(run_dir)
+
+    assert payload["status"] == "error"
+    assert payload["returncode"] == 1
+    report = payload["compile_report"]
+    codes = {signal["code"] for signal in report["signal_bundle"]["signals"]}
+    assert codes == {"COMPILE_RUNTIME_FAILURE"}
+    assert "compile_runtime" in report["signals_text"]
+
+
+def test_warm_environment_requires_main_py(tmp_path: Path) -> None:
+    env = WarmEnvironment(output_dir=tmp_path)
+    run_dir = env.create_run("empty")
+    (run_dir / "workspace" / "main.py").unlink()
+
+    payload = env.compile_path(run_dir)
+
+    assert payload["status"] == "error"
+    assert "workspace/main.py is required" in payload["error"]
+    assert env.compile_count == 0
+
+
+def test_warm_environment_matches_the_cold_subprocess_contract(tmp_path: Path) -> None:
+    outcomes = {}
+    environments = {
+        "cold": LocalEnvironment(output_dir=tmp_path / "cold"),
+        "warm": WarmEnvironment(output_dir=tmp_path / "warm"),
+    }
+    for lane, env in environments.items():
+        run_dir = env.create_run("box")
+        (run_dir / "workspace" / "main.py").write_text(GOOD_MAIN_PY, encoding="utf-8")
+        payload = env.compile_path(run_dir)
+        outcomes[lane] = (
+            payload["status"],
+            payload["compile_report"]["status"],
+            Path(payload["usdz"]).is_file(),
+        )
+    assert outcomes["cold"] == outcomes["warm"] == ("success", "success", True)
+
+
+HELPER_MAIN = """
+import helper
+
+from build123d import Box
+
+from mini_articraft.sdk import ArticulatedObject, TestContext, TestReport
+
+print(f"helper says {helper.VALUE}")
+
+
+def build_object_model() -> ArticulatedObject:
+    model = ArticulatedObject("box")
+    base = model.part("base")
+    base.add(Box(0.2, 0.2, 0.1), name="body")
+    return model
+
+
+object_model = build_object_model()
+
+
+def run_tests() -> TestReport:
+    return TestContext(object_model).report()
+"""
+
+
+def _compile_helper_run(env: WarmEnvironment, run_id: str, value: str) -> dict:
+    run_dir = env.create_run(run_id)
+    workspace = run_dir / "workspace"
+    workspace.joinpath("helper.py").write_text(f'VALUE = "{value}"\n', encoding="utf-8")
+    workspace.joinpath("main.py").write_text(HELPER_MAIN, encoding="utf-8")
+    return env.compile_path(run_dir)
+
+
+def test_warm_environment_isolates_workspace_modules_between_runs(tmp_path: Path) -> None:
+    """Two runs may both define helper.py; each compile must see its own."""
+    env = WarmEnvironment(output_dir=tmp_path)
+
+    first = _compile_helper_run(env, "first", "first-run")
+    second = _compile_helper_run(env, "second", "second-run")
+
+    assert first["status"] == second["status"] == "success"
+    assert "helper says first-run" in first["stdout"]
+    assert "helper says second-run" in second["stdout"]
+
+
+def test_warm_environment_survives_workspace_code_that_exits(tmp_path: Path) -> None:
+    """os._exit in workspace code kills the worker, not the test process."""
+    env = WarmEnvironment(output_dir=tmp_path)
+    run_dir = env.create_run("selfish")
+    (run_dir / "workspace" / "main.py").write_text("import os\nos._exit(1)\n", encoding="utf-8")
+
+    payload = env.compile_path(run_dir)
+
+    assert payload["status"] == "error"
+    assert "exited mid-compile" in payload["error"]
+
+    healthy = env.create_run("healthy")
+    (healthy / "workspace" / "main.py").write_text(GOOD_MAIN_PY, encoding="utf-8")
+    assert env.compile_path(healthy)["status"] == "success"  # a fresh worker took over
+
+
+def test_compile_server_ignores_stale_generation_lines(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Lines from a killed worker generation can never pose as the response."""
+    env = WarmEnvironment(output_dir=tmp_path)
+    run_dir = env.create_run("box")
+    (run_dir / "workspace" / "main.py").write_text(GOOD_MAIN_PY, encoding="utf-8")
+    server = env._shared_server()
+    monkeypatch.setattr(server, "_drain_stale_lines", lambda: None)
+    server._lines.put((-1, '{"status": "stale"}'))
+    server._lines.put((-1, None))
+
+    status, payload = server.compile(run_dir, timeout_seconds=30)
+
+    assert status == "ok"
+    assert payload is not None
+    assert payload["status"] == "success"
+
+
+def test_compile_server_rejects_invalid_json(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A protocol violation is an infrastructure error, not a compile result."""
+    env = WarmEnvironment(output_dir=tmp_path)
+    run_dir = env.create_run("box")
+    (run_dir / "workspace" / "main.py").write_text(GOOD_MAIN_PY, encoding="utf-8")
+    server = env._shared_server()
+    monkeypatch.setattr(server, "_drain_stale_lines", lambda: None)
+    status, _ = server.compile(run_dir, timeout_seconds=30)  # worker at a known generation
+    assert status == "ok"
+    server._lines.put((server._generation, "this is not json"))
+
+    with pytest.raises(CompileServerError, match="invalid JSON"):
+        server.compile(run_dir, timeout_seconds=30)
+
+
+def test_warm_environment_enforces_the_timeout_contract(tmp_path: Path) -> None:
+    env = WarmEnvironment(output_dir=tmp_path, timeout_seconds=0.5)
+    run_dir = env.create_run("slow")
+    (run_dir / "workspace" / "main.py").write_text(
+        "import time\ntime.sleep(30)\n", encoding="utf-8"
+    )
+
+    payload = env.compile_path(run_dir)
+
+    assert payload["status"] == "error"
+    assert "timed out after 0.5s" in payload["error"]
+
+    healthy = env.create_run("healthy")
+    (healthy / "workspace" / "main.py").write_text(GOOD_MAIN_PY, encoding="utf-8")
+    assert env.compile_path(healthy)["status"] == "success"  # a fresh worker took over
 
 
 # ---------------------------------------------------------------------------
@@ -214,7 +398,7 @@ def test_run_scenario_returns_deep_artifacts(tmp_path: Path) -> None:
     artifacts = run_scenario(
         "a box",
         [write_good_main(), calls(tool_call("compile")), text("done")],
-        env=LocalEnvironment(output_dir=tmp_path),
+        env=WarmEnvironment(output_dir=tmp_path),
     )
 
     assert artifacts.record.status == "success"
@@ -226,6 +410,7 @@ def test_run_scenario_returns_deep_artifacts(tmp_path: Path) -> None:
     assert finished is not None
     assert finished.status == "success"
     assert artifacts.tool_outputs()[0]["result"]["path"] == "main.py"
+    assert isinstance(artifacts.model, ScriptedModel)
     assert artifacts.model.queries[-1].turn == 3
 
 
@@ -238,7 +423,7 @@ def test_reactive_steps_can_assert_on_tool_outputs(tmp_path: Path) -> None:
     artifacts = run_scenario(
         "a box",
         [write_good_main(), check_write, text("done")],
-        env=LocalEnvironment(output_dir=tmp_path),
+        env=WarmEnvironment(output_dir=tmp_path),
     )
     assert artifacts.record.status == "success"
 
@@ -248,7 +433,7 @@ def test_run_scenario_fails_when_the_script_is_not_consumed(tmp_path: Path) -> N
         run_scenario(
             "a box",
             [text("done"), text("extra")],
-            env=LocalEnvironment(output_dir=tmp_path),
+            env=WarmEnvironment(output_dir=tmp_path),
             max_turns=1,
         )
 
@@ -270,14 +455,14 @@ def test_captured_cassette_replays_a_full_scenario(
         captured = run_scenario(
             "a box",
             model=recording,
-            env=LocalEnvironment(output_dir=tmp_path / "a"),
+            env=WarmEnvironment(output_dir=tmp_path / "a"),
         )
     assert captured.record.status == "success"
 
     replayed = run_scenario(
         "a box",
         model=replay_harness.replay("box"),
-        env=LocalEnvironment(output_dir=tmp_path / "b"),
+        env=WarmEnvironment(output_dir=tmp_path / "b"),
     )
     assert replayed.record.status == "success"
     assert replayed.result["message"] == "done"

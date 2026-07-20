@@ -79,6 +79,11 @@ typeCheckingMode = "standard"
 [[tool.basedpyright.executionEnvironments]]
 root = "tests"
 
+# The tape CLI also imports the test environment from tests/.
+[[tool.basedpyright.executionEnvironments]]
+root = "scripts"
+extraPaths = ["tests"]
+
 [tool.pytest.ini_options]
 addopts = "-m 'not volume'"
 markers = [

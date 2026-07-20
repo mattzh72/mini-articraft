@@ -3,15 +3,17 @@
 This suite verifies the generation loop without paid model calls.
 `tests/harness.py` is the shared kit; prefer it over per-file fakes.
 
-## The lanes
+## The four lanes
 
 | Lane | Cost | Use for |
 | --- | --- | --- |
 | Unit | ~0s | pure functions: SDK checks, `compile_feedback`, signals |
-| Scripted agent | seconds per run | the full agent loop via `ScriptedModel` + `run_scenario` |
+| Warm compile | ~0.1s per compile | compile behavior via `WarmEnvironment` |
+| Scripted agent | ~0.5s per run | the full agent loop via `ScriptedModel` + `run_scenario` |
+| Cassette replay | free | recorded real runs via `ReplayHarness` |
 
 ```python
-from harness import run_scenario, calls, text, tool_call
+from harness import WarmEnvironment, run_scenario, calls, text, tool_call
 
 artifacts = run_scenario(
     "a box",
@@ -20,7 +22,7 @@ artifacts = run_scenario(
         calls(tool_call("compile")),
         text("done"),
     ],
-    tmp_path=tmp_path,
+    env=WarmEnvironment(output_dir=tmp_path),
 )
 assert artifacts.record.status == "success"
 ```
@@ -29,6 +31,25 @@ A scripted step can also be a callable `(ModelQuery) -> Response`, so the
 "model" can assert on what the agent sent and react to earlier tool outputs.
 See `tests/test_agent_scenarios.py` for end-to-end examples (repair loops,
 repeat-failure guidance, allowances).
+
+## WarmEnvironment vs LocalEnvironment
+
+Both lanes run every compile in a worker subprocess with the same timeout,
+cleanup, and result-assembly contract (shared in
+`src/mini_articraft/environments/local.py`). They differ only in the worker
+lifecycle:
+
+- `LocalEnvironment` (cold) spawns a fresh interpreter per compile (~3s).
+  It owns the fresh-interpreter, process-cleanup, and installed-wheel
+  contracts (`test_compile.py`).
+- `WarmEnvironment` (warm) keeps one worker (`tests/_compile_server.py`)
+  alive for the whole test session, so compiles cost ~0.1s. A compile that
+  times out or kills the worker (e.g. `os._exit` in workspace code) gets an
+  error result; the next compile lazily starts a fresh worker. Compiles are
+  serialized through the shared worker.
+
+Agent-loop tests that monkeypatch the compile tool (`compile_success_tool()`)
+never compile at all and can use either environment.
 
 ## Cassettes: pay once, replay forever
 
@@ -58,6 +79,42 @@ paths. Rows installed by `set()` carry no fingerprint and match any request.
 Curated regression cassettes belong in `tests/cassettes/` (git-ignored by
 default; force-add the ones worth keeping). Scratch cassettes belong under
 `tmp_path`.
+
+## Live tests: `--record` / `--replay`
+
+Tests using the `cassette_model` fixture are **live by default**. Named
+cassettes (`tests/cassettes/<name>.jsonl`; default name = test function,
+or e.g. `cassette_model("latest")`) are used only when you ask:
+
+```bash
+# default: always live (needs OPENAI_API_KEY)
+uv run pytest tests/test_live_generation.py
+
+# offline: replay the named cassette; exit if missing
+uv run pytest tests/test_live_generation.py --replay
+
+# live + (re)record the cassette (needs OPENAI_API_KEY)
+OPENAI_API_KEY=... uv run pytest tests/test_live_generation.py --record
+```
+
+Commit a cassette (`git add -f`) and run CI with `--replay` for a hard
+offline gate. No `--replay` means no cassette — always the real model.
+
+## The tape CLI
+
+`scripts/tape.py` manages the recording library by hand:
+
+```bash
+uv run python scripts/tape.py list            # recordings + prompts
+uv run python scripts/tape.py show box        # one recording's exchanges
+uv run python scripts/tape.py replay box      # replay offline, end to end
+uv run python scripts/tape.py record box "a small box"   # live, pays once
+uv run python scripts/tape.py erase box
+```
+
+`record` stores the prompt as cassette metadata, which is what `replay`
+replays against. `--root` points at another library (the default is
+`tests/cassettes/`).
 
 ## Known platform flakes
 

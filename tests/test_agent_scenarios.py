@@ -18,6 +18,7 @@ from harness import (
     ModelQuery,
     ReplayHarness,
     Response,
+    WarmEnvironment,
     calls,
     run_scenario,
     text,
@@ -25,7 +26,6 @@ from harness import (
 )
 
 from mini_articraft.agent.events import AssistantMessage, RunFinished, RunStarted, ToolStarted
-from mini_articraft.environments.local import LocalEnvironment
 
 BROKEN_NO_RUN_TESTS = """
 from build123d import Box
@@ -107,7 +107,7 @@ def event_signal_codes(recorder: EventRecorder) -> list[str]:
 
 
 def test_agent_repairs_a_missing_run_tests_with_real_signals(tmp_path: Path) -> None:
-    env = LocalEnvironment(output_dir=tmp_path)
+    env = WarmEnvironment(output_dir=tmp_path)
 
     def repair(query: ModelQuery) -> Response:
         signals = compile_signals_shown(query.tool_outputs())
@@ -129,12 +129,13 @@ def test_agent_repairs_a_missing_run_tests_with_real_signals(tmp_path: Path) -> 
 
     assert artifacts.record.status == "success"
     assert artifacts.result["message"] == "done"
+    assert env.compile_count == 2
     codes = event_signal_codes(artifacts.recorder)
     assert "COMPILE_MISSING_RUN_TESTS" in codes
 
 
 def test_repeat_failure_guidance_escalates_across_compiles(tmp_path: Path) -> None:
-    env = LocalEnvironment(output_dir=tmp_path)
+    env = WarmEnvironment(output_dir=tmp_path)
 
     artifacts = run_scenario(
         "a box",
@@ -154,6 +155,7 @@ def test_repeat_failure_guidance_escalates_across_compiles(tmp_path: Path) -> No
     )
 
     assert artifacts.record.status == "success"
+    assert env.compile_count == 4
     signals = compile_signals_shown(artifacts.tool_outputs())
     assert len(signals) == 4
     assert "matches the previous compile attempt" not in signals[0]
@@ -162,7 +164,7 @@ def test_repeat_failure_guidance_escalates_across_compiles(tmp_path: Path) -> No
 
 
 def test_overlap_allowance_flows_through_the_real_worker(tmp_path: Path) -> None:
-    env = LocalEnvironment(output_dir=tmp_path)
+    env = WarmEnvironment(output_dir=tmp_path)
 
     def allow_the_overlap(query: ModelQuery) -> Response:
         signals = compile_signals_shown(query.tool_outputs())
@@ -183,6 +185,7 @@ def test_overlap_allowance_flows_through_the_real_worker(tmp_path: Path) -> None
     )
 
     assert artifacts.record.status == "success"
+    assert env.compile_count == 2
     codes = event_signal_codes(artifacts.recorder)
     assert "QC_REAL_OVERLAP" in codes
     assert "NOTE_ALLOWED_OVERLAP" in codes
@@ -194,7 +197,7 @@ def test_event_stream_is_ordered_and_complete(tmp_path: Path) -> None:
     artifacts = run_scenario(
         "a box",
         [write_main(GOOD_MAIN_PY), compile_workspace(), text("done")],
-        env=LocalEnvironment(output_dir=tmp_path),
+        env=WarmEnvironment(output_dir=tmp_path),
     )
 
     stream = artifacts.recorder.events
@@ -222,7 +225,7 @@ def test_hand_authored_cassette_drives_a_real_run(
     artifacts = run_scenario(
         "a box",
         model=replay_harness.replay("authored-box"),
-        env=LocalEnvironment(output_dir=tmp_path),
+        env=WarmEnvironment(output_dir=tmp_path),
     )
 
     assert artifacts.record.status == "success"
