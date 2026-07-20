@@ -1,13 +1,23 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import shlex
 import sys
 from datetime import datetime
-from typing import Any
 
 import pytest
+from harness import (
+    GOOD_MAIN_PY,
+    ModelQuery,
+    Response,
+    ScriptedModel,
+    calls,
+    compile_success_tool,
+    run,
+    stub_schema,
+    text,
+    tool_call,
+)
 
 import mini_articraft.agent.tools as agent_tools
 from mini_articraft.agent import Agent, events
@@ -24,83 +34,8 @@ from mini_articraft.environments.local import DEFAULT_MAIN_PY, LocalEnvironment
 from mini_articraft.record import Record, read_conversation
 
 
-def run(awaitable):
-    return asyncio.get_event_loop().run_until_complete(awaitable)
-
-
-class FakeModel:
-    def __init__(self, responses: list[dict[str, Any]]):
-        self.responses = responses
-        self.calls: list[dict[str, Any]] = []
-        self.config = type(
-            "FakeConfig",
-            (),
-            {"openai_model": "gpt-test", "openai_reasoning_effort": "low"},
-        )()
-
-    async def query(
-        self,
-        messages: list[dict[str, Any]],
-        *,
-        tools: list[dict[str, Any]] | None = None,
-    ) -> dict[str, Any]:
-        self.calls.append({"messages": list(messages), "tools": list(tools or [])})
-        return self.responses.pop(0)
-
-    async def close(self) -> None:
-        pass
-
-
-def call(call_id: str, name: str, args: dict[str, Any]) -> dict[str, Any]:
-    return {"id": call_id, "name": name, "arguments": json.dumps(args)}
-
-
-def fake_schema(name: str) -> dict[str, Any]:
-    return {
-        "type": "function",
-        "name": name,
-        "description": name,
-        "parameters": {"type": "object", "properties": {}, "required": []},
-    }
-
-
-def compile_success_tool() -> Tool:
-    async def run_compile(context, args):
-        usdz = context.run_dir / "result" / "usdz" / "0000.usdz"
-        usdz.parent.mkdir(parents=True, exist_ok=True)
-        usdz.write_bytes(b"test-usdz")
-        result = {"status": "success", "usdz": str(usdz)}
-        context.compile_result = result
-        context.successful_compile_result = result
-        context.successful_compile_digest = workspace_digest(context.workspace)
-        return result
-
-    return Tool("compile", fake_schema("compile"), run_compile)
-
-
-MODEL_CODE = """
-from build123d import *
-
-from mini_articraft.sdk import ArticulatedObject, TestContext, TestReport
-
-
-def build_object_model() -> ArticulatedObject:
-    model = ArticulatedObject("box")
-    base = model.part("base")
-    base.add(Box(1, 1, 1), name="body")
-    return model
-
-
-object_model = build_object_model()
-
-
-def run_tests() -> TestReport:
-    return TestContext(object_model).report()
-"""
-
-
 def test_agent_writes_compiles_and_returns_final_response(tmp_path) -> None:
-    model = FakeModel(
+    model = ScriptedModel(
         [
             {
                 "text": "",
@@ -111,7 +46,13 @@ def test_agent_writes_compiles_and_returns_final_response(tmp_path) -> None:
                     "output_tokens": 20,
                     "total_tokens": 120,
                 },
-                "tool_calls": [call("call_1", "write", {"path": "main.py", "content": MODEL_CODE})],
+                "tool_calls": [
+                    tool_call(
+                        "write",
+                        {"path": "main.py", "content": GOOD_MAIN_PY},
+                        call_id="call_1",
+                    )
+                ],
             },
             {
                 "text": "",
@@ -122,7 +63,7 @@ def test_agent_writes_compiles_and_returns_final_response(tmp_path) -> None:
                     "output_tokens": 30,
                     "total_tokens": 230,
                 },
-                "tool_calls": [call("call_2", "compile", {})],
+                "tool_calls": [tool_call("compile", {}, call_id="call_2")],
             },
             {
                 "text": "done",
@@ -158,14 +99,14 @@ def test_agent_writes_compiles_and_returns_final_response(tmp_path) -> None:
     assert record.result == "result/usdz/0000.usdz"
     assert record.cost == 1.0
     assert record.token_usage["total_tokens"] == 690
-    assert "<sdk_docs>" not in model.calls[0]["messages"][0]["content"]
-    first_messages = model.calls[0]["messages"]
-    assert [message["role"] for message in first_messages[:3]] == ["system", "user", "user"]
-    assert first_messages[1]["content"].startswith("<sdk_quickstart>")
-    assert "docs/sdk/common/30_articulated_object.md" in first_messages[1]["content"]
-    assert first_messages[2]["content"].startswith("<task>")
-    assert "a box" in first_messages[2]["content"]
-    assert {tool["name"] for tool in model.calls[0]["tools"]} == {
+    first_query = model.queries[0]
+    assert "<sdk_docs>" not in first_query.messages[0]["content"]
+    assert [message["role"] for message in first_query.messages[:3]] == ["system", "user", "user"]
+    assert first_query.messages[1]["content"].startswith("<sdk_quickstart>")
+    assert "docs/sdk/common/30_articulated_object.md" in first_query.messages[1]["content"]
+    assert first_query.messages[2]["content"].startswith("<task>")
+    assert "a box" in first_query.messages[2]["content"]
+    assert {tool["name"] for tool in first_query.tools} == {
         "read",
         "edit",
         "write",
@@ -176,15 +117,14 @@ def test_agent_writes_compiles_and_returns_final_response(tmp_path) -> None:
 
 
 def test_agent_requires_compile_before_final_response(tmp_path) -> None:
-    model = FakeModel(
+    model = ScriptedModel(
         [
-            {
-                "text": "",
-                "tool_calls": [call("call_1", "write", {"path": "main.py", "content": MODEL_CODE})],
-            },
-            {"text": "done too early", "tool_calls": []},
-            {"text": "", "tool_calls": [call("call_2", "compile", {})]},
-            {"text": "done", "tool_calls": []},
+            calls(
+                tool_call("write", {"path": "main.py", "content": GOOD_MAIN_PY}, call_id="call_1")
+            ),
+            text("done too early"),
+            calls(tool_call("compile", {}, call_id="call_2")),
+            text("done"),
         ]
     )
     env = LocalEnvironment(output_dir=tmp_path)
@@ -194,10 +134,8 @@ def test_agent_requires_compile_before_final_response(tmp_path) -> None:
 
     assert result["status"] == "success"
     assert result["message"] == "done"
-    assert any(
-        "<compile_required>" in str(message.get("content"))
-        and "No successful compile has completed yet." in str(message.get("content"))
-        for message in model.calls[2]["messages"]
+    assert model.queries[2].contains(
+        "<compile_required>", "No successful compile has completed yet."
     )
     conversation = read_conversation(tmp_path / "box" / "conversation.jsonl")
     assert any(
@@ -222,20 +160,17 @@ def test_agent_keeps_compile_fresh_after_read(
         agent_tools,
         "TOOLS",
         {
-            "write": Tool("write", fake_schema("write"), run_write),
-            "read": Tool("read", fake_schema("read"), run_read, supports_parallel=True),
+            "write": Tool("write", stub_schema("write"), run_write),
+            "read": Tool("read", stub_schema("read"), run_read, supports_parallel=True),
             "compile": compile_success_tool(),
         },
     )
-    model = FakeModel(
+    model = ScriptedModel(
         [
-            {
-                "text": "",
-                "tool_calls": [call("call_1", "write", {"path": "main.py", "content": "x"})],
-            },
-            {"text": "", "tool_calls": [call("call_2", "compile", {})]},
-            {"text": "", "tool_calls": [call("call_3", "read", {"path": "main.py"})]},
-            {"text": "done after read", "tool_calls": []},
+            calls(tool_call("write", {"path": "main.py", "content": "x"}, call_id="call_1")),
+            calls(tool_call("compile", {}, call_id="call_2")),
+            calls(tool_call("read", {"path": "main.py"}, call_id="call_3")),
+            text("done after read"),
         ]
     )
     env = LocalEnvironment(output_dir=tmp_path)
@@ -245,7 +180,7 @@ def test_agent_keeps_compile_fresh_after_read(
 
     assert result["status"] == "success"
     assert result["message"] == "done after read"
-    assert len(model.calls) == 4
+    assert len(model.queries) == 4
 
 
 def test_agent_keeps_compile_fresh_after_inspection_and_noop_edits(
@@ -258,38 +193,26 @@ def test_agent_keeps_compile_fresh_after_inspection_and_noop_edits(
         "TOOLS",
         selected | {"compile": compile_success_tool()},
     )
-    model = FakeModel(
+    model = ScriptedModel(
         [
-            {
-                "text": "",
-                "tool_calls": [call("call_1", "write", {"path": "main.py", "content": "x"})],
-            },
-            {"text": "", "tool_calls": [call("call_2", "compile", {})]},
-            {
-                "text": "",
-                "tool_calls": [
-                    call(
-                        "call_3",
-                        "edit",
-                        {"path": "main.py", "old_text": "x", "new_text": "x"},
-                    )
-                ],
-            },
-            {
-                "text": "",
-                "tool_calls": [
-                    call(
-                        "call_4",
-                        "edit",
-                        {"path": "main.py", "old_text": "missing", "new_text": "y"},
-                    )
-                ],
-            },
-            {
-                "text": "",
-                "tool_calls": [call("call_5", "exec_command", {"command": "printf inspected"})],
-            },
-            {"text": "done", "tool_calls": []},
+            calls(tool_call("write", {"path": "main.py", "content": "x"}, call_id="call_1")),
+            calls(tool_call("compile", {}, call_id="call_2")),
+            calls(
+                tool_call(
+                    "edit",
+                    {"path": "main.py", "old_text": "x", "new_text": "x"},
+                    call_id="call_3",
+                )
+            ),
+            calls(
+                tool_call(
+                    "edit",
+                    {"path": "main.py", "old_text": "missing", "new_text": "y"},
+                    call_id="call_4",
+                )
+            ),
+            calls(tool_call("exec_command", {"command": "printf inspected"}, call_id="call_5")),
+            text("done"),
         ]
     )
 
@@ -306,20 +229,14 @@ def test_agent_requires_new_compile_after_real_file_change(monkeypatch, tmp_path
         "TOOLS",
         {"write": write_tool, "compile": compile_success_tool()},
     )
-    model = FakeModel(
+    model = ScriptedModel(
         [
-            {
-                "text": "",
-                "tool_calls": [call("call_1", "write", {"path": "main.py", "content": "x"})],
-            },
-            {"text": "", "tool_calls": [call("call_2", "compile", {})]},
-            {
-                "text": "",
-                "tool_calls": [call("call_3", "write", {"path": "main.py", "content": "y"})],
-            },
-            {"text": "too early", "tool_calls": []},
-            {"text": "", "tool_calls": [call("call_4", "compile", {})]},
-            {"text": "done", "tool_calls": []},
+            calls(tool_call("write", {"path": "main.py", "content": "x"}, call_id="call_1")),
+            calls(tool_call("compile", {}, call_id="call_2")),
+            calls(tool_call("write", {"path": "main.py", "content": "y"}, call_id="call_3")),
+            text("too early"),
+            calls(tool_call("compile", {}, call_id="call_4")),
+            text("done"),
         ]
     )
 
@@ -327,10 +244,8 @@ def test_agent_requires_new_compile_after_real_file_change(monkeypatch, tmp_path
 
     assert result["status"] == "success"
     assert result["message"] == "done"
-    assert any(
-        "<compile_required>" in str(message.get("content"))
-        and "changed since the last successful compile" in str(message.get("content"))
-        for message in model.calls[4]["messages"]
+    assert model.queries[4].contains(
+        "<compile_required>", "changed since the last successful compile"
     )
 
 
@@ -342,52 +257,43 @@ def test_running_exec_session_blocks_compile_and_finalization(monkeypatch, tmp_p
         selected | {"compile": compile_success_tool()},
     )
 
-    class SessionModel(FakeModel):
-        async def query(self, messages, *, tools=None):
-            self.calls.append({"messages": list(messages), "tools": list(tools or [])})
-            turn = len(self.calls)
-            if turn == 1:
-                return {
-                    "text": "",
-                    "tool_calls": [
-                        call(
-                            "call_1",
-                            "exec_command",
-                            {
-                                "command": "read value; printf changed > main.py",
-                                "yield_time_ms": 10,
-                            },
-                        )
-                    ],
-                }
-            if turn == 2:
-                return {"text": "", "tool_calls": [call("call_2", "compile", {})]}
-            if turn == 3:
-                return {"text": "too early", "tool_calls": []}
-            if turn == 4:
-                session_id = next(
-                    json.loads(message["output"])["result"]["session_id"]
-                    for message in messages
-                    if message.get("type") == "function_call_output"
-                    and json.loads(message["output"]).get("result", {}).get("session_id")
+    def send_stdin(query: ModelQuery) -> Response:
+        session_id = next(
+            output["result"]["session_id"]
+            for output in query.tool_outputs()
+            if output.get("result", {}).get("session_id")
+        )
+        return calls(
+            tool_call(
+                "write_stdin",
+                {"session_id": session_id, "chars": "go\n", "yield_time_ms": 1000},
+                call_id="call_3",
+            )
+        )
+
+    model = ScriptedModel(
+        [
+            calls(
+                tool_call(
+                    "exec_command",
+                    {
+                        "command": "read value; printf changed > main.py",
+                        "yield_time_ms": 10,
+                    },
+                    call_id="call_1",
                 )
-                return {
-                    "text": "",
-                    "tool_calls": [
-                        call(
-                            "call_3",
-                            "write_stdin",
-                            {"session_id": session_id, "chars": "go\n", "yield_time_ms": 1000},
-                        )
-                    ],
-                }
-            if turn == 5:
-                return {"text": "", "tool_calls": [call("call_4", "compile", {})]}
-            return {"text": "done", "tool_calls": []}
+            ),
+            calls(tool_call("compile", {}, call_id="call_2")),
+            text("too early"),
+            send_stdin,
+            calls(tool_call("compile", {}, call_id="call_4")),
+            text("done"),
+        ]
+    )
 
     result = run(
         Agent(
-            SessionModel([]),
+            model,
             LocalEnvironment(output_dir=tmp_path),
             max_turns=6,
         ).run("box", run_id="box")
@@ -409,25 +315,19 @@ def test_agent_requires_visible_final_after_fresh_compile(monkeypatch, tmp_path)
         "TOOLS",
         {"write": write_tool, "compile": compile_success_tool()},
     )
-    model = FakeModel(
+    model = ScriptedModel(
         [
-            {
-                "text": "",
-                "tool_calls": [call("call_1", "write", {"path": "main.py", "content": "x"})],
-            },
-            {"text": "", "tool_calls": [call("call_2", "compile", {})]},
-            {"text": "", "tool_calls": []},
-            {"text": "done", "tool_calls": []},
+            calls(tool_call("write", {"path": "main.py", "content": "x"}, call_id="call_1")),
+            calls(tool_call("compile", {}, call_id="call_2")),
+            text(""),
+            text("done"),
         ]
     )
 
     result = run(Agent(model, LocalEnvironment(output_dir=tmp_path), max_turns=4).run("box"))
 
     assert result["message"] == "done"
-    assert any(
-        "<final_response_required>" in str(message.get("content"))
-        for message in model.calls[3]["messages"]
-    )
+    assert model.queries[3].contains("<final_response_required>")
 
 
 def test_agent_does_not_finalize_success_without_a_usdz_result(monkeypatch, tmp_path) -> None:
@@ -441,12 +341,12 @@ def test_agent_does_not_finalize_success_without_a_usdz_result(monkeypatch, tmp_
     monkeypatch.setattr(
         agent_tools,
         "TOOLS",
-        {"compile": Tool("compile", fake_schema("compile"), run_compile)},
+        {"compile": Tool("compile", stub_schema("compile"), run_compile)},
     )
-    model = FakeModel(
+    model = ScriptedModel(
         [
-            {"text": "", "tool_calls": [call("call_1", "compile", {})]},
-            {"text": "done", "tool_calls": []},
+            calls(tool_call("compile", {}, call_id="call_1")),
+            text("done"),
         ]
     )
 
@@ -483,25 +383,23 @@ def test_cached_success_survives_a_later_failed_compile(monkeypatch, tmp_path) -
         "TOOLS",
         {
             "write": agent_tools.get("write"),
-            "compile": Tool("compile", fake_schema("compile"), run_compile),
+            "compile": Tool("compile", stub_schema("compile"), run_compile),
         },
     )
-    model = FakeModel(
+    model = ScriptedModel(
         [
-            {"text": "", "tool_calls": [call("compile_1", "compile", {})]},
-            {
-                "text": "",
-                "tool_calls": [call("change", "write", {"path": "main.py", "content": "bad"})],
-            },
-            {"text": "", "tool_calls": [call("compile_2", "compile", {})]},
-            {
-                "text": "",
-                "tool_calls": [
-                    call("restore", "write", {"path": "main.py", "content": DEFAULT_MAIN_PY})
-                ],
-            },
-            {"text": "", "tool_calls": [call("compile_3", "compile", {})]},
-            {"text": "done", "tool_calls": []},
+            calls(tool_call("compile", {}, call_id="compile_1")),
+            calls(tool_call("write", {"path": "main.py", "content": "bad"}, call_id="change")),
+            calls(tool_call("compile", {}, call_id="compile_2")),
+            calls(
+                tool_call(
+                    "write",
+                    {"path": "main.py", "content": DEFAULT_MAIN_PY},
+                    call_id="restore",
+                )
+            ),
+            calls(tool_call("compile", {}, call_id="compile_3")),
+            text("done"),
         ]
     )
 
@@ -516,40 +414,31 @@ def test_cached_success_survives_a_later_failed_compile(monkeypatch, tmp_path) -
 
 def test_agent_cancellation_terminates_a_live_exec_session(tmp_path) -> None:
     command = f"{shlex.quote(sys.executable)} -c 'import time; time.sleep(60)'"
+    waiting = asyncio.Event()
 
-    class BlockingModel(FakeModel):
-        def __init__(self) -> None:
-            super().__init__([])
-            self.waiting = asyncio.Event()
+    async def block_forever(query: ModelQuery) -> Response:
+        waiting.set()
+        pending: asyncio.Future[None] = asyncio.Future()
+        await pending
+        raise AssertionError("blocking query unexpectedly completed")
 
-        async def query(
-            self,
-            messages: list[dict[str, Any]],
-            *,
-            tools: list[dict[str, Any]] | None = None,
-        ) -> dict[str, Any]:
-            self.calls.append({"messages": list(messages), "tools": list(tools or [])})
-            if len(self.calls) == 1:
-                return {
-                    "text": "",
-                    "tool_calls": [
-                        call(
-                            "exec",
-                            "exec_command",
-                            {"command": command, "yield_time_ms": 10},
-                        )
-                    ],
-                }
-            self.waiting.set()
-            pending: asyncio.Future[None] = asyncio.Future()
-            await pending
-            raise AssertionError("blocking query unexpectedly completed")
+    model = ScriptedModel(
+        [
+            calls(
+                tool_call(
+                    "exec_command",
+                    {"command": command, "yield_time_ms": 10},
+                    call_id="exec",
+                )
+            ),
+            block_forever,
+        ]
+    )
 
     async def exercise() -> None:
         env = LocalEnvironment(output_dir=tmp_path)
-        model = BlockingModel()
         task = asyncio.create_task(Agent(model, env, max_turns=3).run("box", run_id="cancel"))
-        await asyncio.wait_for(model.waiting.wait(), timeout=5)
+        await asyncio.wait_for(waiting.wait(), timeout=5)
         context = ToolContext(env, tmp_path / "cancel", tmp_path / "cancel" / "workspace")
         assert EXEC_MANAGER.has_live_session(context)
         task.cancel()
@@ -561,27 +450,22 @@ def test_agent_cancellation_terminates_a_live_exec_session(tmp_path) -> None:
 
 
 def test_agent_fails_third_consecutive_empty_response(tmp_path) -> None:
-    model = FakeModel([{"text": "", "tool_calls": []} for _ in range(3)])
+    model = ScriptedModel([text("") for _ in range(3)])
 
     result = run(Agent(model, LocalEnvironment(output_dir=tmp_path), max_turns=3).run("box"))
 
     assert result["status"] == "error"
     assert "three consecutive responses" in result["error"]
-    assert any(
-        "Do not continue with reasoning-only output." in str(message.get("content"))
-        for message in model.calls[2]["messages"]
-    )
+    assert model.queries[2].contains("Do not continue with reasoning-only output.")
 
 
 def test_agent_records_model_query_failure(tmp_path) -> None:
-    class FailingModel(FakeModel):
-        async def query(self, messages, *, tools=None):
-            self.calls.append({"messages": list(messages), "tools": list(tools or [])})
-            raise RuntimeError("socket closed")
+    def fail(query: ModelQuery) -> Response:
+        raise RuntimeError("socket closed")
 
-    result = run(
-        Agent(FailingModel([]), LocalEnvironment(output_dir=tmp_path), max_turns=3).run("box")
-    )
+    model = ScriptedModel([fail])
+
+    result = run(Agent(model, LocalEnvironment(output_dir=tmp_path), max_turns=3).run("box"))
 
     assert result["status"] == "error"
     assert result["result"] == ""
@@ -589,14 +473,13 @@ def test_agent_records_model_query_failure(tmp_path) -> None:
 
 
 def test_agent_emits_run_events(tmp_path) -> None:
-    model = FakeModel(
+    model = ScriptedModel(
         [
-            {
-                "text": "",
-                "tool_calls": [call("call_1", "write", {"path": "main.py", "content": MODEL_CODE})],
-            },
-            {"text": "", "tool_calls": [call("call_2", "compile", {})]},
-            {"text": "done", "tool_calls": []},
+            calls(
+                tool_call("write", {"path": "main.py", "content": GOOD_MAIN_PY}, call_id="call_1")
+            ),
+            calls(tool_call("compile", {}, call_id="call_2")),
+            text("done"),
         ]
     )
     env = LocalEnvironment(output_dir=tmp_path)
@@ -654,21 +537,18 @@ def test_agent_runs_parallel_safe_tools_concurrently(monkeypatch, tmp_path) -> N
         agent_tools,
         "TOOLS",
         {
-            "read": Tool("read", fake_schema("read"), run_read, supports_parallel=True),
+            "read": Tool("read", stub_schema("read"), run_read, supports_parallel=True),
             "compile": compile_success_tool(),
         },
     )
-    model = FakeModel(
+    model = ScriptedModel(
         [
-            {
-                "text": "",
-                "tool_calls": [
-                    call("call_1", "read", {"path": "a.py"}),
-                    call("call_2", "read", {"path": "b.py"}),
-                ],
-            },
-            {"text": "", "tool_calls": [call("call_3", "compile", {})]},
-            {"text": "done", "tool_calls": []},
+            calls(
+                tool_call("read", {"path": "a.py"}, call_id="call_1"),
+                tool_call("read", {"path": "b.py"}, call_id="call_2"),
+            ),
+            calls(tool_call("compile", {}, call_id="call_3")),
+            text("done"),
         ]
     )
     env = LocalEnvironment(output_dir=tmp_path)
@@ -702,21 +582,18 @@ def test_agent_serializes_non_parallel_tools(monkeypatch, tmp_path) -> None:
         agent_tools,
         "TOOLS",
         {
-            "write": Tool("write", fake_schema("write"), run_write, supports_parallel=True),
+            "write": Tool("write", stub_schema("write"), run_write, supports_parallel=True),
             "compile": compile_success_tool(),
         },
     )
-    model = FakeModel(
+    model = ScriptedModel(
         [
-            {
-                "text": "",
-                "tool_calls": [
-                    call("call_1", "write", {"path": "a.py"}),
-                    call("call_2", "write", {"path": "b.py"}),
-                ],
-            },
-            {"text": "", "tool_calls": [call("call_3", "compile", {})]},
-            {"text": "done", "tool_calls": []},
+            calls(
+                tool_call("write", {"path": "a.py"}, call_id="call_1"),
+                tool_call("write", {"path": "b.py"}, call_id="call_2"),
+            ),
+            calls(tool_call("compile", {}, call_id="call_3")),
+            text("done"),
         ]
     )
     env = LocalEnvironment(output_dir=tmp_path)

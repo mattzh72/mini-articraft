@@ -74,6 +74,11 @@ include = ["src", "tests", "scripts"]
 exclude = ["src/mini_articraft/sdk/docs"]
 typeCheckingMode = "standard"
 
+# Test modules import the test environment as `import harness` (pytest prepend
+# mode puts tests/ on sys.path); teach the type checker the same root.
+[[tool.basedpyright.executionEnvironments]]
+root = "tests"
+
 [tool.pytest.ini_options]
 addopts = "-m 'not volume'"
 markers = [
