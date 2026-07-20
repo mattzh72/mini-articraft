@@ -244,7 +244,6 @@ class ExecSessions:
             "-lc" if _bool(args.get("login"), default=True) else "-c",
             str(args["command"]),
         ]
-        (run_dir / ".tmp").mkdir(exist_ok=True)
         proc = await asyncio.create_subprocess_exec(
             *command,
             cwd=cwd,
@@ -330,7 +329,6 @@ def _env(run_dir: Path, workspace: Path, shell: str) -> dict[str, str]:
     env = os.environ.copy()
     env.setdefault("PATH", "/usr/bin:/bin:/usr/sbin:/sbin")
     env["SHELL"] = shell
-    env["TMPDIR"] = str(run_dir / ".tmp")
     env["MINI_ARTICRAFT_RUN_DIR"] = str(run_dir)
     env["MINI_ARTICRAFT_WORKSPACE_DIR"] = str(workspace)
     return env
@@ -372,6 +370,8 @@ def _decode(data: bytes, budget: int) -> str:
     text = data.decode("utf-8", errors="replace")
     if len(text) <= budget:
         return text
+    if budget == 0:
+        return f"…{len(text)} chars truncated…"
     left = text[: budget // 2]
     right = text[-(budget - len(left)) :]
     return f"{left}…{len(text) - budget} chars truncated…{right}"
