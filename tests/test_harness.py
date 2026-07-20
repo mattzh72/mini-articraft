@@ -470,6 +470,93 @@ def test_strict_replay_detects_trajectory_drift(replay_harness: ReplayHarness) -
         run(replay.query([{"role": "user", "content": "different"}]))
 
 
+def test_strict_replay_detects_tool_set_drift(replay_harness: ReplayHarness) -> None:
+    recorded_tools = [{"name": "compile"}]
+    with replay_harness.capture("run", ScriptedModel([text("a"), text("b")])) as recording:
+        run(recording.query([{"role": "user", "content": "go"}], tools=recorded_tools))
+        run(recording.query([{"role": "user", "content": "go"}], tools=recorded_tools))
+
+    replay = replay_harness.replay("run")
+    first = run(replay.query([{"role": "user", "content": "go"}], tools=recorded_tools))
+    assert first["text"] == "a"
+    with pytest.raises(CassetteMismatchError, match="turn 2 diverged"):
+        run(replay.query([{"role": "user", "content": "go"}], tools=[{"name": "different"}]))
+
+
+def test_strict_replay_ignores_payload_text(replay_harness: ReplayHarness) -> None:
+    """Same structure, different words: payload text is not fingerprinted."""
+    with replay_harness.capture("run", ScriptedModel([text("a"), text("b")])) as recording:
+        run(recording.query([{"role": "user", "content": "first wording"}]))
+        run(
+            recording.query(
+                [
+                    {"role": "user", "content": "first wording"},
+                    {"role": "assistant", "content": "a"},
+                ]
+            )
+        )
+
+    replay = replay_harness.replay("run")
+    assert run(replay.query([{"role": "user", "content": "DIFFERENT WORDING"}]))["text"] == "a"
+    second = run(
+        replay.query(
+            [
+                {"role": "user", "content": "DIFFERENT WORDING"},
+                {"role": "assistant", "content": "a"},
+            ]
+        )
+    )
+    assert second["text"] == "b"
+
+
+def test_non_strict_replay_skips_fingerprint_checks(replay_harness: ReplayHarness) -> None:
+    with replay_harness.capture("run", ScriptedModel([text("a")])) as recording:
+        run(recording.query([{"role": "user", "content": "go"}]))
+
+    replay = replay_harness.replay("run", strict=False)
+    assert run(replay.query([{"role": "assistant", "content": "anything"}]))["text"] == "a"
+
+
+def test_recording_model_delegates_exhaustion_to_finite_models(
+    replay_harness: ReplayHarness,
+) -> None:
+    inner = ScriptedModel([text("a"), text("leftover")])
+    with replay_harness.capture("run", inner) as recording:
+        run(recording.query([]))
+    with pytest.raises(AssertionError, match="never consumed"):
+        recording.assert_exhausted()
+
+
+def test_a_failed_capture_keeps_the_partial_cassette(replay_harness: ReplayHarness) -> None:
+    with (
+        pytest.raises(RuntimeError, match="boom"),
+        replay_harness.capture("run", ScriptedModel([text("a")])) as recording,
+    ):
+        run(recording.query([]))
+        raise RuntimeError("boom")
+    assert replay_harness.entries("run")  # the partial cassette stays for inspection
+
+    with replay_harness.capture("run", ScriptedModel([text("b")])) as recording:
+        run(recording.query([]))
+    assert [row["response"]["text"] for row in replay_harness.entries("run")] == ["b"]
+
+
+def test_malformed_cassette_rows_report_their_location(replay_harness: ReplayHarness) -> None:
+    path = replay_harness.set("broken", [text("ok")])
+    path.write_text(
+        '{"fingerprint": "", "response": {"text": "ok"}}\nnot json\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(CassetteError, match=r"invalid cassette row .*:2"):
+        replay_harness.entries("broken")
+
+
+def test_set_normalizes_plain_responses(replay_harness: ReplayHarness) -> None:
+    replay_harness.set("norm", [{"text": "hi"}])
+    row = replay_harness.entries("norm")[0]
+    assert row["response"] == {"text": "hi", "tool_calls": [], "cost": 0.0, "token_usage": {}}
+
+
 def test_replay_beyond_the_cassette_is_a_clear_error(replay_harness: ReplayHarness) -> None:
     replay_harness.set("short", [text("only")])
     replay = replay_harness.replay("short")
