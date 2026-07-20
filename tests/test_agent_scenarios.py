@@ -16,6 +16,7 @@ from harness import (
     GOOD_MAIN_PY,
     EventRecorder,
     ModelQuery,
+    ReplayHarness,
     Response,
     calls,
     run_scenario,
@@ -208,3 +209,21 @@ def test_event_stream_is_ordered_and_complete(tmp_path: Path) -> None:
         )
         finished = artifacts.recorder.tool_finishes(name)[0]
         assert started < stream.index(finished)
+
+
+def test_hand_authored_cassette_drives_a_real_run(
+    tmp_path: Path, replay_harness: ReplayHarness
+) -> None:
+    replay_harness.set(
+        "authored-box",
+        [write_main(GOOD_MAIN_PY), compile_workspace(), text("done from tape")],
+    )
+
+    artifacts = run_scenario(
+        "a box",
+        model=replay_harness.replay("authored-box"),
+        env=LocalEnvironment(output_dir=tmp_path),
+    )
+
+    assert artifacts.record.status == "success"
+    assert artifacts.result["message"] == "done from tape"

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 
 import pytest
+from harness import ReplayHarness
 
 
 @pytest.fixture(scope="session")
@@ -34,3 +36,9 @@ def _event_loop():
 def _use_session_loop(_event_loop):
     asyncio.set_event_loop(_event_loop)
     return _event_loop
+
+
+@pytest.fixture
+def replay_harness(tmp_path: Path) -> ReplayHarness:
+    """A scratch cassette library under the test's tmp dir."""
+    return ReplayHarness(tmp_path / "cassettes")

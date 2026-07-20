@@ -110,7 +110,8 @@ directories for compile and record tests. Do not require real model calls unless
 the test is explicitly about a live adapter.
 
 `tests/harness.py` is the modular test environment for agent-loop behavior:
-scripted models drive the full loop without paid model calls. See
+scripted models and cassette replay (`ReplayHarness`) drive the full loop
+without paid model calls. See
 `tests/README.md` for the lanes and when to use each. Keep the subprocess
 worker contract covered in `test_compile.py`. A few exec-output timing tests
 are known to flake on macOS; do not weaken them locally.
