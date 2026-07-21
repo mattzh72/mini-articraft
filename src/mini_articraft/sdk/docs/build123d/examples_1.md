@@ -50,7 +50,6 @@ Local example files:
 - `docs/sdk/build123d/examples/lego_algebra.py`
 - `docs/sdk/build123d/examples/loft.py`
 - `docs/sdk/build123d/examples/loft_algebra.py`
-- `docs/sdk/build123d/examples/low_poly_benchy.stl`
 - `docs/sdk/build123d/examples/maker_coin.py`
 - `docs/sdk/build123d/examples/mixed_algebra_context.py`
 - `docs/sdk/build123d/examples/multiple_workplanes.py`
@@ -79,12 +78,10 @@ Local example files:
 
 ### Benchy
 
-Image file: `docs/sdk/build123d/assets/examples/example_benchy_01.png`.
 
 The Benchy examples shows how to import a STL model as a `Solid` object with the class `Mesher` and
 modify it by replacing chimney with a BREP version.
 
-- Benchy STL model: `low_poly_benchy.stl` (`../examples/low_poly_benchy.stl`)
 
      *Attribution:*
      The low-poly-benchy used in this example is by `reddaugherty`, see
@@ -92,9 +89,7 @@ modify it by replacing chimney with a BREP version.
 
 ### Gallery
 
-Image file: `docs/sdk/build123d/assets/examples/example_benchy_02.png`.
 
-Image file: `docs/sdk/build123d/assets/examples/example_benchy_03.png`.
 
 ### Builder Reference Implementation (Builder Mode)
 
@@ -107,7 +102,6 @@ Include options:
 
 ### Bicycle Tire
 
-Image file: `docs/sdk/build123d/assets/examples/bicycle_tire.png`.
 
 This example demonstrates how to model a realistic bicycle tire with a
 patterned tread using build123d. The key concept showcased here is the
@@ -125,7 +119,6 @@ Include options:
 
 ### Bracelet
 
-Image file: `docs/sdk/build123d/assets/examples/bracelet.png`.
 
 Doubly-curved bracelet with an embossed label
 
@@ -156,7 +149,6 @@ Include options:
 
 ### Former build123d Logo
 
-Image file: `docs/sdk/build123d/assets/examples/example_build123d_logo_01.png`.
 
 This example creates the former build123d logo (new logo was created in the end of 2023).
 
@@ -183,7 +175,6 @@ Include options:
 
 ### Cast Bearing Unit
 
-Image file: `docs/sdk/build123d/assets/examples/cast_bearing_unit.png`.
 
 This example demonstrates the creation of a castable flanged bearing housing
 using the `draft` operation to add appropriate draft angles for mold release.
@@ -199,7 +190,6 @@ Include options:
 
 ### Canadian Flag Blowing in The Wind
 
-Image file: `docs/sdk/build123d/assets/examples/example_canadian_flag_01.png`.
 
 A Canadian Flag blowing in the wind created by projecting planar faces onto a non-planar face (the_wind).
 
@@ -207,9 +197,7 @@ This example also demonstrates building complex lines that snap to existing feat
 
 ### More Images
 
-Image file: `docs/sdk/build123d/assets/examples/example_canadian_flag_02.png`.
 
-Image file: `docs/sdk/build123d/assets/examples/example_canadian_flag_03.png`.
 
 ### Builder Reference Implementation (Builder Mode)
 
@@ -231,7 +219,6 @@ Include options:
 
 ### Circuit Board With Holes
 
-Image file: `docs/sdk/build123d/assets/examples/example_circuit_board_01.png`.
 
 This example demonstrates placing holes around a part.
 
@@ -240,7 +227,6 @@ This example demonstrates placing holes around a part.
 
 ### More Images
 
-Image file: `docs/sdk/build123d/assets/examples/example_circuit_board_02.png`.
 
 ### Builder Reference Implementation (Builder Mode)
 
@@ -262,7 +248,6 @@ Include options:
 
 ### Clock Face
 
-Image file: `docs/sdk/build123d/assets/examples/clock_face.png`.
 
 ### Builder Reference Implementation (Builder Mode)
 
@@ -292,7 +277,6 @@ a detailed and visually appealing clock design.
 
 ### Fast Grid Holes
 
-Image file: `docs/sdk/build123d/assets/examples/fast_grid_holes.png`.
 
 ### Algebra Reference Implementation (Algebra Mode)
 
@@ -318,7 +302,6 @@ compared to substantially longer runtimes for boolean subtraction of individual 
 
 ### Handle
 
-Image file: `docs/sdk/build123d/assets/examples/handle.png`.
 
 ### Builder Reference Implementation (Builder Mode)
 
@@ -342,7 +325,6 @@ This example demonstrates multisection sweep creating a drawer handle.
 
 ### Heat Exchanger
 
-Image file: `docs/sdk/build123d/assets/examples/heat_exchanger.png`.
 
 ### Builder Reference Implementation (Builder Mode)
 
@@ -369,7 +351,6 @@ to the end plates to simulate welding.
 
 ### Key Cap
 
-Image file: `docs/sdk/build123d/assets/examples/key_cap.png`.
 
 ### Builder Reference Implementation (Builder Mode)
 
@@ -394,7 +375,6 @@ extrude with a taper and extrude until next.
 
 ### Maker Coin
 
-Image file: `docs/sdk/build123d/assets/examples/maker_coin.png`.
 
 This example creates the maker coin as defined by Angus on the Maker's Muse
 YouTube channel. There are two key features:
@@ -416,7 +396,6 @@ Include options:
 
 ### Multi-Sketch Loft
 
-Image file: `docs/sdk/build123d/assets/examples/loft.png`.
 
 This example demonstrates lofting a set of sketches, selecting
 the top and bottom by type, and shelling.
@@ -441,7 +420,6 @@ Include options:
 
 ### Peg Board Hook
 
-Image file: `docs/sdk/build123d/assets/examples/peg_board_hook.png`.
 
 This script creates a a J-shaped pegboard hook. These hooks are commonly used for
 organizing tools in garages, workshops, or other spaces where tools and equipment
@@ -469,7 +447,6 @@ Include options:
 
 ### Platonic Solids
 
-Image file: `docs/sdk/build123d/assets/examples/platonic_solids.png`.
 
 This example creates a custom Part object PlatonicSolid.
 
@@ -494,7 +471,6 @@ Include options:
 
 ### Playing Cards
 
-Image file: `docs/sdk/build123d/assets/examples/playing_cards.png`.
 
 This example creates a customs Sketch objects: Club, Spade, Heart, Diamond,
 and PlayingCard in addition to a two part playing card box which has suit
@@ -512,7 +488,6 @@ Include options:
 
 ### Stud Wall
 
-Image file: `docs/sdk/build123d/assets/examples/stud_wall.png`.
 
 This example demonstrates creating custom `Part` objects and putting them into
 assemblies. The custom object is a `Stud` used in the building industry while
@@ -531,7 +506,6 @@ Include options:
 
 ### Tea Cup
 
-Image file: `docs/sdk/build123d/assets/examples/tea_cup.png`.
 
 ### Builder Reference Implementation (Builder Mode)
 
@@ -569,9 +543,7 @@ The tea cup model involves several CAD techniques, such as:
 
 ### Toy Truck
 
-Image file: `docs/sdk/build123d/assets/examples/toy_truck.png`.
 
-Image file: `docs/sdk/build123d/assets/examples/toy_truck_picture.jpg`.
 
 ### Builder Reference Implementation (Builder Mode)
 
@@ -591,7 +563,6 @@ build123d.
 
 ### Vase
 
-Image file: `docs/sdk/build123d/assets/examples/vase.png`.
 
 ### Builder Reference Implementation (Builder Mode)
 
@@ -628,5 +599,3 @@ selecting edges by position range and type for the application of fillets
   and type.
 
 ### {name-of-your-example-with-spaces}
-
-Image file: `docs/sdk/build123d/assets/examples/example_{name-of-your-example}_01.{extension}`.

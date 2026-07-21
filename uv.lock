@@ -622,7 +622,7 @@ requires-dist = [
     { name = "scipy", specifier = ">=1.11.0" },
     { name = "trimesh", specifier = ">=4.11.3" },
     { name = "typer", specifier = ">=0.12.0" },
-    { name = "usd-core", specifier = ">=26.5" },
+    { name = "usd-core", specifier = ">=26.5,<26.8" },
     { name = "websockets", specifier = ">=15.0.0" },
 ]
 

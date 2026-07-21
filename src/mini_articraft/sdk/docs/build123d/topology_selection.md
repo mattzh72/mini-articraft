@@ -97,7 +97,6 @@ with BuildPart() as part:
     part.faces(Select.ALL)
 ```
 
-Image file: `docs/sdk/build123d/assets/topology_selection/selectors_select_all.png`.
 
 Select features changed in the last operation with criteria `Select.LAST`.
 
@@ -111,7 +110,6 @@ with BuildPart() as part:
     part.faces(Select.LAST)
 ```
 
-Image file: `docs/sdk/build123d/assets/topology_selection/selectors_select_last.png`.
 
 Select only new edges from the last operation with `Select.NEW`. This option is only
 available for a `ShapeList` of edges!
@@ -124,7 +122,6 @@ with BuildPart() as part:
     part.edges(Select.NEW)
 ```
 
-Image file: `docs/sdk/build123d/assets/topology_selection/selectors_select_new.png`.
 
 This only returns new edges which are not reused from Box or Cylinder, in this case where
 the objects `intersect`. But what happens if the objects don't intersect and all the
@@ -138,7 +135,6 @@ with BuildPart() as part:
     part.edges(Select.NEW)
 ```
 
-Image file: `docs/sdk/build123d/assets/topology_selection/selectors_select_new_none.png`.
 
 No edges are selected! Unlike the previous example, the Edge between the Box and Cylinder
 objects is an edge reused from the Cylinder. Think of `Select.NEW` as a way to select
@@ -159,7 +155,6 @@ with BuildPart() as part:
     part.edges(Select.NEW)
 ```
 
-Image file: `docs/sdk/build123d/assets/topology_selection/selectors_select_new_fillet.png`.
 
 ## Select New Edges In Algebra Mode
 
@@ -175,7 +170,6 @@ part = box + circle
 edges = new_edges(box, circle, combined=part)
 ```
 
-Image file: `docs/sdk/build123d/assets/topology_selection/selectors_new_edges.png`.
 
 `new_edges` can also find edges created during a chamfer or fillet operation by
 comparing the object before the operation to the "combined" object.
@@ -189,7 +183,6 @@ part = fillet(edges, 1)
 edges = new_edges(part_before, combined=part)
 ```
 
-Image file: `docs/sdk/build123d/assets/topology_selection/operators_group_area.png`.
 
 ## Operators
 
@@ -240,7 +233,6 @@ subclass of `list`, so any list slice can be used.
 part.vertices().sort_by(Axis.X)[-4:]
 ```
 
-Image file: `docs/sdk/build123d/assets/topology_selection/operators_sort_x.png`.
 
 |
 
@@ -265,7 +257,6 @@ return a new list of all edges in the previous list.
 part.faces().group_by(SortBy.AREA)[0].edges())
 ```
 
-Image file: `docs/sdk/build123d/assets/topology_selection/operators_group_area.png`.
 
 |
 
@@ -321,7 +312,6 @@ face_rings = sphere_faces.group_by(topo_distance_to(starting_ring))
 show(*face_rings, colors=ColorMap.listed(len(face_rings)))
 ```
 
-Image file: `docs/sdk/build123d/assets/topology_selection/topo_distance_to.png`.
 
 The same approach can be used with edges or vertices. For example, a single edge on the
 mesh can be used as the starting point for edge-distance rings.
@@ -349,7 +339,6 @@ each face can be checked against a vector direction and filtered accordingly.
 part.faces().filter_by(lambda f: f.normal_at() == Vector(0, 0, 1))
 ```
 
-Image file: `docs/sdk/build123d/assets/topology_selection/operators_filter_z_normal.png`.
 
 |
 

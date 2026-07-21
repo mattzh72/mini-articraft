@@ -155,12 +155,12 @@ def test_key_apis_are_documented_by_their_owner_pages() -> None:
 def test_build123d_reference_tree_and_examples_are_available() -> None:
     root = package_dir / "sdk" / "docs" / "build123d"
 
+    assert (root / "VENDORED.md").is_file()
     assert (root / "introduction.md").is_file()
     assert (root / "examples" / "benchy.py").is_file()
-    assert (root / "examples" / "low_poly_benchy.stl").is_file()
-    assert (root / "assets" / "ttt" / "ttt-23-t-24-curved_support.png").is_file()
-    assert (root / "media" / "tea_cup.png").is_file()
+    assert (root / "assets" / "ttt" / "ttt-23-t-24-curved_support.py").is_file()
     assert (root / "snippets" / "selector_example.py").is_file()
+    assert {path.suffix for path in root.rglob("*") if path.is_file()} <= {".md", ".py"}
     assert not (root / "index.md").exists()
 
 
@@ -200,11 +200,9 @@ def test_sdk_docs_and_examples_are_package_data() -> None:
         "sdk/docs/mesh/*.md",
         "sdk/docs/examples/*.py",
         "sdk/docs/build123d/*.md",
-        "sdk/docs/build123d/assets/*",
-        "sdk/docs/build123d/assets/*/*",
-        "sdk/docs/build123d/examples/*",
-        "sdk/docs/build123d/media/*",
-        "sdk/docs/build123d/snippets/*",
+        "sdk/docs/build123d/assets/*/*.py",
+        "sdk/docs/build123d/examples/*.py",
+        "sdk/docs/build123d/snippets/*.py",
     ]:
         assert pattern in package_data
 

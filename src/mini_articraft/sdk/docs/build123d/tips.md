@@ -77,7 +77,6 @@ When selecting features in a design it's sometimes easier to select an object fr
 higher up in the topology first, then select the object from there.  For example let's
 consider a plate with four chamfered holes like this:
 
-Image file: `docs/sdk/build123d/assets/plate.svg`.
 
 When selecting edges to be chamfered one might first select the face that these edges
 belong to then select the edges as shown here:
@@ -145,9 +144,7 @@ that they don't overlap, with an optional padding/spacing.  Here's the
 result of packing a bunch of overlapping boxes (left) using some
 padding (right):
 
-Image file: `docs/sdk/build123d/assets/packed_boxes_input.svg`.
 
-Image file: `docs/sdk/build123d/assets/packed_boxes_output.svg`.
 
 By default, the original Z value of all objects packed using the `pack` function is preserved.
 If you want to align all objects so that they are "placed" on the zero Z coordinate, the `pack`
@@ -186,7 +183,6 @@ with BuildSketch(Plane.XZ) as vertical_sketch:
         Circle(0.2)
 ```
 
-Image file: `docs/sdk/build123d/assets/vertical_sketch.png`.
 
 In this case the circle is not positioned in the top right as one would expect; in-fact, the position
 of the circle randomly switches between the bottom and top corner.
@@ -206,7 +202,6 @@ with BuildSketch(Plane.YZ.rotated((123, 45, 6))) as custom_plane:
         Circle(0.2)
 ```
 
-Image file: `docs/sdk/build123d/assets/sketch_on_custom_plane.png`.
 
 Here one can see both `sketch_local` (with the light fill on `Plane.XY`) and the `sketch`
 (with the darker fill) placed on the user provided workplane. As the selectors work off global
