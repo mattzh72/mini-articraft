@@ -14,8 +14,8 @@ from pathlib import Path
 from typing import Any, TypeVar
 
 from mini_articraft.compile_feedback import build_compile_report_from_payload, empty_compile_payload
-from mini_articraft.environments.export import export_object
 from mini_articraft.sdk import ArticulatedObject, TestContext, TestReport
+from mini_articraft.sdk.export import export_object
 
 T = TypeVar("T", bound=Hashable)
 _COMPILE_PROGRESS_FILE = ".compile-progress.json"
