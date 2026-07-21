@@ -9,7 +9,7 @@ the input mesh unchanged.
 This page documents `refine_mesh`, `subdivide_mesh`, and `smooth_mesh`.
 
 ```python
-from mini_articraft.sdk import refine_mesh, smooth_mesh, subdivide_mesh
+from mini_articraft.sdk.mesh import refine_mesh, smooth_mesh, subdivide_mesh
 ```
 
 ## Choose an operation

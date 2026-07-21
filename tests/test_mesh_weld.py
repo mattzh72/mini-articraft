@@ -3,11 +3,9 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from mini_articraft.sdk import (
-    BoxGeometry,
-    CylinderGeometry,
+from mini_articraft.sdk import BoxGeometry, CylinderGeometry, SphereGeometry
+from mini_articraft.sdk.mesh import (
     SnapRefused,
-    SphereGeometry,
     boolean_difference,
     smooth_difference,
     snap_to,

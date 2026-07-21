@@ -10,8 +10,8 @@ This page documents `boolean_union`, `boolean_difference`,
 `ShellPartitionSpec`, and `partition_shell`.
 
 ```python
-from mini_articraft.sdk import (
-    BoxGeometry,
+from mini_articraft.sdk import BoxGeometry
+from mini_articraft.sdk.mesh import (
     ShellPartitionRegion,
     ShellPartitionSpec,
     boolean_difference,

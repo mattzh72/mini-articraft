@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from mini_articraft.sdk import (
     ArticulatedObject,
-    LoftSection,
-    SectionLoftSpec,
     TestContext,
     TestReport,
+)
+from mini_articraft.sdk.mesh import (
+    LoftSection,
+    SectionLoftSpec,
     section_loft,
     tube_from_spline_points,
 )

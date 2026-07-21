@@ -5,13 +5,8 @@ import math
 import numpy as np
 import pytest
 
-from mini_articraft.sdk import (
-    BoxGeometry,
-    MeshGeometry,
-    refine_mesh,
-    smooth_mesh,
-    subdivide_mesh,
-)
+from mini_articraft.sdk import BoxGeometry, MeshGeometry
+from mini_articraft.sdk.mesh import refine_mesh, smooth_mesh, subdivide_mesh
 
 
 def _bumpy_patch() -> MeshGeometry:

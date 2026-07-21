@@ -1,14 +1,18 @@
+"""Public SDK for authoring and testing articulated objects.
+
+One canonical import path per category:
+
+- Object and articulation modeling, geometry classes, physical testing, and
+  errors live here at the package root.
+- Advanced mesh authoring and repair recipes (booleans, welds, snapping,
+  profile/wire sampling, sweep helpers, section lofts, shell partitioning,
+  refinement) live under ``mini_articraft.sdk.mesh``.
+"""
+
 from __future__ import annotations
 
 from mini_articraft.errors import SDKError, ValidationError
-from mini_articraft.sdk.joints import (
-    Articulation,
-    ArticulationType,
-    MotionLimits,
-    Origin,
-)
-from mini_articraft.sdk.mesh import (
-    ArcPipeGeometry,
+from mini_articraft.sdk._mesh_core import (
     BoxGeometry,
     CapsuleGeometry,
     ConeGeometry,
@@ -19,54 +23,24 @@ from mini_articraft.sdk.mesh import (
     LatheGeometry,
     LoftGeometry,
     MeshGeometry,
-    PipeGeometry,
     RoundedBoxGeometry,
-    SnapRefused,
     SphereGeometry,
     SuperellipsoidGeometry,
-    SweepGeometry,
-    SweepSection,
     TorusGeometry,
-    WirePath,
+)
+from mini_articraft.sdk._mesh_sweeps import (
+    ArcPipeGeometry,
+    PipeGeometry,
+    SweepGeometry,
     WirePolylineGeometry,
-    boolean_difference,
-    boolean_intersection,
-    boolean_union,
-    build123d_to_mesh,
-    cut_opening_on_face,
-    refine_mesh,
-    resample_side_sections,
-    rounded_rect_profile,
-    sample_arc_3d,
-    sample_catmull_rom_spline_2d,
-    sample_catmull_rom_spline_3d,
-    sample_cubic_bezier_spline_2d,
-    sample_cubic_bezier_spline_3d,
-    smooth_difference,
-    smooth_mesh,
-    snap_to,
-    split_superellipse_side_loft,
-    subdivide_mesh,
-    superellipse_profile,
-    superellipse_side_loft,
-    sweep_profile_along_spline,
-    tube_from_spline_points,
-    tube_network_from_paths,
-    weld,
-    wire_from_points,
+)
+from mini_articraft.sdk.joints import (
+    Articulation,
+    ArticulationType,
+    MotionLimits,
+    Origin,
 )
 from mini_articraft.sdk.object import ArticulatedObject, Part
-from mini_articraft.sdk.section_loft import (
-    LoftSection,
-    SectionLoftSpec,
-    repair_loft,
-    section_loft,
-)
-from mini_articraft.sdk.shell_partition import (
-    ShellPartitionRegion,
-    ShellPartitionSpec,
-    partition_shell,
-)
 from mini_articraft.sdk.testing import (
     AllowedOverlap,
     DistanceFinding,
@@ -91,7 +65,6 @@ __all__ = [
     "ExtrudeWithHolesGeometry",
     "LatheGeometry",
     "LoftGeometry",
-    "LoftSection",
     "MeshGeometry",
     "MotionLimits",
     "Origin",
@@ -99,47 +72,13 @@ __all__ = [
     "PipeGeometry",
     "RoundedBoxGeometry",
     "SDKError",
-    "SectionLoftSpec",
-    "ShellPartitionRegion",
-    "ShellPartitionSpec",
-    "SnapRefused",
     "SphereGeometry",
     "SuperellipsoidGeometry",
     "SweepGeometry",
-    "SweepSection",
     "TestContext",
     "TestFailure",
     "TestReport",
     "TorusGeometry",
     "ValidationError",
-    "WirePath",
     "WirePolylineGeometry",
-    "boolean_difference",
-    "boolean_intersection",
-    "boolean_union",
-    "build123d_to_mesh",
-    "cut_opening_on_face",
-    "partition_shell",
-    "refine_mesh",
-    "repair_loft",
-    "resample_side_sections",
-    "rounded_rect_profile",
-    "sample_arc_3d",
-    "sample_catmull_rom_spline_2d",
-    "sample_catmull_rom_spline_3d",
-    "sample_cubic_bezier_spline_2d",
-    "sample_cubic_bezier_spline_3d",
-    "section_loft",
-    "smooth_difference",
-    "smooth_mesh",
-    "snap_to",
-    "split_superellipse_side_loft",
-    "subdivide_mesh",
-    "superellipse_profile",
-    "superellipse_side_loft",
-    "sweep_profile_along_spline",
-    "tube_from_spline_points",
-    "tube_network_from_paths",
-    "weld",
-    "wire_from_points",
 ]

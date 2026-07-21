@@ -19,6 +19,8 @@ from mini_articraft.sdk import (
     LatheGeometry,
     TestContext,
     TestReport,
+)
+from mini_articraft.sdk.mesh import (
     rounded_rect_profile,
     sweep_profile_along_spline,
     weld,

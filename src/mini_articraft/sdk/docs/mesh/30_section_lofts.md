@@ -11,7 +11,7 @@ This page documents `LoftSection`, `SectionLoftSpec`, `section_loft`, and
 `repair_loft`.
 
 ```python
-from mini_articraft.sdk import (
+from mini_articraft.sdk.mesh import (
     LoftSection,
     SectionLoftSpec,
     repair_loft,

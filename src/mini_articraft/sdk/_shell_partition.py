@@ -5,12 +5,8 @@ from dataclasses import dataclass, replace
 from typing import Any, Literal, cast
 
 from mini_articraft.errors import ValidationError
-from mini_articraft.sdk.mesh import (
-    BoxGeometry,
-    MeshGeometry,
-    boolean_difference,
-    boolean_intersection,
-)
+from mini_articraft.sdk._mesh_boolean import boolean_difference, boolean_intersection
+from mini_articraft.sdk._mesh_core import BoxGeometry, MeshGeometry
 
 ShellSide = Literal["full", "left", "right", "center"]
 

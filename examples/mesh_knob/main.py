@@ -14,8 +14,8 @@ from mini_articraft.sdk import (
     LatheGeometry,
     TestContext,
     TestReport,
-    boolean_union,
 )
+from mini_articraft.sdk.mesh import boolean_union
 
 PROFILE = [
     (0.000, 0.000),

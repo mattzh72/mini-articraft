@@ -6,6 +6,7 @@ import tomllib
 from pathlib import Path
 
 import mini_articraft.sdk as sdk
+import mini_articraft.sdk.mesh as sdk_mesh
 from mini_articraft import package_dir
 from mini_articraft.sdk import ArticulatedObject, TestReport
 
@@ -53,8 +54,16 @@ def test_every_public_sdk_symbol_is_documented() -> None:
         for path in sorted(sdk_docs.joinpath(folder).glob("*.md"))
     )
 
-    missing = sorted(name for name in sdk.__all__ if f"`{name}`" not in reference_text)
+    missing = sorted(
+        name for name in {*sdk.__all__, *sdk_mesh.__all__} if f"`{name}`" not in reference_text
+    )
     assert not missing
+
+
+def test_root_and_mesh_export_disjoint_surfaces() -> None:
+    """One canonical import path per category: geometry classes and the object
+    API at the root, mesh operations and recipes under ``mini_articraft.sdk.mesh``."""
+    assert set(sdk.__all__).isdisjoint(sdk_mesh.__all__)
 
 
 def test_key_apis_are_documented_by_their_owner_pages() -> None:
