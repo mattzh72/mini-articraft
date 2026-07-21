@@ -44,6 +44,7 @@ from mini_articraft.sdk.object import ArticulatedObject, Part
 from mini_articraft.sdk.testing import (
     AllowedOverlap,
     DistanceFinding,
+    FailureKind,
     TestContext,
     TestFailure,
     TestReport,
@@ -63,6 +64,7 @@ __all__ = [
     "DomeGeometry",
     "ExtrudeGeometry",
     "ExtrudeWithHolesGeometry",
+    "FailureKind",
     "LatheGeometry",
     "LoftGeometry",
     "MeshGeometry",

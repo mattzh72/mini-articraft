@@ -14,7 +14,7 @@ from mini_articraft.environments.local import (
     LocalEnvironment,
     _run_isolated_process,
 )
-from mini_articraft.environments.worker import _merge_test_reports
+from mini_articraft.environments.worker import _merge_test_reports, _serialize_test_report
 from mini_articraft.record import Record, read_conversation
 from mini_articraft.sdk import TestFailure, TestReport
 
@@ -403,3 +403,23 @@ def test_merge_test_reports_keeps_distinct_same_named_authored_failures() -> Non
     merged = _merge_test_reports(authored, baseline)
 
     assert merged.failures == authored.failures
+
+
+def test_serialize_test_report_assigns_failure_provenance_at_worker_boundary() -> None:
+    report = TestReport(
+        passed=False,
+        checks_run=2,
+        checks=("authored", "baseline"),
+        failures=(
+            TestFailure("authored", "authored result"),
+            TestFailure("baseline", "compiler result"),
+        ),
+    )
+
+    serialized = _serialize_test_report(report, compiler_failure_names={"baseline"})
+
+    assert serialized is not None
+    assert [failure["source"] for failure in serialized["failures"]] == [
+        "tests",
+        "compiler",
+    ]

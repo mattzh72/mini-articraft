@@ -11,7 +11,7 @@ import traceback
 from collections.abc import Hashable, Iterable
 from dataclasses import asdict, replace
 from pathlib import Path
-from typing import Any, TypeVar, cast
+from typing import Any, TypeVar
 
 from mini_articraft.compile_feedback import build_compile_report_from_payload, empty_compile_payload
 from mini_articraft.environments.export import export_object
@@ -114,7 +114,10 @@ def _compile_workspace(
                 authored_report = _run_required_tests(globals_dict)
             baseline_report = _run_baseline_tests(object_model, authored_report, tracker=tracker)
             test_report = _merge_test_reports(authored_report, baseline_report)
-            payload["test_report"] = _serialize_test_report(test_report)
+            payload["test_report"] = _serialize_test_report(
+                test_report,
+                compiler_failure_names={failure.name for failure in baseline_report.failures},
+            )
             with tracker.phase("exporting and validating the USDZ file"):
                 result = export_object(object_model, export_dir)
             payload.update(
@@ -131,15 +134,16 @@ def _compile_workspace(
             }
         )
     except BaseException as exc:
-        test_report = getattr(exc, "test_report", None)
+        test_report = exc.test_report if isinstance(exc, TestReportError) else None
+        serialized_test_report = payload.get("test_report")
+        if serialized_test_report is None and isinstance(test_report, TestReport):
+            serialized_test_report = _serialize_test_report(test_report)
         payload.update(
             {
                 "status": "error",
                 "error": f"{type(exc).__name__}: {exc}",
                 "traceback": traceback.format_exc(),
-                "test_report": _serialize_test_report(test_report)
-                if isinstance(test_report, TestReport)
-                else payload.get("test_report"),
+                "test_report": serialized_test_report,
             }
         )
     finally:
@@ -209,6 +213,7 @@ def _run_baseline_tests(
 
 
 def _without_allowance_notes(report: TestReport) -> TestReport:
+    """Strip baseline-only allowance bookkeeping before reports are merged."""
     return replace(
         report,
         allowances=(),
@@ -255,22 +260,40 @@ def _ordered_unique(items: Iterable[T]) -> tuple[T, ...]:
     return tuple(unique)
 
 
+class TestReportError(ValueError):
+    """Raised when SDK checks fail; carries the failed report for the payload."""
+
+    def __init__(self, report: TestReport) -> None:
+        self.test_report = report
+        lines = ["SDK tests failed:"]
+        lines.extend(f"- {failure.name}: {failure.details}" for failure in report.failures[:10])
+        if len(report.failures) > 10:
+            lines.append(f"... ({len(report.failures) - 10} more)")
+        super().__init__("\n".join(lines))
+
+
 def _raise_for_failed_test_report(report: TestReport) -> None:
-    if report.passed:
-        return
-    lines = ["SDK tests failed:"]
-    lines.extend(f"- {failure.name}: {failure.details}" for failure in report.failures[:10])
-    if len(report.failures) > 10:
-        lines.append(f"... ({len(report.failures) - 10} more)")
-    exc = ValueError("\n".join(lines))
-    cast(Any, exc).test_report = report
-    raise exc
+    if not report.passed:
+        raise TestReportError(report)
 
 
-def _serialize_test_report(report: TestReport | None) -> dict[str, Any] | None:
+def _serialize_test_report(
+    report: TestReport | None,
+    *,
+    compiler_failure_names: set[str] | frozenset[str] = frozenset(),
+) -> dict[str, Any] | None:
     if report is None:
         return None
-    return _jsonable(asdict(report))
+    serialized = _jsonable(asdict(report))
+    for failure, serialized_failure in zip(
+        report.failures,
+        serialized["failures"],
+        strict=True,
+    ):
+        serialized_failure["source"] = (
+            "compiler" if failure.name in compiler_failure_names else "tests"
+        )
+    return serialized
 
 
 def _jsonable(value: Any) -> Any:

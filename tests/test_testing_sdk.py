@@ -9,6 +9,7 @@ from mini_articraft.sdk import (
     ArticulatedObject,
     ArticulationType,
     BoxGeometry,
+    FailureKind,
     MotionLimits,
     Origin,
     TestContext,
@@ -285,6 +286,55 @@ def test_disconnected_geometry_warns_by_default_and_can_be_authored_as_blocking(
     blocking_ctx = TestContext(model)
     assert not blocking_ctx.fail_if_part_contains_disconnected_geometry_islands()
     assert not blocking_ctx.report().passed
+    assert blocking_ctx.report().failures[0].kind is FailureKind.DISCONNECTED_GEOMETRY
+
+
+def test_failing_checks_record_machine_readable_kinds() -> None:
+    model = ArticulatedObject("kinds")
+    base = model.part("base")
+    add_box(base, "body")
+    lid = model.part("lid")
+    add_box(lid, "body")
+    fixed(model, "mount", base, lid, xyz=(0.0, 0.0, 0.98))
+
+    ctx = TestContext(model)
+    assert not ctx.fail_if_parts_overlap_in_current_pose()
+    assert not ctx.expect_no_collision("base", "lid")
+    assert not ctx.check("custom_check", False, "authored detail")
+    failures = ctx.report().failures
+    assert [failure.kind for failure in failures] == [
+        FailureKind.OVERLAP,
+        FailureKind.OVERLAP,
+        FailureKind.AUTHORED,
+    ]
+
+
+def test_contact_and_isolation_checks_record_kinds() -> None:
+    model = ArticulatedObject("gap_kinds")
+    base = model.part("base")
+    add_box(base, "body")
+    floating = model.part("floating")
+    add_box(floating, "body")
+    fixed(model, "mount", base, floating, xyz=(3.0, 0.0, 0.0))
+
+    ctx = TestContext(model)
+    assert not ctx.expect_contact("base", "floating")
+    assert not ctx.fail_if_isolated_parts()
+    failures = ctx.report().failures
+    assert [failure.kind for failure in failures] == [
+        FailureKind.CONTACT,
+        FailureKind.ISOLATED_PART,
+    ]
+
+
+def test_single_root_check_records_kind() -> None:
+    model = ArticulatedObject("two_roots")
+    add_box(model.part("a"), "body")
+    add_box(model.part("b"), "body")
+
+    ctx = TestContext(model)
+    assert not ctx.check_single_root_part()
+    assert ctx.report().failures[0].kind is FailureKind.SINGLE_ROOT
 
 
 def test_nested_solid_shapes_are_connected_geometry() -> None:

@@ -1,20 +1,43 @@
 from __future__ import annotations
 
+from dataclasses import asdict
+from typing import Any
+
 from mini_articraft.compile_feedback import (
     build_compile_report,
     compile_failure_signature,
     render_compile_report,
 )
-from mini_articraft.sdk import TestFailure, TestReport
+from mini_articraft.sdk import FailureKind, TestFailure, TestReport
 
 
-def _failing_report(*failures: TestFailure, warnings: tuple[str, ...] = ()) -> TestReport:
-    return TestReport(
-        passed=False,
-        checks_run=len(failures),
-        checks=tuple(failure.name for failure in failures),
-        failures=failures,
-        warnings=warnings,
+def _serialized_report(
+    report: TestReport,
+    *,
+    sources: tuple[str, ...] = (),
+) -> dict[str, Any]:
+    serialized = asdict(report)
+    source_values = sources or ("tests",) * len(report.failures)
+    assert len(source_values) == len(report.failures)
+    for failure, source in zip(serialized["failures"], source_values, strict=True):
+        failure["source"] = source
+    return serialized
+
+
+def _failing_report(
+    *failures: TestFailure,
+    warnings: tuple[str, ...] = (),
+    sources: tuple[str, ...] = (),
+) -> dict[str, Any]:
+    return _serialized_report(
+        TestReport(
+            passed=False,
+            checks_run=len(failures),
+            checks=tuple(failure.name for failure in failures),
+            failures=failures,
+            warnings=warnings,
+        ),
+        sources=sources,
     )
 
 
@@ -110,21 +133,25 @@ def test_compile_report_classifies_runtime_unknown_shape_as_missing_geometry() -
 
 
 def test_compile_report_maps_test_failures_warnings_and_allowances() -> None:
-    test_report = TestReport(
-        passed=False,
-        checks_run=3,
-        checks=("prompt check", "fail_if_parts_overlap_in_current_pose()"),
-        failures=(
-            TestFailure("prompt check", "missing handle"),
-            TestFailure(
-                "fail_if_parts_overlap_in_current_pose()",
-                "'drawer' vs 'frame': collided=True contacts=1",
+    test_report = _serialized_report(
+        TestReport(
+            passed=False,
+            checks_run=3,
+            checks=("prompt check", "fail_if_parts_overlap_in_current_pose()"),
+            failures=(
+                TestFailure("prompt check", "missing handle"),
+                TestFailure(
+                    "fail_if_parts_overlap_in_current_pose()",
+                    "'drawer' vs 'frame': collided=True contacts=1",
+                    kind=FailureKind.OVERLAP,
+                ),
+            ),
+            warnings=("thin wall",),
+            allowances=(
+                "allow_overlap('shaft', 'hub', shape_a='steel', shape_b='liner'): intentional capture",
             ),
         ),
-        warnings=("thin wall",),
-        allowances=(
-            "allow_overlap('shaft', 'hub', shape_a='steel', shape_b='liner'): intentional capture",
-        ),
+        sources=("tests", "compiler"),
     )
 
     report = build_compile_report(status="failure", test_report=test_report)
@@ -158,17 +185,17 @@ def test_compile_report_maps_disconnected_geometry_warning() -> None:
     assert signal["blocking"] is False
 
 
-def test_compile_report_classifies_named_geometry_contact_and_scale() -> None:
+def test_compile_report_classifies_contact_and_scale() -> None:
     test_report = TestReport(
         passed=False,
-        checks_run=2,
-        checks=("contact", "named shape"),
+        checks_run=1,
+        checks=("contact",),
         failures=(
             TestFailure(
                 "contact",
                 "'lid' vs 'body': distance=0.015 collided=False contact_tol=1e-06",
+                kind=FailureKind.CONTACT,
             ),
-            TestFailure("named shape", "missing exact geometry for shape_b='boss'"),
         ),
         warnings=("Scale warning:\nabsurd dimension: 'base'/'body' spans 2000m",),
     )
@@ -177,11 +204,10 @@ def test_compile_report_classifies_named_geometry_contact_and_scale() -> None:
     signals = report["signal_bundle"]["signals"]
 
     assert [signal["kind"] for signal in signals] == [
-        "missing_exact_geometry",
         "exact_contact_gap",
         "geometry_scale",
     ]
-    assert signals[2]["group"] == "design"
+    assert signals[1]["group"] == "design"
 
 
 def test_compile_failure_signature_and_rendering_are_stable() -> None:
@@ -220,6 +246,7 @@ def test_contact_gap_is_classified_as_a_gap_not_an_overlap() -> None:
             TestFailure(
                 name="expect_contact(base,lid)",
                 details="pair=('base','lid') distance=0.0032 collided=False contact_tol=0.001",
+                kind=FailureKind.CONTACT,
             )
         ),
     )
@@ -235,16 +262,27 @@ def test_compiler_owned_checks_keep_their_codes_and_sources() -> None:
     report = build_compile_report(
         status="failure",
         test_report=_failing_report(
-            TestFailure(name="check_model_valid", details="ValidationError: bad shape"),
+            TestFailure(
+                name="check_model_valid",
+                details="ValidationError: bad shape",
+                kind=FailureKind.MODEL_VALIDITY,
+            ),
             TestFailure(
                 name="check_single_root_part",
                 details="Expected exactly one root part, found 2: ['a', 'b']",
+                kind=FailureKind.SINGLE_ROOT,
             ),
-            TestFailure(name="fail_if_isolated_parts()", details="Isolated parts detected"),
+            TestFailure(
+                name="fail_if_isolated_parts()",
+                details="Isolated parts detected",
+                kind=FailureKind.ISOLATED_PART,
+            ),
             TestFailure(
                 name="fail_if_parts_overlap_in_current_pose()",
                 details="Part overlaps detected",
+                kind=FailureKind.OVERLAP,
             ),
+            sources=("compiler",) * 4,
         ),
     )
 
@@ -265,10 +303,12 @@ def test_authored_checks_with_the_same_findings_map_to_test_codes() -> None:
             TestFailure(
                 name="fail_if_isolated_parts(tight)",
                 details="isolated parts detected: ['antenna']",
+                kind=FailureKind.ISOLATED_PART,
             ),
             TestFailure(
                 name="expect_no_collision(base,lid)",
                 details="pair=('base','lid') collided=true overlap_volume=1e-6",
+                kind=FailureKind.OVERLAP,
             ),
         ),
     )
@@ -278,6 +318,68 @@ def test_authored_checks_with_the_same_findings_map_to_test_codes() -> None:
     assert kinds["isolated_part"]["source"] == "tests"
     assert kinds["real_overlap"]["code"] == "TEST_REAL_OVERLAP"
     assert kinds["real_overlap"]["source"] == "tests"
+
+
+def test_every_failure_kind_maps_to_a_specific_signal() -> None:
+    expected_kinds = {
+        FailureKind.MODEL_VALIDITY: "model_validity",
+        FailureKind.SINGLE_ROOT: "single_root_policy",
+        FailureKind.ISOLATED_PART: "isolated_part",
+        FailureKind.DISCONNECTED_GEOMETRY: "disconnected_geometry",
+        FailureKind.OVERLAP: "real_overlap",
+        FailureKind.CONTACT: "exact_contact_gap",
+        FailureKind.ARTICULATION_SEPARATION: "articulation_separation",
+        FailureKind.AUTHORED: "test_failure",
+    }
+    assert set(FailureKind) == set(expected_kinds)
+    for kind, signal_kind in expected_kinds.items():
+        for source, prefix in (("tests", "TEST"), ("compiler", "QC")):
+            report = build_compile_report(
+                status="failure",
+                test_report=_failing_report(
+                    TestFailure(name="some_check", details="d", kind=kind),
+                    sources=(source,),
+                ),
+            )
+            signal = report["signal_bundle"]["signals"][0]
+            assert signal["kind"] == signal_kind, (kind, source)
+            assert signal["code"].startswith(f"{prefix}_"), (kind, source)
+
+
+def test_new_kinds_carry_their_own_codes_and_guidance() -> None:
+    report = build_compile_report(
+        status="failure",
+        test_report=_failing_report(
+            TestFailure(
+                name="fail_if_part_contains_disconnected_geometry_islands(contact_tol=1e-06)",
+                details="Disconnected geometry islands detected",
+                kind=FailureKind.DISCONNECTED_GEOMETRY,
+            ),
+            TestFailure(
+                name="fail_if_articulation_separates_child(gap_tol=0.003)",
+                details="articulation='lid_hinge' rest_gap=0m max_gap=0.02m",
+                kind=FailureKind.ARTICULATION_SEPARATION,
+            ),
+            sources=("tests", "compiler"),
+        ),
+    )
+
+    by_kind = {s["kind"]: s for s in report["signal_bundle"]["signals"]}
+    assert by_kind["disconnected_geometry"]["code"] == "TEST_DISCONNECTED_GEOMETRY"
+    assert by_kind["articulation_separation"]["code"] == "QC_ARTICULATION_SEPARATION"
+    assert "throughout the motion range" in report["signals_text"]
+
+    disconnected_only = build_compile_report(
+        status="failure",
+        test_report=_failing_report(
+            TestFailure(
+                name="fail_if_part_contains_disconnected_geometry_islands(contact_tol=1e-06)",
+                details="Disconnected geometry islands detected",
+                kind=FailureKind.DISCONNECTED_GEOMETRY,
+            ),
+        ),
+    )
+    assert "overlaps the nearest piece" in disconnected_only["signals_text"]
 
 
 def test_invalid_run_tests_return_type_is_a_build_signal() -> None:
