@@ -73,6 +73,8 @@ Read only the executable example closest to the current task:
 - Mixed build123d and mesh assembly: `docs/sdk/examples/mixed_articulated_assembly.py`.
 - Molding a handle/protrusion into a body (no mounting pads):
   `docs/sdk/examples/molded_mug.py`.
+- Housing a mechanism (hinge/pivot as carved voids, controls in recesses, no
+  bolted-on hardware): `docs/sdk/examples/flip_lid_housing.py`.
 - Variable profile sweep and smooth section loft:
   `docs/sdk/examples/variable_sweep_and_loft.py`.
 
