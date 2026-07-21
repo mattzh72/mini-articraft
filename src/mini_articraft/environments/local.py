@@ -13,6 +13,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from mini_articraft import package_dir
+from mini_articraft._child_process import child_environment
 from mini_articraft.compile_feedback import build_compile_report_from_payload, empty_compile_payload
 from mini_articraft.record import Record
 from mini_articraft.settings import DEFAULT_COMPILE_TIMEOUT_SECONDS, DEFAULT_OUTPUT_DIR
@@ -86,7 +87,7 @@ class LocalEnvironment:
         ]
         completed = _run_isolated_process(
             args,
-            cwd=_project_root(),
+            cwd=run_dir.resolve(),
             timeout_seconds=self.config.timeout_seconds,
         )
         compile_stats = _read_compile_progress(run_dir)
@@ -149,10 +150,6 @@ def _validate_run_id(run_id: str) -> str:
     return value
 
 
-def _project_root() -> Path:
-    return Path(__file__).resolve().parents[3]
-
-
 def _link_sdk_docs(workspace: Path) -> None:
     docs_dir = workspace / "docs"
     docs_dir.mkdir()
@@ -176,6 +173,7 @@ def _run_isolated_process(
     proc = subprocess.Popen(
         args,
         cwd=cwd,
+        env=child_environment(),
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,

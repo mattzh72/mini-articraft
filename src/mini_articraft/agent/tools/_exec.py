@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from mini_articraft._child_process import child_environment
 from mini_articraft.agent.tools._paths import scoped_path
 
 DEFAULT_YIELD_TIME_MS = 10_000
@@ -326,7 +327,7 @@ def _cwd(workspace: Path, raw: object) -> Path:
 
 
 def _env(run_dir: Path, workspace: Path, shell: str) -> dict[str, str]:
-    env = os.environ.copy()
+    env = child_environment()
     env.setdefault("PATH", "/usr/bin:/bin:/usr/sbin:/sbin")
     env["SHELL"] = shell
     env["MINI_ARTICRAFT_RUN_DIR"] = str(run_dir)

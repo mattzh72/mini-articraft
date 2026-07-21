@@ -128,11 +128,13 @@ jobs:
           assert result.manifest.is_file()
           assert result.usdz.is_file()
           "
-          mkdir -p /tmp/smoke-run/workspace /tmp/smoke-run/result
-          cp examples/mesh_knob/main.py /tmp/smoke-run/workspace/main.py
-          /tmp/smoke/bin/python -m mini_articraft.environments.worker /tmp/smoke-run > /tmp/smoke-out.json
           /tmp/smoke/bin/python -c "
-          import json
-          payload = json.load(open('/tmp/smoke-out.json'))
+          import shutil
+          from pathlib import Path
+          from mini_articraft.environments import LocalEnvironment
+          env = LocalEnvironment(output_dir=Path('/tmp'))
+          run_dir = env.create_run('smoke-run')
+          shutil.copyfile('examples/mesh_knob/main.py', run_dir / 'workspace' / 'main.py')
+          payload = env.compile_path(run_dir)
           assert payload['status'] == 'success', payload
           "

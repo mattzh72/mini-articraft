@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import json
 import logging
 import os
 import shlex
@@ -273,6 +274,26 @@ def test_exec_command_reports_output_and_return_code(tmp_path) -> None:
     assert result["session_id"] is None
     assert result["running"] is False
     assert not ctx.run_dir.joinpath(".tmp").exists()
+
+
+def test_exec_command_does_not_receive_api_credentials(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "openai-secret")
+    monkeypatch.setenv("EXAMPLE_API_KEY", "example-secret")
+    monkeypatch.setenv("VISIBLE_SETTING", "visible")
+    ctx = context(tmp_path)
+    command = (
+        f"{shlex.quote(sys.executable)} -c "
+        "'import json, os; print(json.dumps({key: os.environ.get(key) for key in "
+        '["OPENAI_API_KEY", "EXAMPLE_API_KEY", "VISIBLE_SETTING"]}))\''
+    )
+
+    result = run(get("exec_command").run(ctx, {"command": command}))
+
+    assert json.loads(result["stdout"]) == {
+        "OPENAI_API_KEY": None,
+        "EXAMPLE_API_KEY": None,
+        "VISIBLE_SETTING": "visible",
+    }
 
 
 def test_exec_command_reports_timeout(tmp_path) -> None:
