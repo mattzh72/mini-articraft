@@ -230,6 +230,48 @@ def _project(
     return px, py, depth
 
 
+def _pixel_ray(
+    u: float, v: float, eye: np.ndarray, center: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
+    """World-space ray through normalized image coords (u right, v down); inverts _project."""
+    from pxr import Gf
+
+    view = Gf.Matrix4d(1).SetLookAt(Gf.Vec3d(*eye), Gf.Vec3d(*center), Gf.Vec3d(0, 0, 1))
+    tanf = math.tan(math.radians(_FOV_DEGREES) / 2.0)
+    direction = view.GetInverse().TransformDir(
+        Gf.Vec3d((2.0 * u - 1.0) * tanf, (1.0 - 2.0 * v) * tanf, -1.0)
+    )
+    ray = np.asarray([direction[0], direction[1], direction[2]], dtype=np.float64)
+    return np.asarray(eye, dtype=np.float64), ray / np.linalg.norm(ray)
+
+
+def _raycast(
+    pieces: list[_Piece], origin: np.ndarray, direction: np.ndarray
+) -> dict[str, Any] | None:
+    """Nearest surface hit along the ray: which shape, where, and facing which way."""
+    import trimesh
+
+    best: tuple[float, str, np.ndarray, np.ndarray] | None = None
+    for piece in pieces:
+        mesh = trimesh.Trimesh(piece.vertices, piece.faces, process=False)
+        locations, _, triangles = mesh.ray.intersects_location(
+            ray_origins=[origin], ray_directions=[direction]
+        )
+        for location, triangle in zip(locations, triangles, strict=False):
+            distance = float(np.linalg.norm(location - origin))
+            if best is None or distance < best[0]:
+                best = (distance, piece.name, location, mesh.face_normals[int(triangle)])
+    if best is None:
+        return None
+    distance, name, location, normal = best
+    return {
+        "shape": name,
+        "point": [round(float(value), 4) for value in location],
+        "normal": [round(float(value), 3) for value in normal],
+        "distance": round(distance, 4),
+    }
+
+
 def _resolve_probe(pieces: list[_Piece], probe: Any) -> tuple[np.ndarray, str] | None:
     if isinstance(probe, (list, tuple)) and len(probe) == 3:
         point = np.asarray([float(v) for v in probe], dtype=np.float64)
@@ -291,6 +333,17 @@ def _stack_ys(anchor_ys: list[float], size: int, line_h: float) -> list[float]:
     return ys
 
 
+def _grid_overlay(draw: Any, size: int, font: Any) -> None:
+    """Reticle-style normalized 0-1 grid, so a spot in the image can be named as [u, v]."""
+    for i in range(1, 10):
+        t = i / 10.0
+        p = t * size
+        draw.line([p, 0, p, size], fill=(70, 70, 70), width=1)
+        draw.line([0, p, size, p], fill=(70, 70, 70), width=1)
+        draw.text((p + 2, size - 16), f"{t:.1f}", fill=(235, 90, 80), font=font)
+        draw.text((3, p + 2), f"{t:.1f}", fill=(90, 140, 245), font=font)
+
+
 def _overlay(
     png: bytes,
     pieces: list[_Piece],
@@ -299,6 +352,8 @@ def _overlay(
     *,
     labels: bool,
     probe: Any,
+    grid: bool = False,
+    px_probe: tuple[tuple[float, float], str] | None = None,
 ) -> bytes:
     from PIL import Image, ImageDraw
 
@@ -310,6 +365,9 @@ def _overlay(
     def _text_box(text: str) -> tuple[float, float]:
         left, top, right, bottom = draw.textbbox((0, 0), text, font=font)
         return right - left, bottom - top
+
+    if grid:
+        _grid_overlay(draw, size, font)
 
     if labels:
         # Anchor each label to a dot on the object, then bin left/right by which
@@ -363,9 +421,77 @@ def _overlay(
                 )
                 draw.text((px + 11, py + 8), resolved[1], fill=(20, 20, 20), font=font)
 
+    if px_probe is not None:
+        (px, py), text = px_probe
+        draw.line([px - 9, py, px + 9, py], fill=(255, 60, 200), width=2)
+        draw.line([px, py - 9, px, py + 9], fill=(255, 60, 200), width=2)
+        draw.ellipse([px - 5, py - 5, px + 5, py + 5], outline=(255, 60, 200), width=2)
+        width, height = _text_box(text)
+        draw.rectangle([px + 9, py + 6, px + 13 + width, py + 10 + height], fill=(255, 190, 235))
+        draw.text((px + 11, py + 8), text, fill=(20, 20, 20), font=font)
+
     buffer = io.BytesIO()
     image.save(buffer, format="png")
     return buffer.getvalue()
+
+
+def _render(
+    model: ArticulatedObject,
+    *,
+    azimuth: float,
+    elevation: float,
+    zoom: float,
+    target: Any,
+    only: list[str] | None,
+    pose: dict[str, float] | None,
+    labels: bool = True,
+    probe: Any = None,
+    color_by_shape: bool = False,
+    grid: bool = False,
+    probe_px: Any = None,
+    width: int = 720,
+) -> tuple[bytes, dict[str, Any] | None]:
+    """Render the scene; if probe_px is set, also raycast it with the same camera."""
+    pieces = _scene(model, only=only, pose=pose)
+    if color_by_shape:
+        # Recolor every shape a distinct bright hue so separate pieces stand out
+        # (a hinge built from six chunks reads as six colors, not one gray nub).
+        shades = _palette(len(pieces))
+        pieces = [
+            _Piece(p.name, p.vertices, p.faces, p.normals, (c[0] / 255, c[1] / 255, c[2] / 255))
+            for p, c in zip(pieces, shades, strict=True)
+        ]
+    center, radius = _framing(pieces, target=target, zoom=zoom, model=model, only=only, pose=pose)
+    eye = _eye(center, radius, azimuth, elevation)
+
+    hit: dict[str, Any] | None = None
+    px_probe: tuple[tuple[float, float], str] | None = None
+    if probe_px is not None:
+        u, v = float(probe_px[0]), float(probe_px[1])
+        origin, direction = _pixel_ray(u, v, eye, center)
+        hit = _raycast(pieces, origin, direction)
+        text = (
+            f"{hit['shape']} ({hit['point'][0]}, {hit['point'][1]}, {hit['point'][2]})"
+            if hit
+            else "no surface"
+        )
+        px_probe = ((u * width, v * width), text)
+
+    try:
+        png = _usdrecord_png(pieces, center, radius, azimuth, elevation, width)
+    except (FileNotFoundError, subprocess.SubprocessError, ImportError, OSError):
+        # usdrecord (a system binary needing a GL backend) may be absent, e.g. in CI;
+        # fall back to a plain shaded matplotlib render so the tool still works. The
+        # overlays need the usdrecord camera, so they are skipped there.
+        return _matplotlib_png(pieces, center, radius, azimuth, elevation), hit
+    if not labels and probe is None and not grid and px_probe is None:
+        return png, hit
+    return (
+        _overlay(
+            png, pieces, eye, center, labels=labels, probe=probe, grid=grid, px_probe=px_probe
+        ),
+        hit,
+    )
 
 
 def render_png(
@@ -382,32 +508,25 @@ def render_png(
     color_by_shape: bool = False,
     width: int = 720,
 ) -> bytes:
-    pieces = _scene(model, only=only, pose=pose)
-    if color_by_shape:
-        # Recolor every shape a distinct bright hue so separate pieces stand out
-        # (a hinge built from six chunks reads as six colors, not one gray nub).
-        shades = _palette(len(pieces))
-        pieces = [
-            _Piece(p.name, p.vertices, p.faces, p.normals, (c[0] / 255, c[1] / 255, c[2] / 255))
-            for p, c in zip(pieces, shades, strict=True)
-        ]
-    center, radius = _framing(pieces, target=target, zoom=zoom, model=model, only=only, pose=pose)
-    try:
-        png = _usdrecord_png(pieces, center, radius, azimuth, elevation, width)
-    except (FileNotFoundError, subprocess.SubprocessError, ImportError, OSError):
-        # usdrecord (a system binary needing a GL backend) may be absent, e.g. in CI;
-        # fall back to a plain shaded matplotlib render so the tool still works. The
-        # label/probe overlay needs the usdrecord camera, so it is skipped there.
-        return _matplotlib_png(pieces, center, radius, azimuth, elevation)
-    if not labels and probe is None:
-        return png
-    eye = _eye(center, radius, azimuth, elevation)
-    return _overlay(png, pieces, eye, center, labels=labels, probe=probe)
+    return _render(
+        model,
+        azimuth=azimuth,
+        elevation=elevation,
+        zoom=zoom,
+        target=target,
+        only=only,
+        pose=pose,
+        labels=labels,
+        probe=probe,
+        color_by_shape=color_by_shape,
+        width=width,
+    )[0]
 
 
 async def run(context: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
     model = _load_model(context.workspace)
-    png = render_png(
+    probe_px = args.get("probe_px")
+    png, hit = _render(
         model,
         azimuth=float(args.get("azimuth", 45.0)),
         elevation=float(args.get("elevation", 20.0)),
@@ -417,8 +536,13 @@ async def run(context: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
         pose=args.get("pose"),
         labels=bool(args.get("labels", True)),
         probe=args.get("probe"),
+        grid=bool(args.get("grid", True)),
+        probe_px=probe_px,
     )
-    return {"image_png_base64": base64.b64encode(png).decode("ascii")}
+    result: dict[str, Any] = {"image_png_base64": base64.b64encode(png).decode("ascii")}
+    if probe_px is not None:
+        result["probe_hit"] = hit
+    return result
 
 
 TOOL = Tool(
@@ -431,9 +555,12 @@ TOOL = Tool(
             "handle looks molded or a hinge seats. Orbit with azimuth/elevation, frame a "
             "part or shape by name with `target` and tighten with `zoom` (<1 zooms in), "
             "isolate parts with `only`, and actuate joints with `pose` to inspect motion. "
-            "Shape names are labelled at their positions so you can see where each is; "
-            "set `probe` to a shape name or [x,y,z] to mark that spot and read its "
-            "coordinate. Call it after a successful compile and fix what looks wrong."
+            "Shape names are labelled at their positions so you can see where each is, and "
+            "the image carries a 0-1 coordinate grid. To ask what is AT a spot you see, "
+            "pass `probe_px: [u, v]` (grid coords, v down): the result marks it and returns "
+            "the shape it hits with its exact [x, y, z] surface point, grounding what you "
+            "see in coordinates you can edit. `probe` marks a known shape or world point "
+            "instead. Call it after a successful compile and fix what looks wrong."
         ),
         {
             "azimuth": {"type": "number", "description": "Orbit angle in degrees (default 45)."},
@@ -465,6 +592,18 @@ TOOL = Tool(
             "probe": {
                 "type": ["string", "array"],
                 "description": "A shape name or [x,y,z] point to mark with a reticle and its coordinate.",
+            },
+            "grid": {
+                "type": "boolean",
+                "description": "Overlay the 0-1 coordinate grid (default true).",
+            },
+            "probe_px": {
+                "type": "array",
+                "items": {"type": "number"},
+                "description": (
+                    "[u, v] image coords (0-1, v down): raycast that spot and get back the "
+                    "shape it hits and the exact [x,y,z] surface point."
+                ),
             },
         },
         [],
