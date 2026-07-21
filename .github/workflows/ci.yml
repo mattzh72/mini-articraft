@@ -97,7 +97,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Build sdist and wheel
-        run: uv build
+        run: uv build --no-sources
 
       - name: Check distributions
         run: uvx twine check dist/*
