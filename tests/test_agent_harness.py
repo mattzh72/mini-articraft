@@ -105,6 +105,7 @@ def test_agent_writes_compiles_and_returns_final_response(tmp_path) -> None:
     assert "docs/sdk/common/30_articulated_object.md" in first_query.messages[1]["content"]
     assert first_query.messages[2]["content"].startswith("<task>")
     assert "a box" in first_query.messages[2]["content"]
+    # inspect_view is off by default, so it is not offered unless enabled.
     assert {tool["name"] for tool in first_query.tools} == {
         "read",
         "edit",

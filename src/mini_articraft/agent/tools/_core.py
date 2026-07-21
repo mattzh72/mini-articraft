@@ -110,6 +110,20 @@ def display_path(workspace: Path, path: Path) -> str:
 
 
 def result_item(call_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    result = payload.get("result")
+    if isinstance(result, dict) and "image_png_base64" in result:
+        # The agent already knows the view it asked for (its own tool-call args); just
+        # hand back the rendered image.
+        return {
+            "type": "function_call_output",
+            "call_id": call_id,
+            "output": [
+                {
+                    "type": "input_image",
+                    "image_url": f"data:image/png;base64,{result['image_png_base64']}",
+                }
+            ],
+        }
     return {"type": "function_call_output", "call_id": call_id, "output": json.dumps(payload)}
 
 
