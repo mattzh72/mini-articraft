@@ -4,9 +4,9 @@ import math
 from dataclasses import dataclass, replace
 from typing import Any, Literal, cast
 
-from mini_articraft.errors import ValidationError
 from mini_articraft.sdk._mesh_boolean import boolean_difference, boolean_intersection
 from mini_articraft.sdk._mesh_core import BoxGeometry, MeshGeometry
+from mini_articraft.sdk.errors import ValidationError
 
 ShellSide = Literal["full", "left", "right", "center"]
 

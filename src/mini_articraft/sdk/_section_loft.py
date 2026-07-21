@@ -8,7 +8,6 @@ from typing import Literal, cast
 import numpy as np
 import trimesh
 
-from mini_articraft.errors import ValidationError
 from mini_articraft.sdk._mesh_boolean import boolean_union
 from mini_articraft.sdk._mesh_core import LoftGeometry, MeshGeometry
 from mini_articraft.sdk._mesh_sweeps import (
@@ -16,6 +15,7 @@ from mini_articraft.sdk._mesh_sweeps import (
     _path_frames,
     _validated_up_hint,
 )
+from mini_articraft.sdk.errors import ValidationError
 
 Vec3 = tuple[float, float, float]
 RepairMode = Literal["off", "mesh"]

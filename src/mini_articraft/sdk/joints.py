@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import TypeAlias, cast
 
-from mini_articraft.errors import ValidationError
+from mini_articraft.sdk.errors import ValidationError
 
 Vec3: TypeAlias = tuple[float, float, float]
 

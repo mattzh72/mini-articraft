@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, SupportsIndex, TypeAlias, cast
 import numpy as np
 import trimesh
 
-from mini_articraft.errors import ValidationError
+from mini_articraft.sdk.errors import ValidationError
 
 if TYPE_CHECKING:
     from build123d.topology import Shape

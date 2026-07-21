@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import re
 import runpy
 import tomllib
@@ -8,7 +9,9 @@ from pathlib import Path
 import mini_articraft.sdk as sdk
 import mini_articraft.sdk.mesh as sdk_mesh
 from mini_articraft import package_dir
+from mini_articraft.errors import MiniArticraftError
 from mini_articraft.sdk import ArticulatedObject, TestReport
+from mini_articraft.sdk.errors import SDKError, ValidationError
 
 
 def detailed_reference_paths(sdk_docs: Path) -> list[str]:
@@ -64,6 +67,33 @@ def test_root_and_mesh_export_disjoint_surfaces() -> None:
     """One canonical import path per category: geometry classes and the object
     API at the root, mesh operations and recipes under ``mini_articraft.sdk.mesh``."""
     assert set(sdk.__all__).isdisjoint(sdk_mesh.__all__)
+
+
+def test_sdk_is_a_leaf_package_with_compatible_errors() -> None:
+    sdk_root = package_dir / "sdk"
+    outside_imports: list[tuple[str, str]] = []
+
+    for path in sdk_root.glob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                modules = [alias.name for alias in node.names]
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                modules = [node.module]
+            else:
+                continue
+            outside_imports.extend(
+                (path.name, module)
+                for module in modules
+                if module.startswith("mini_articraft.")
+                and not module.startswith("mini_articraft.sdk")
+            )
+
+    assert not outside_imports
+    assert sdk.SDKError is SDKError
+    assert sdk.ValidationError is ValidationError
+    assert issubclass(ValidationError, SDKError)
+    assert issubclass(SDKError, MiniArticraftError)
 
 
 def test_key_apis_are_documented_by_their_owner_pages() -> None:

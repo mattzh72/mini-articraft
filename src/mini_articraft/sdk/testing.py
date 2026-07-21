@@ -8,7 +8,6 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import ClassVar, cast
 
-from mini_articraft.errors import ValidationError
 from mini_articraft.sdk._collision import (
     Bounds,
     CollisionQuery,
@@ -18,6 +17,7 @@ from mini_articraft.sdk._collision import (
     Vec3,
     _pair_key,
 )
+from mini_articraft.sdk.errors import ValidationError
 from mini_articraft.sdk.joints import Articulation, ArticulationType
 from mini_articraft.sdk.object import ArticulatedObject, Part, PartRef
 

@@ -11,7 +11,6 @@ One canonical import path per category:
 
 from __future__ import annotations
 
-from mini_articraft.errors import SDKError, ValidationError
 from mini_articraft.sdk._mesh_core import (
     BoxGeometry,
     CapsuleGeometry,
@@ -34,6 +33,7 @@ from mini_articraft.sdk._mesh_sweeps import (
     SweepGeometry,
     WirePolylineGeometry,
 )
+from mini_articraft.sdk.errors import SDKError, ValidationError
 from mini_articraft.sdk.joints import (
     Articulation,
     ArticulationType,
