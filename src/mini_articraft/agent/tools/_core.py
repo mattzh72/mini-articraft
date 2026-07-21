@@ -176,6 +176,10 @@ def _ignore_workspace_path(path: Path, *, is_directory: bool, is_symlink: bool) 
     name = path.name
     if path.parts[0] == "docs":
         return True
+    if path.parts == ("junctions.md",):
+        # Compiler output, not authored content: writing it must not mark the
+        # workspace as changed since the last successful compile.
+        return True
     if (is_directory or is_symlink) and (
         name in IGNORED_WORKSPACE_DIRECTORIES or name.endswith((".egg-info", ".dist-info"))
     ):

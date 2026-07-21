@@ -75,6 +75,7 @@ def build_compile_report_from_payload(payload: dict[str, Any]) -> dict[str, Any]
         stderr=str(payload.get("stderr") or ""),
         returncode=payload.get("returncode"),
         test_report=payload.get("test_report"),
+        junction_count=int(payload.get("junction_count") or 0),
     )
 
 
@@ -87,6 +88,7 @@ def build_compile_report(
     stderr: str = "",
     returncode: object = None,
     test_report: object = None,
+    junction_count: int = 0,
 ) -> dict[str, Any]:
     report = _report_dict(test_report)
     bundle = _bundle(status, error, report, traceback_text=traceback_text)
@@ -100,7 +102,8 @@ def build_compile_report(
         "counts": _counts(bundle.signals),
         "test_report": report,
         "signal_bundle": asdict(bundle),
-        "signals_text": render_compile_signals(bundle),
+        "junction_count": junction_count,
+        "signals_text": render_compile_signals(bundle, junction_count=junction_count),
     }
 
 
@@ -115,6 +118,7 @@ def render_compile_report(
         _bundle_from_dict(report["signal_bundle"]),
         repeated=repeated,
         failure_streak=failure_streak,
+        junction_count=int(report.get("junction_count") or 0),
     )
     return rendered
 
@@ -142,6 +146,7 @@ def render_compile_signals(
     *,
     repeated: bool = False,
     failure_streak: int = 0,
+    junction_count: int = 0,
 ) -> str:
     failures = _failures(bundle.signals)
     warnings = _ordered_signals(bundle.signals, "warning")
@@ -162,6 +167,7 @@ def render_compile_signals(
         has_warnings=bool(warnings),
         repeated=repeated,
         failure_streak=failure_streak,
+        junction_count=junction_count,
     )
     if rules:
         parts += [
@@ -522,21 +528,29 @@ def _primary_issue(signal: CompileSignal) -> str:
     return issues.get(signal.kind, signal.summary)
 
 
+_JUNCTION_RULE = (
+    "- This compile wrote `junctions.md`: every attachment junction with the pair's "
+    "shared overlap volume, flagging TANGENT CONTACT -- pieces that touch at a point, "
+    "line, or bare surface with no real overlap, instead of being embedded past the "
+    "surface and welded. Read it and fix or justify every flag before concluding."
+)
+
+
 def _rules(
     failures: list[CompileSignal],
     *,
     has_warnings: bool,
     repeated: bool,
     failure_streak: int,
+    junction_count: int = 0,
 ) -> list[str]:
     if not failures:
-        return (
-            [
+        rules = [_JUNCTION_RULE] if junction_count else []
+        if has_warnings:
+            rules.append(
                 "- Warnings are design evidence. Do not remove or simplify prompt-critical geometry just to clear them."
-            ]
-            if has_warnings
-            else []
-        )
+            )
+        return rules
     kind = failures[0].kind
     if kind in {"compile_runtime", "missing_run_tests", "invalid_run_tests_report"}:
         rules = [

@@ -14,6 +14,7 @@ from typing import Any, TypeVar, cast
 
 from mini_articraft.compile_feedback import build_compile_report_from_payload, empty_compile_payload
 from mini_articraft.environments.export import export_object
+from mini_articraft.junction_report import write_junction_report
 from mini_articraft.sdk import ArticulatedObject, TestContext, TestReport
 
 T = TypeVar("T", bound=Hashable)
@@ -56,6 +57,9 @@ def _compile_workspace(workspace: Path, export_dir: Path) -> dict[str, Any]:
                     "usdz": str(result.usdz),
                 }
             )
+            with contextlib.suppress(Exception):
+                # Best-effort: a failed junction report must not fail the compile.
+                payload["junction_count"] = write_junction_report(object_model, workspace)
 
         payload.update(
             {
