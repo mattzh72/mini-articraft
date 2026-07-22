@@ -37,7 +37,6 @@ a shape perimeter which enables combining subsequent shapes with different modes
 (the valid values of Mode are `ADD`, `SUBTRACT`, `INTERSECT`, `REPLACE`,
 and `PRIVATE`).
 
-Image file: `docs/sdk/build123d/assets/circle_with_hole.svg`.
 
 ## Sketching on other Planes
 
@@ -54,7 +53,6 @@ of what is happening with this metaphor:
 
 As an example, let's build the following simple control box with a display on an angled plane:
 
-Image file: `docs/sdk/build123d/assets/controller.svg`.
 
 Here is the code:
 

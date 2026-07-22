@@ -67,7 +67,6 @@ as will combining parts with boolean operations or within a `BuildPart` context.
 As a example of creating parts with joints and connecting them together, consider the following code where
 flanges are attached to the ends of a curved pipe:
 
-Image file: `docs/sdk/build123d/assets/rigid_joints_pipe.png`.
 
 Code reference: `docs/sdk/build123d/snippets/rigid_joints_pipe.py`.
 
@@ -116,7 +115,6 @@ Class reference: `RevoluteJoint`.
 
 Component moves along a single axis as with a sliding latch shown here:
 
-Image file: `docs/sdk/build123d/assets/joint-latch-slide.png`.
 
 The code to generate these components follows:
 
@@ -126,9 +124,7 @@ Include options:
 - `:language: build123d`
 - `:emphasize-lines: 30, 52, 55`
 
-Image file: `docs/sdk/build123d/assets/joint-latch.png`.
 
-Image file: `docs/sdk/build123d/assets/joint-slide.png`.
 
 Note how the slide is constructed in a different orientation than the direction of motion. The
 three highlighted lines of code show how the joints are created and connected together:
@@ -172,7 +168,6 @@ Class reference: `CylindricalJoint`.
 A component rotates around all 3 axes using a gimbal system (3 nested rotations). A `BallJoint`
 is found within a rod end as shown here:
 
-Image file: `docs/sdk/build123d/assets/rod_end.png`.
 
 Code reference: `docs/sdk/build123d/snippets/rod_end.py`.
 

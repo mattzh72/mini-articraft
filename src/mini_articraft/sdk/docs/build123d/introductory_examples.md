@@ -27,7 +27,6 @@ Some important lines are omitted below to save space, so you will most likely ne
 
 Just about the simplest possible example, a rectangular `Box`.
 
-Image file: `docs/sdk/build123d/assets/general_ex1.svg`.
 
 * **Builder mode**
 
@@ -51,7 +50,6 @@ Include options:
 
 A rectangular box, but with a hole added.
 
-Image file: `docs/sdk/build123d/assets/general_ex2.svg`.
 
 * **Builder mode**
 
@@ -83,7 +81,6 @@ Include options:
 
 Build a prismatic solid using extrusion.
 
-Image file: `docs/sdk/build123d/assets/general_ex3.svg`.
 
 * **Builder mode**
 
@@ -116,7 +113,6 @@ Sometimes you need to build complex profiles using lines and arcs. This example
 builds a prismatic solid from 2D operations. It is not necessary to create
 variables for the line segments, but it will be useful in a later example.
 
-Image file: `docs/sdk/build123d/assets/general_ex4.svg`.
 
 * **Builder mode**
 
@@ -150,7 +146,6 @@ Note that to build a closed face it requires line segments that form a closed sh
 
 ### 5. Moving the current working point
 
-Image file: `docs/sdk/build123d/assets/general_ex5.svg`.
 
 * **Builder mode**
 
@@ -182,7 +177,6 @@ Include options:
 Sometimes you need to create a number of features at various
 `Locations`.
 
-Image file: `docs/sdk/build123d/assets/general_ex6.svg`.
 
 * **Builder mode**
 
@@ -212,7 +206,6 @@ Include options:
 
 ### 7. Polygons
 
-Image file: `docs/sdk/build123d/assets/general_ex7.svg`.
 
 * **Builder mode**
 
@@ -245,7 +238,6 @@ of chained points connected by lines. This example uses a polyline to create
 one half of an i-beam shape, which is `mirror` ed to
 create the final profile.
 
-Image file: `docs/sdk/build123d/assets/general_ex8.svg`.
 
 * **Builder mode**
 
@@ -272,7 +264,6 @@ and `fillet` can be used to "bevel" and "round" edges respectively. Secondly,
 these two methods require an edge or a list of edges to operate on. To select all
 edges, you could simply pass in `ex9.edges()`.
 
-Image file: `docs/sdk/build123d/assets/general_ex9.svg`.
 
 * **Builder mode**
 
@@ -298,7 +289,6 @@ be the highest z-dimension group.
 
 ### 10. Select Last and Hole
 
-Image file: `docs/sdk/build123d/assets/general_ex10.svg`.
 
 * **Builder mode**
 
@@ -329,7 +319,6 @@ Include options:
 
 ### 11. Use a face as a plane for BuildSketch and introduce GridLocations
 
-Image file: `docs/sdk/build123d/assets/general_ex11.svg`.
 
 * **Builder mode**
 
@@ -377,7 +366,6 @@ if the extrude direction and mode/operation (ADD / `+` or SUBTRACT / `-`) are no
 This example defines a side using a spline curve through a collection of points. Useful when you have an
 edge that needs a complex profile.
 
-Image file: `docs/sdk/build123d/assets/general_ex12.svg`.
 
 * **Builder mode**
 
@@ -401,7 +389,6 @@ Include options:
 
 Counter-sink and counter-bore holes are useful for creating recessed areas for fasteners.
 
-Image file: `docs/sdk/build123d/assets/general_ex13.svg`.
 
 * **Builder mode**
 
@@ -439,7 +426,6 @@ having to repeat dimensions again and again, which is error prone, time
 consuming, and more difficult to maintain. The pending faces must lie on the
 path, please see example 37 for a way to make this placement easier.
 
-Image file: `docs/sdk/build123d/assets/general_ex14.svg`.
 
 * **Builder mode**
 
@@ -476,7 +462,6 @@ Additionally the '@' operator is used to simplify the line segment commands.
 
 `(l4 @ 1).Y` is used to extract the y-component of the `l4 @ 1` vector.
 
-Image file: `docs/sdk/build123d/assets/general_ex15.svg`.
 
 * **Builder mode**
 
@@ -503,7 +488,6 @@ Include options:
 Mirror can also be used with BuildPart (and BuildSketch) to mirror 3D objects.
 The `Plane.offset()` method shifts the plane in the normal direction (positive or negative).
 
-Image file: `docs/sdk/build123d/assets/general_ex16.svg`.
 
 * **Builder mode**
 
@@ -528,7 +512,6 @@ Include options:
 Here we select the farthest face in the Y-direction and turn it into a `Plane` using the
 `Plane()` class.
 
-Image file: `docs/sdk/build123d/assets/general_ex17.svg`.
 
 * **Builder mode**
 
@@ -553,7 +536,6 @@ Include options:
 Here we start with an earlier example, select the top face, draw a rectangle and then use Extrude
 with a negative distance.
 
-Image file: `docs/sdk/build123d/assets/general_ex18.svg`.
 
 * **Builder mode**
 
@@ -584,7 +566,6 @@ Firstly `vtx` uses `group_by` and `Axis.X` to select a particular vertex. The se
 defined Axis `vtx2Axis` that is pointing roughly in the direction of a vertex to select, and then `sort_by`
 this custom Axis.
 
-Image file: `docs/sdk/build123d/assets/general_ex19.svg`.
 
 * **Builder mode**
 
@@ -617,7 +598,6 @@ Include options:
 The `plane` variable is set to be coincident with the farthest face in the
 negative x-direction. The resulting Plane is offset from the original position.
 
-Image file: `docs/sdk/build123d/assets/general_ex20.svg`.
 
 * **Builder mode**
 
@@ -642,7 +622,6 @@ Include options:
 One cylinder is created, and then the origin and z_dir of that part are used to create a new Plane for
 positioning another cylinder perpendicular and halfway along the first.
 
-Image file: `docs/sdk/build123d/assets/general_ex21.svg`.
 
 * **Builder mode**
 
@@ -667,7 +646,6 @@ Include options:
 It is also possible to create a rotated workplane, building upon some of the concepts in an earlier
 example.
 
-Image file: `docs/sdk/build123d/assets/general_ex22.svg`.
 
 * **Builder mode**
 
@@ -704,7 +682,6 @@ only one side of the Sketch.
 
 It is highly recommended to view your sketch before you attempt to call revolve.
 
-Image file: `docs/sdk/build123d/assets/general_ex23.svg`.
 
 * **Builder mode**
 
@@ -731,7 +708,6 @@ conical-like shape from a circle and a rectangle that is offset vertically. In t
 `loft` automatically takes the pending faces that were added by the two BuildSketches.
 Loft can behave unexpectedly when the input faces are not parallel to each other.
 
-Image file: `docs/sdk/build123d/assets/general_ex24.svg`.
 
 * **Builder mode**
 
@@ -753,7 +729,6 @@ Include options:
 
 ### 25. Offset Sketch
 
-Image file: `docs/sdk/build123d/assets/general_ex25.svg`.
 
 * **Builder mode**
 
@@ -789,7 +764,6 @@ using very few operations. This can also be offset inwards or outwards. Faces ca
 
 Note that self intersecting edges and/or faces can break both 2D and 3D offsets.
 
-Image file: `docs/sdk/build123d/assets/general_ex26.svg`.
 
 * **Builder mode**
 
@@ -814,7 +788,6 @@ Include options:
 You can split an object using a plane, and retain either or both halves. In this case we select
 a face and offset half the width of the box.
 
-Image file: `docs/sdk/build123d/assets/general_ex27.svg`.
 
 * **Builder mode**
 
@@ -836,7 +809,6 @@ Include options:
 
 ### 28. Locating features based on Faces
 
-Image file: `docs/sdk/build123d/assets/general_ex28.svg`.
 
 * **Builder mode**
 
@@ -869,7 +841,6 @@ build123d is based on the OpenCascade.org (OCC) modeling Kernel. Those who are f
 know about the famous ‘bottle’ example. We use a 3D Offset and the openings parameter to create
 the bottle opening.
 
-Image file: `docs/sdk/build123d/assets/general_ex29.svg`.
 
 * **Builder mode**
 
@@ -895,7 +866,6 @@ Here `pts` is used as an input to both `Polyline` and
 `Bezier` and `wts` to Bezier alone. These two together
 create a closed line that is made into a face and extruded.
 
-Image file: `docs/sdk/build123d/assets/general_ex30.svg`.
 
 * **Builder mode**
 
@@ -921,7 +891,6 @@ Locations contexts can be nested to create groups of shapes. Here 24 triangles, 
 1 hexagon are created and then extruded. Notably `PolarLocations`
 rotates any "children" groups by default.
 
-Image file: `docs/sdk/build123d/assets/general_ex31.svg`.
 
 * **Builder mode**
 
@@ -947,7 +916,6 @@ In this example, a standard python for-loop is used along with a list of faces e
 to progressively modify the extrusion amount. There are 7 faces in the sketch, so this results in 7
 separate calls to `extrude`.
 
-Image file: `docs/sdk/build123d/assets/general_ex32.svg`.
 
 * **Builder mode**
 
@@ -976,7 +944,6 @@ Building on the previous example, a standard python function is used to return
 a sketch as a function of several inputs to
 progressively modify the size of each square.
 
-Image file: `docs/sdk/build123d/assets/general_ex33.svg`.
 
 * **Builder mode**
 
@@ -1002,7 +969,6 @@ Include options:
 
 ### 34. Embossed and Debossed Text
 
-Image file: `docs/sdk/build123d/assets/general_ex34.svg`.
 
 * **Builder mode**
 
@@ -1034,7 +1000,6 @@ Include options:
 
 ### 35. Slots
 
-Image file: `docs/sdk/build123d/assets/general_ex35.svg`.
 
 * **Builder mode**
 
@@ -1068,7 +1033,6 @@ where you might not know easily the distance you have to extrude to. In such
 cases you can use `extrude` `Until`
 with `Until.NEXT` or `Until.LAST`.
 
-Image file: `docs/sdk/build123d/assets/general_ex36.svg`.
 
 * **Builder mode**
 

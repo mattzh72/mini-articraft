@@ -96,7 +96,7 @@ def test_read_can_open_symlinked_sdk_docs(tmp_path) -> None:
     assert result["text"] == "L1: # Shared units and types"
 
 
-def test_read_can_open_build123d_docs_support_files(tmp_path) -> None:
+def test_read_can_open_build123d_docs_support_code(tmp_path) -> None:
     ctx = context(tmp_path)
 
     page = run(
@@ -115,21 +115,10 @@ def test_read_can_open_build123d_docs_support_files(tmp_path) -> None:
             },
         )
     )
-    image = run(
-        get("read").run(
-            ctx,
-            {"path": "docs/sdk/build123d/assets/ttt/ttt-23-t-24-curved_support.png"},
-        )
-    )
-
     assert page["path"] == "docs/sdk/build123d/tttt.md"
-    assert "ttt-23-t-24-curved_support.png" in page["text"]
+    assert "ttt-23-t-24-curved_support.py" in page["text"]
     assert snippet["path"] == "docs/sdk/build123d/assets/ttt/ttt-23-t-24-curved_support.py"
     assert snippet["text"].startswith("L1: ")
-    assert image["path"] == "docs/sdk/build123d/assets/ttt/ttt-23-t-24-curved_support.png"
-    assert image["mime_type"] == "image/png"
-    assert image["bytes"] > 256_000
-    assert image["truncated"] is True
 
 
 def test_read_image_returns_metadata_and_base64(tmp_path) -> None:

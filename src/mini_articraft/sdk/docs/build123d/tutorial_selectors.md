@@ -8,7 +8,6 @@ Use this page for a step-by-step selector walkthrough that builds a part and fil
 This tutorial provides a step by step guide in using selectors as we create
 this part:
 
-Image file: `docs/sdk/build123d/assets/selector_after.svg`.
 
 **Note**
 
@@ -121,7 +120,6 @@ this hexagonal shape from the part under construction.
 
 At this point the part looks like:
 
-Image file: `docs/sdk/build123d/assets/selector_before.svg`.
 
 ## Step 6: Fillet the top perimeter Edge
 

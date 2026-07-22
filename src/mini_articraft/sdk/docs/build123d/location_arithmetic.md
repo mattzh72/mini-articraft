@@ -32,7 +32,6 @@ show_object(face, name="face")
 show_object(location_symbol(loc), name="location")
 ```
 
-Image file: `docs/sdk/build123d/assets/location-example-01.png`.
 
 2) **Positioning on a plane**
 
@@ -45,7 +44,6 @@ show_object(face, name="face")
 show_object(plane_symbol(plane), name="plane")
 ```
 
-Image file: `docs/sdk/build123d/assets/location-example-07.png`.
 
 Note: The `x`-axis and the `y`-axis of the plane are on the `x`-axis and the `z`-axis of the world coordinate system (red and blue axis).
 
@@ -67,7 +65,6 @@ show_object(location_symbol(loc), name="location")
 show_object(box, name="box")
 ```
 
-Image file: `docs/sdk/build123d/assets/location-example-02.png`.
 
 The `X`, `Y`, `Z` components of `Pos(0.2, 0.4, 0.1)` are relative to the `x`-axis, `y`-axis or
 `z`-axis of the underlying location `loc`.
@@ -88,7 +85,6 @@ show_object(location_symbol(loc), name="location")
 show_object(box, name="box")
 ```
 
-Image file: `docs/sdk/build123d/assets/location-example-03.png`.
 
 The box is rotated via `Rot(Z=80)` around the `z`-axis of the underlying location
 (and not of the z-axis of the world).
@@ -107,7 +103,6 @@ show_object(location_symbol(loc), name="location")
 show_object(box, name="box")
 ```
 
-Image file: `docs/sdk/build123d/assets/location-example-04.png`.
 
 The box is rotated via `Rot(20, 40, 80)` around all three axes relative to the plane.
 
@@ -126,7 +121,6 @@ show_object(box, name="box")
 show_object(location_symbol(loc * Rot(20, 40, 80), 0.5), options={"color":(0, 255, 255)}, name="local_location")
 ```
 
-Image file: `docs/sdk/build123d/assets/location-example-05.png`.
 
 The box is positioned via `Pos(0.2, 0.4, 0.1)` relative to the location `loc * Rot(20, 40, 80)`
 
@@ -145,6 +139,5 @@ show_object(box, name="box")
 show_object(location_symbol(loc * Pos(0.2, 0.4, 0.1), 0.5), options={"color":(0, 255, 255)}, name="local_location")
 ```
 
-Image file: `docs/sdk/build123d/assets/location-example-06.png`.
 
 Note: This is the same as `box = loc * Location((0.2, 0.4, 0.1), (20, 40, 80)) * Box(0.2, 0.2, 0.2)`

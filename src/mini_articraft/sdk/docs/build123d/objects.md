@@ -33,7 +33,6 @@ The following sections describe the 1D, 2D and 3D objects:
 2D/Sketch and 3D/Part objects can be aligned relative to themselves, either centered, or justified
 right or left of each Axis. The following diagram shows how this alignment works in 2D:
 
-Image file: `docs/sdk/build123d/assets/align.svg`.
 
 For example:
 
@@ -129,7 +128,6 @@ Class reference: `ArcArcTangentLine`.
 
 Class reference: `ArcArcTangentArc`.
 
-Image file: `docs/sdk/build123d/assets/objects/arcarctangentarc_keep_table.png`.
 
 Class reference: `PointArcTangentLine`.
 
@@ -214,7 +212,6 @@ All of the objects presented above were created using one of three base object c
 `BasePartObject` .  Users can use these base object classes to
 easily create custom objects that have all the functionality of the core objects.
 
-Image file: `docs/sdk/build123d/assets/card_box.svg`.
 
 Here is an example of a custom sketch object specially created as part of the design of
 this playing card storage box (`see the playing_cards.py example` (`../examples/playing_cards.py`)):
@@ -240,5 +237,3 @@ The final line calls the `__init__` method of the super class - i.e.
 
 That's it, now the `Club` object can be used anywhere a `Circle`
 would be used - with either the Algebra or Builder API.
-
-Image file: `docs/sdk/build123d/assets/buildline_example_6.svg`.

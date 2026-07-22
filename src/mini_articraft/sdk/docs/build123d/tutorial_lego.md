@@ -8,7 +8,6 @@ Use this page for a step-by-step parametric Lego block tutorial using sketches, 
 This tutorial provides a step by step guide to creating a script to build a parametric
 Lego block as shown here:
 
-Image file: `docs/sdk/build123d/assets/lego.svg`.
 
 ## Step 1: Setup
 
@@ -69,7 +68,6 @@ Include options:
 
 Once the `Rectangle` object is created the sketch appears as follows:
 
-Image file: `docs/sdk/build123d/assets/lego_step4.svg`.
 
 ## Step 5: Offset to Create Walls
 
@@ -91,7 +89,6 @@ square corners. Finally, the `mode` parameter controls how this object will
 be placed in the sketch - in this case subtracted from the existing sketch.
 The result is shown here:
 
-Image file: `docs/sdk/build123d/assets/lego_step5.svg`.
 
 Now the sketch consists of a hollow rectangle.
 
@@ -119,7 +116,6 @@ parameter are optional in this case.
 
 The result looks like this:
 
-Image file: `docs/sdk/build123d/assets/lego_step6.svg`.
 
 ## Step 7: Create Ridges
 
@@ -135,7 +131,6 @@ Include options:
 
 The `Rectangle` is subtracted from the sketch to leave the ridges as follows:
 
-Image file: `docs/sdk/build123d/assets/lego_step7.svg`.
 
 ## Step 8: Hollow Circles
 
@@ -155,7 +150,6 @@ Circles will be positioned at these locations.
 
 Once the Circles are added, the sketch is complete and looks as follows:
 
-Image file: `docs/sdk/build123d/assets/lego_step8.svg`.
 
 ## Step 9: Extruding Sketch into Walls
 
@@ -175,7 +169,6 @@ sketch that we've created to `BuildPart` for further processing by `Extrude`.
 
 The result is:
 
-Image file: `docs/sdk/build123d/assets/lego_step9.svg`.
 
 ## Step 10: Adding a Top
 
@@ -203,7 +196,6 @@ the intersection of the x and y axis but not in the z thus aligning with the top
 
 The base is closed now as shown here:
 
-Image file: `docs/sdk/build123d/assets/lego_step10.svg`.
 
 ## Step 11: Adding Pips
 
@@ -223,7 +215,6 @@ In this case, the workplane is created from the top Face of the Lego block by us
 On the new workplane, a grid of locations is created and a number of `Cylinder`'s are positioned
 at each location.
 
-Image file: `docs/sdk/build123d/assets/lego.svg`.
 
 This completes the Lego block. To access the finished product, refer to the builder's internal
 object as shown here:
