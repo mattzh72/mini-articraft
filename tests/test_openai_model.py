@@ -64,9 +64,16 @@ class FakeWebSocket:
 
 
 def patch_websocket(monkeypatch: pytest.MonkeyPatch, socket: FakeWebSocket) -> None:
-    async def connect(url: str, *, additional_headers: dict[str, str], max_size: object):
+    async def connect(
+        url: str,
+        *,
+        additional_headers: dict[str, str],
+        open_timeout: float,
+        max_size: object,
+    ):
         assert url == "wss://api.openai.com/v1/responses"
         assert additional_headers == {"Authorization": "Bearer sk-test"}
+        assert open_timeout == 20.0
         assert max_size is None
         return socket
 
@@ -456,6 +463,107 @@ def test_openai_model_raises_on_websocket_error(monkeypatch: pytest.MonkeyPatch)
 
     with pytest.raises(ModelError, match="previous_response_not_found"):
         run(openai_model().query([{"role": "user", "content": "hello"}]))
+
+
+def test_openai_model_retries_transient_errors_on_a_new_socket(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first = FakeWebSocket(
+        [
+            {
+                "type": "error",
+                "status": 503,
+                "error": {"code": "server_error", "message": "try again"},
+            }
+        ]
+    )
+    second = FakeWebSocket([response_event("result")])
+    sockets = iter([first, second])
+    sleeps: list[float] = []
+
+    async def connect(*args: Any, **kwargs: Any) -> FakeWebSocket:
+        return next(sockets)
+
+    async def sleep(delay: float) -> None:
+        sleeps.append(delay)
+
+    monkeypatch.setattr("mini_articraft.models.openai.websockets.connect", connect)
+    monkeypatch.setattr("mini_articraft.models.openai.asyncio.sleep", sleep)
+    monkeypatch.setattr("mini_articraft.models.openai.random.random", lambda: 0.5)
+
+    result = run(openai_model().query([{"role": "user", "content": "hello"}]))
+
+    assert result["text"] == "result"
+    assert first.closed is True
+    assert sleeps == [0.25]
+    assert first.sent == second.sent
+
+
+def test_openai_model_does_not_retry_client_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    socket = FakeWebSocket(
+        [
+            {
+                "type": "error",
+                "status": 401,
+                "error": {"code": "invalid_api_key", "message": "bad key"},
+            }
+        ]
+    )
+    patch_websocket(monkeypatch, socket)
+
+    with pytest.raises(ModelError, match="invalid_api_key"):
+        run(openai_model().query([{"role": "user", "content": "hello"}]))
+
+    assert len(socket.sent) == 1
+
+
+def test_openai_model_resends_full_context_when_previous_response_is_lost(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first = FakeWebSocket(
+        [
+            response_event("first", response_id="resp_1"),
+            {
+                "type": "error",
+                "status": 400,
+                "error": {
+                    "code": "previous_response_not_found",
+                    "message": "missing response",
+                },
+            },
+        ]
+    )
+    second = FakeWebSocket([response_event("second", response_id="resp_2")])
+    sockets = iter([first, second])
+
+    async def connect(*args: Any, **kwargs: Any) -> FakeWebSocket:
+        return next(sockets)
+
+    monkeypatch.setattr("mini_articraft.models.openai.websockets.connect", connect)
+    model = openai_model()
+    messages = [{"role": "user", "content": "first question"}]
+
+    run(model.query(messages))
+    messages.extend(
+        [
+            {"role": "assistant", "content": "first"},
+            {"role": "user", "content": "second question"},
+        ]
+    )
+    result = run(model.query(messages))
+
+    assert result["text"] == "second"
+    assert first.closed is True
+    assert first.sent[1]["previous_response_id"] == "resp_1"
+    assert "previous_response_id" not in second.sent[0]
+    assert second.sent[0]["input"] == [
+        {"role": "user", "content": "first question"},
+        {
+            "type": "message",
+            "content": [{"type": "output_text", "text": "first"}],
+        },
+        {"role": "user", "content": "second question"},
+    ]
 
 
 def test_openai_model_raises_without_text(monkeypatch: pytest.MonkeyPatch) -> None:

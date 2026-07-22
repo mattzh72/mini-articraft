@@ -10,6 +10,8 @@ DEFAULT_OUTPUT_DIR = Path("runs")
 DEFAULT_MAX_TURNS = 100
 DEFAULT_COMPILE_TIMEOUT_SECONDS = 900.0
 DEFAULT_OPENAI_MODEL = "gpt-5.5-2026-04-23"
+DEFAULT_OPENAI_MAX_ATTEMPTS = 4
+DEFAULT_OPENAI_REQUEST_TIMEOUT_SECONDS = 900.0
 
 
 class Settings(BaseSettings):
@@ -33,6 +35,16 @@ class Settings(BaseSettings):
         validation_alias="MINI_ARTICRAFT_REASONING_EFFORT",
     )
     openai_api_key: str = Field(validation_alias="OPENAI_API_KEY")
+    openai_max_attempts: int = Field(
+        default=DEFAULT_OPENAI_MAX_ATTEMPTS,
+        ge=1,
+        validation_alias="MINI_ARTICRAFT_OPENAI_MAX_ATTEMPTS",
+    )
+    openai_request_timeout_seconds: float = Field(
+        default=DEFAULT_OPENAI_REQUEST_TIMEOUT_SECONDS,
+        gt=0.0,
+        validation_alias="MINI_ARTICRAFT_OPENAI_REQUEST_TIMEOUT_SECONDS",
+    )
     max_turns: int = Field(default=DEFAULT_MAX_TURNS, validation_alias="MINI_ARTICRAFT_MAX_TURNS")
     compile_timeout_seconds: float = Field(
         default=DEFAULT_COMPILE_TIMEOUT_SECONDS,

@@ -1,18 +1,26 @@
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
+import random
 from dataclasses import dataclass
 from typing import Any
 
 import websockets
+from websockets.exceptions import WebSocketException
 
 from mini_articraft.errors import ModelError
 from mini_articraft.settings import Settings, get_settings
 
 _WEBSOCKET_URL = "wss://api.openai.com/v1/responses"
 _MAX_OUTPUT_TOKENS = 128_000
+_RETRY_BASE_SECONDS = 0.5
+_RETRY_MAX_SECONDS = 20.0
+_WEBSOCKET_OPEN_TIMEOUT_SECONDS = 20.0
 # Codex caps the 1.05M API window at 272K to avoid much higher cost and lower quality.
 _CODEX_CONTEXT_WINDOW_TOKENS = 272_000
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -64,8 +72,14 @@ class OpenAIModel:
             input_items = new_items
 
         request = self._request(messages, input_items, previous_response_id, tools)
+        fallback_request = self._request(
+            messages,
+            [*self._input_items, *new_items],
+            None,
+            tools,
+        )
 
-        response = await self._send_websocket(request)
+        response = await self._send_with_retries(request, fallback_request)
         text = _response_text(response)
         tool_calls = _response_tool_calls(response)
         _raise_for_bad_status(response, text)
@@ -112,19 +126,71 @@ class OpenAIModel:
             request["instructions"] = instructions
         return request
 
-    async def _send_websocket(self, request: dict[str, Any]) -> dict[str, Any]:
-        websocket = await self._ensure_websocket()
+    async def _send_with_retries(
+        self,
+        request: dict[str, Any],
+        fallback_request: dict[str, Any],
+    ) -> dict[str, Any]:
+        for attempt in range(1, self.config.openai_max_attempts + 1):
+            try:
+                return await asyncio.wait_for(
+                    self._send_with_fallback(request, fallback_request),
+                    timeout=self.config.openai_request_timeout_seconds,
+                )
+            except Exception as exc:
+                if attempt >= self.config.openai_max_attempts or not _should_retry(exc):
+                    raise
+                await self._close_websocket()
+                delay = random.random() * min(
+                    _RETRY_MAX_SECONDS,
+                    _RETRY_BASE_SECONDS * (2 ** (attempt - 1)),
+                )
+                logger.warning(
+                    "OpenAI request failed (attempt %s/%s), retrying in %.2fs: %s",
+                    attempt,
+                    self.config.openai_max_attempts,
+                    delay,
+                    _format_exception(exc),
+                )
+                await asyncio.sleep(delay)
+        raise AssertionError("retry loop did not return or raise")
+
+    async def _send_with_fallback(
+        self,
+        request: dict[str, Any],
+        fallback_request: dict[str, Any],
+    ) -> dict[str, Any]:
+        try:
+            return await self._send_websocket(request)
+        except _OpenAIWebSocketError as exc:
+            if exc.code != "previous_response_not_found" or "previous_response_id" not in request:
+                raise
+            logger.warning("OpenAI lost the previous response; resending the full conversation")
+            return await self._send_websocket(fallback_request, force_reconnect=True)
+
+    async def _send_websocket(
+        self,
+        request: dict[str, Any],
+        *,
+        force_reconnect: bool = False,
+    ) -> dict[str, Any]:
+        websocket = await self._ensure_websocket(force_reconnect=force_reconnect)
         await websocket.send(json.dumps({"type": "response.create", **request}))
         return await _receive_websocket_response(websocket)
 
-    async def _ensure_websocket(self) -> Any:
-        if self._websocket is not None and not getattr(self._websocket, "closed", False):
+    async def _ensure_websocket(self, *, force_reconnect: bool = False) -> Any:
+        if (
+            not force_reconnect
+            and self._websocket is not None
+            and not getattr(self._websocket, "closed", False)
+        ):
             return self._websocket
 
         await self._close_websocket()
         self._websocket = await websockets.connect(
             _WEBSOCKET_URL,
             additional_headers={"Authorization": f"Bearer {self.config.openai_api_key}"},
+            open_timeout=_WEBSOCKET_OPEN_TIMEOUT_SECONDS,
             max_size=None,
         )
         return self._websocket
@@ -133,7 +199,10 @@ class OpenAIModel:
         websocket = self._websocket
         self._websocket = None
         if websocket is not None:
-            await websocket.close()
+            try:
+                await websocket.close()
+            except Exception:
+                logger.debug("OpenAI websocket close failed", exc_info=True)
 
     def _new_input_items(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
         new_items: list[dict[str, Any]] = []
@@ -158,14 +227,86 @@ async def _receive_websocket_response(websocket: Any) -> dict[str, Any]:
         event_type = event.get("type")
 
         if event_type == "error":
-            raise ModelError(json.dumps(event, sort_keys=True))
+            raise _OpenAIWebSocketError.from_event(event)
         if event_type in {"response.completed", "response.incomplete"}:
             response = event.get("response")
             if not isinstance(response, dict):
-                raise ModelError(f"{event_type} did not include a response object")
+                raise _OpenAIWebSocketError(
+                    code="missing_response",
+                    message=f"{event_type} did not include a response object",
+                )
             return response
         if event_type == "response.failed":
-            raise ModelError(json.dumps(event, sort_keys=True))
+            raise _OpenAIWebSocketError.from_event(event)
+
+
+class _OpenAIWebSocketError(ModelError):
+    def __init__(self, *, code: str | None, message: str, status: int | None = None):
+        self.code = code
+        self.status = status
+        prefix = f"{code}: " if code else ""
+        super().__init__(f"{prefix}{message}")
+
+    @classmethod
+    def from_event(cls, event: dict[str, Any]) -> _OpenAIWebSocketError:
+        error: Any = event.get("error")
+        if event.get("type") == "response.failed" and isinstance(event.get("response"), dict):
+            error = event["response"].get("error") or error
+        if isinstance(error, dict):
+            code = error.get("code")
+            message = error.get("message") or json.dumps(error, sort_keys=True)
+        else:
+            code = None
+            message = str(error or "OpenAI websocket error")
+        status = event.get("status")
+        return cls(
+            code=str(code) if code is not None else None,
+            message=str(message),
+            status=status if isinstance(status, int) else None,
+        )
+
+
+def _should_retry(exc: BaseException) -> bool:
+    if isinstance(exc, (asyncio.TimeoutError, TimeoutError, OSError, WebSocketException)):
+        status = _http_status(exc)
+        return status is None or _is_transient_status(status)
+
+    status = _http_status(exc)
+    if status is not None:
+        return _is_transient_status(status)
+
+    if isinstance(exc, (json.JSONDecodeError, UnicodeDecodeError)):
+        return True
+    if isinstance(exc, _OpenAIWebSocketError):
+        if exc.code == "previous_response_not_found":
+            return False
+        return exc.code in {
+            "internal_error",
+            "missing_response",
+            "overloaded",
+            "rate_limit_exceeded",
+            "response_failed",
+            "server_error",
+            "temporarily_unavailable",
+            "websocket_connection_limit_reached",
+        }
+    return False
+
+
+def _http_status(exc: BaseException) -> int | None:
+    status = getattr(exc, "status", None) or getattr(exc, "status_code", None)
+    if status is None:
+        status = getattr(getattr(exc, "response", None), "status_code", None)
+    return status if isinstance(status, int) else None
+
+
+def _is_transient_status(status: int) -> bool:
+    return status in {408, 409, 425, 429} or status >= 500
+
+
+def _format_exception(exc: BaseException) -> str:
+    message = str(exc).strip()
+    return f"{type(exc).__name__}: {message or repr(exc)}"
 
 
 def _instructions(messages: list[dict[str, Any]]) -> str:
