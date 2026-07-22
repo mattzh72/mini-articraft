@@ -78,9 +78,11 @@ mini_articraft = [
     "sdk/docs/examples/*.py",
     "sdk/docs/mesh/*.md",
     "sdk/docs/build123d/*.md",
-    "sdk/docs/build123d/assets/*/*.py",
-    "sdk/docs/build123d/examples/*.py",
-    "sdk/docs/build123d/snippets/*.py",
+    "sdk/docs/build123d/assets/*",
+    "sdk/docs/build123d/assets/*/*",
+    "sdk/docs/build123d/examples/*",
+    "sdk/docs/build123d/media/*",
+    "sdk/docs/build123d/snippets/*",
 ]
 
 [tool.basedpyright]

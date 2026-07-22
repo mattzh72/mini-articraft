@@ -34,6 +34,7 @@ a polyhedron with rectangular faces centered on the default `Plane.XY`.
 The second object is a `Cylinder` that is subtracted from the box as directed
 by the `mode=Mode.SUBTRACT` parameter thus creating a hole.
 
+Image file: `docs/sdk/build123d/assets/general_ex2.svg`.
 
 ## Implicit Parameters
 
@@ -62,6 +63,7 @@ Include options:
 `sweep` requires a 2D cross section - `handle_cross_section` -
 and a path - `handle_path` - which are both passed implicitly.
 
+Image file: `docs/sdk/build123d/media/tea_cup.png`.
 
 ## Units
 

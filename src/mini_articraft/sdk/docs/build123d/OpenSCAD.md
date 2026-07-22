@@ -140,6 +140,7 @@ angle_iron = extrude(profile, 10 * CM)
 angle_iron = fillet(angle_iron.edges().filter_by(lambda e: e.is_interior), 5 * MM)
 ```
 
+Image file: `docs/sdk/build123d/assets/AngleIron.png`.
 
 OpenSCAD and build123d offer distinct paradigms for creating 3D models, as demonstrated
 by the angle iron example. OpenSCAD relies on Constructive Solid Geometry (CSG) operations,

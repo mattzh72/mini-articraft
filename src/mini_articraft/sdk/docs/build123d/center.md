@@ -9,7 +9,9 @@ Finding the center of a CAD object is a surprisingly complex operation.  To illu
 let's consider two examples: a simple isosceles triangle and a curved line (their bounding
 boxes are shown with dashed lines):
 
+Image file: `docs/sdk/build123d/assets/center.svg`.
 
+Image file: `docs/sdk/build123d/assets/one_d_center.svg`.
 
 One can see that there is are significant differences between the different types of
 centers. To allow the designer to choose the center that makes the most sense for the given

@@ -101,8 +101,10 @@ it's a reference any changes to the original will be seen in all of the shallow 
 
 Consider this example where 100 screws are added to an assembly:
 
+Image file: `docs/sdk/build123d/media/reference_assembly.svg`.
 
 ```text
+screw = import_step("M6-1x12-countersunk-screw.step")
 locs = HexLocations(6, 10, 10).local_locations
 
 screw_copies = [copy.deepcopy(screw).locate(loc) for loc in locs]
@@ -114,6 +116,7 @@ which takes about 5 seconds to run (on an older computer) and produces
 a file of size 51938 KB. However, if a shallow copy is used instead:
 
 ```text
+screw = import_step("M6-1x12-countersunk-screw.step")
 locs = HexLocations(6, 10, 10).local_locations
 
 screw_references = [copy.copy(screw).locate(loc) for loc in locs]
@@ -208,6 +211,7 @@ b3 = Box(34, 34, 34, align=(Align.MIN, Align.MIN, Align.CENTER), mode=Mode.SUBTR
 b4 = Box(24, 24, 24, align=(Align.MAX, Align.MAX, Align.CENTER), mode=Mode.SUBTRACT)
 ```
 
+Image file: `docs/sdk/build123d/assets/pack_demo_initial_state.svg`.
 
 ```python
 # [pack 2D]
@@ -219,6 +223,7 @@ xy_pack = pack(
 )
 ```
 
+Image file: `docs/sdk/build123d/assets/pack_demo_packed_xy.svg`.
 
 ```python
 # [Pack and align_z]
@@ -230,6 +235,7 @@ z_pack = pack(
 )
 ```
 
+Image file: `docs/sdk/build123d/assets/pack_demo_packed_z.svg`.
 
 ### Tip
 

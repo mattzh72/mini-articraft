@@ -33,6 +33,7 @@ a straight line from coordinates (0,0) to (2,0) on the default XY plane.
 The second object is a `ThreePointArc` that starts and ends at the two
 ends of the line.
 
+Image file: `docs/sdk/build123d/assets/buildline_example_1.svg`.
 
 ## Constraints
 
@@ -102,6 +103,7 @@ Include options:
 
 which generates (note that the circles show line junctions):
 
+Image file: `docs/sdk/build123d/assets/buildline_example_5.svg`.
 
 The `JernArc` has the following parameters:
 
@@ -138,6 +140,7 @@ Include options:
 
 which generates:
 
+Image file: `docs/sdk/build123d/assets/buildline_example_6.svg`.
 
 **Note: SVG import to BuildLine**
 
@@ -168,6 +171,7 @@ Include options:
 
 which generates:
 
+Image file: `docs/sdk/build123d/assets/buildline_example_7.svg`.
 
 There are few things to note from this example:
 
@@ -196,6 +200,7 @@ Include options:
 
 which generates:
 
+Image file: `docs/sdk/build123d/assets/buildline_example_8.svg`.
 
 Here the BuildLine object is created on `Plane.YZ` just by specifying the working plane
 during BuildLine initialization.

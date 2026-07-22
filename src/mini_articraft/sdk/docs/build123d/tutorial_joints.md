@@ -9,6 +9,7 @@ Use this page for a build123d joint tutorial covering rigid, revolute, and cylin
 This tutorial provides a step by step guide in using `Joint`'s as we create
 a box with a hinged lid to illustrate the use of three different `Joint` types.
 
+Image file: `docs/sdk/build123d/assets/tutorial_joint.svg`.
 
 ## Step 1: Setup
 
@@ -38,7 +39,9 @@ Include options:
 
 Once the two leaves have been created they will look as follows:
 
+Image file: `docs/sdk/build123d/assets/tutorial_joint_outer_leaf.svg`.
 
+Image file: `docs/sdk/build123d/assets/tutorial_joint_inner_leaf.svg`.
 
 Note that the XYZ indicators and a circle around the hinge pin indicate
 joints that are discussed below.
@@ -139,6 +142,7 @@ Include options:
 The box is created with `BuildPart` as a simple object - as shown below - let's focus on
 the joint used to attach the outer hinge leaf.
 
+Image file: `docs/sdk/build123d/assets/tutorial_joint_box.svg`.
 
 Code reference: `docs/sdk/build123d/snippets/tutorial_joints.py`.
 
@@ -171,6 +175,7 @@ Include options:
 
 Much like the box, the lid is created in a `BuildPart` context and is assigned a `RigidJoint`.
 
+Image file: `docs/sdk/build123d/assets/tutorial_joint_lid.svg`.
 
 Code reference: `docs/sdk/build123d/snippets/tutorial_joints.py`.
 
@@ -188,7 +193,9 @@ joints are connected together the parts will move into the correct position.
 `Joint`'s can be bound to simple objects the a `Compound` imported - in this case a
 screw.
 
+- screw STEP model: `M6-1x12-countersunk-screw.step` (`M6-1x12-countersunk-screw.step`)
 
+Image file: `docs/sdk/build123d/assets/tutorial_joint_m6_screw.svg`.
 
 Code reference: `docs/sdk/build123d/snippets/tutorial_joints.py`.
 
@@ -220,6 +227,7 @@ Here the `hinge_attachment` joint of the `box` is connected to the `leaf` joint
 of `hinge_outer`. Note that the hinge leaf is the object to move.  Once this line
 is executed, we get the following:
 
+Image file: `docs/sdk/build123d/assets/tutorial_joint_box_outer.svg`.
 
 ### Step 7b: Hinge to Hinge
 
@@ -237,6 +245,7 @@ As `hinge_outer.joints["hinge_axis"]` is a `RevoluteJoint` there is an `angle`
 parameter that can be set (angles default to the minimum range value) - here to 120°.
 This is what that looks like:
 
+Image file: `docs/sdk/build123d/assets/tutorial_joint_box_outer_inner.svg`.
 
 ### Step 7c: Lid to Hinge
 
@@ -251,6 +260,7 @@ Include options:
 
 which results in:
 
+Image file: `docs/sdk/build123d/assets/tutorial_joint_box_outer_inner_lid.svg`.
 
 Note how the lid is now in an open position.  To close the lid just change the above `angle`
 parameter from 120° to 90°.
@@ -269,6 +279,7 @@ Include options:
 As the position is a positive number the screw is still proud of the hinge face as shown
 here:
 
+Image file: `docs/sdk/build123d/assets/tutorial_joint.svg`.
 
 Try changing these position and angle values to "tighten" the screw.
 

@@ -39,6 +39,7 @@ The steps involved are:
 
 ### Result
 
+Image file: `docs/sdk/build123d/assets/stepper_drawing.svg`.
 
 ### Try It Yourself
 

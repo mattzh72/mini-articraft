@@ -1,7 +1,7 @@
 # Vendored build123d reference
 
-This directory contains a text-first snapshot of the build123d documentation and examples for
-the mini-articraft authoring agent.
+This directory contains a snapshot of the build123d documentation, examples, and reference
+figures for the mini-articraft authoring agent.
 
 - Upstream project: <https://github.com/gumyr/build123d>
 - Documentation source: <https://build123d.readthedocs.io/en/latest/>
@@ -11,6 +11,6 @@ the mini-articraft authoring agent.
 The original import did not record an exact upstream tag or commit, so this file does not invent
 one. A future refresh must record the exact upstream revision here.
 
-Only Markdown and Python source are retained. Images, rendered models, and other binary media are
-deliberately omitted: mini-articraft presents this corpus to a text model, and packaging binary
-assets added substantial weight without usable reference content.
+The source figures and model files are retained so the examples remain complete. Each SVG source
+has a 1024 pixel WebP companion with the `.svg.webp` suffix because model image input does not
+accept SVG directly.

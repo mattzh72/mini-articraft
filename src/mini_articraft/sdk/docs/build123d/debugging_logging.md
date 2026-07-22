@@ -17,6 +17,7 @@ walk through your code monitoring its operation with full visibility
 of all Python objects.  Here is a screenshot of the Visual Studio Code
 debugger in action:
 
+Image file: `docs/sdk/build123d/assets/VSC_debugger.png`.
 
 This shows that a break-point has been encountered and the code operation
 has been stopped.  From here all of the Python variables are visible and

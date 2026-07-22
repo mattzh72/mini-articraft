@@ -13,6 +13,7 @@ get you started:
 
 *As an example, we'll go through the design process for this bracket:*
 
+Image file: `docs/sdk/build123d/assets/bracket_hand_drawing.jpg`.
 
 ## Step 1. Examine the Part in All Three Orientations
 
@@ -23,6 +24,7 @@ unique features you need to model.
 *In the following view of the bracket one can see two planes of symmetry
 so we'll only need to design one quarter of it.*
 
+Image file: `docs/sdk/build123d/assets/bracket_with_symmetry.png`.
 
 ## Step 2. Identify Rotational Symmetries
 
@@ -47,6 +49,7 @@ that all coordinate systems/planes in build123d adhere to the*
 [right-hand rule](https://en.wikipedia.org/wiki/Right-hand_rule) *meaning the y-axis is
 automatically determined by this convention.*
 
+Image file: `docs/sdk/build123d/assets/bracket_with_origin.png`.
 
 ## Step 4. Create 2D Profiles
 
@@ -56,6 +59,7 @@ Mirror parts of profiles across any axes of symmetry identified earlier.
 
 *The 2D profile of the bracket is as follows:*
 
+Image file: `docs/sdk/build123d/assets/bracket_sketch.png`.
 
 *The build123d code to generate this profile is as follows:*
 
@@ -307,3 +311,5 @@ with BuildPart() as bracket:
 
 show_all()
 ```
+
+Image file: `docs/sdk/build123d/assets/bracket.png`.
