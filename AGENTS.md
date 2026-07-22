@@ -2,10 +2,11 @@
 
 ## Project purpose
 
-mini-articraft is a small reference version of `/Users/mzhou/articraft`.
+mini-articraft is a small reference version of
+[articraft](https://github.com/mattzh72/articraft).
 
 Keep this repo simple. The goal is to preserve the useful core idea from
-Articraft while leaving behind the larger repo's messy code, broad feature set,
+articraft while leaving behind the larger repo's messy code, broad feature set,
 viewer, data library, provenance system, and heavy storage flows.
 
 The core loop is:
@@ -14,9 +15,9 @@ The core loop is:
 prompt -> model -> environment -> record
 ```
 
-When you need behavior from `/Users/mzhou/articraft`, read the source first and
-bring over only the smallest idea needed for this repo. Prefer writing a clear
-new version over copying a large module.
+When you need behavior from articraft, read the source first and bring over
+only the smallest idea needed for this repo. Prefer writing a clear new version
+over copying a large module.
 
 ## Project shape
 
