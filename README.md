@@ -7,8 +7,9 @@ SDK, the compiler checks the geometry (including the articulation in motion), an
 result exports as a posable USDZ you can open in the built-in viewer.
 
 <p align="center">
-  <img src="assets/readme/stand_mixer.gif" width="44%" alt="Stand mixer: head tilting back while the view orbits">
-  <img src="assets/readme/desk_fan.gif" width="44%" alt="Desk fan: rotor spinning inside its cage while the view orbits">
+  <img src="assets/readme/stand_mixer.gif" width="32%" alt="Stand mixer: head tilting back while the view orbits">
+  <img src="assets/readme/electric_kettle.gif" width="32%" alt="Electric kettle: flip-top lid opening on a molded hinge while the view orbits">
+  <img src="assets/readme/desk_fan.gif" width="32%" alt="Desk fan: rotor spinning inside its cage while the view orbits">
 </p>
 
 ## Setup
@@ -55,8 +56,15 @@ uv run mini-articraft view 20260713-175925-make-a-realistic-articulated-desk-lam
 ```
 
 Pass a run ID from the default output directory or a path to a run. The viewer opens in
-your browser with version switching, part selection, and joint controls. It needs an
-internet connection to load Three.js.
+your browser and needs an internet connection to load Three.js. In it:
+
+- **Versions** (left) — switch between every numbered USDZ the run produced, to step
+  through the agent's iterations.
+- **Parts** (top right) — click a part to isolate it and fade the rest, so you can inspect
+  one piece at a time.
+- **Joints** (right) — drag a slider to pose each articulation through its limits; **Reset**
+  returns to the rest pose.
+- Drag to orbit, scroll to zoom, and use the **↻** button to recenter the camera.
 
 ## Docs
 
@@ -72,3 +80,17 @@ way to understand the SDK yourself:
   molded mug handle, a hollow shell, a mixed assembly) that the agent clones for its task.
 
 See [AGENTS.md](AGENTS.md) for how the repo is organized and what to keep small.
+
+## Citation
+
+If you use mini-articraft, please cite it (GitHub also renders a "Cite this repository"
+button from [`CITATION.cff`](CITATION.cff)):
+
+```bibtex
+@software{mini_articraft,
+  title  = {mini-articraft},
+  author = {Zhou, Matthew and Chiu, Johnathan},
+  year   = {2026},
+  url    = {https://github.com/mattzh72/mini-articraft}
+}
+```
