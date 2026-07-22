@@ -5,8 +5,8 @@ from mini_articraft.sdk import (
     BoxGeometry,
     TestContext,
     TestReport,
-    boolean_difference,
 )
+from mini_articraft.sdk.mesh import boolean_difference
 
 
 def build_object_model() -> ArticulatedObject:

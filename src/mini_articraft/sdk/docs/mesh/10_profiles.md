@@ -14,7 +14,7 @@ This page documents `rounded_rect_profile`, `superellipse_profile`,
 `resample_side_sections`.
 
 ```python
-from mini_articraft.sdk import (
+from mini_articraft.sdk.mesh import (
     resample_side_sections,
     rounded_rect_profile,
     sample_arc_3d,

@@ -9,11 +9,13 @@ from __future__ import annotations
 
 from mini_articraft.sdk import (
     ArticulatedObject,
+    TestContext,
+    TestReport,
+)
+from mini_articraft.sdk.mesh import (
     LoftSection,
     SectionLoftSpec,
     SweepSection,
-    TestContext,
-    TestReport,
     rounded_rect_profile,
     section_loft,
     superellipse_profile,

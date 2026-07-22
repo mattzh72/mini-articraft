@@ -30,8 +30,8 @@ from mini_articraft.sdk import (
     SphereGeometry,
     SuperellipsoidGeometry,
     TorusGeometry,
-    build123d_to_mesh,
 )
+from mini_articraft.sdk.mesh import build123d_to_mesh
 ```
 
 ## Choose a geometry type

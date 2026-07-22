@@ -30,16 +30,26 @@ from mini_articraft.sdk import (
     SphereGeometry,
     SuperellipsoidGeometry,
     SweepGeometry,
-    SweepSection,
     TestContext,
+)
+from mini_articraft.sdk._collision import MeshCollisionKernel
+from mini_articraft.sdk._mesh_boolean import _boolean_union_many
+from mini_articraft.sdk.mesh import (
+    LoftSection,
+    SectionLoftSpec,
+    ShellPartitionRegion,
+    ShellPartitionSpec,
+    SweepSection,
     boolean_difference,
     boolean_intersection,
     boolean_union,
     build123d_to_mesh,
+    partition_shell,
     refine_mesh,
     rounded_rect_profile,
     sample_catmull_rom_spline_3d,
     sample_cubic_bezier_spline_3d,
+    section_loft,
     smooth_difference,
     smooth_mesh,
     subdivide_mesh,
@@ -48,14 +58,6 @@ from mini_articraft.sdk import (
     tube_from_spline_points,
     tube_network_from_paths,
     weld,
-)
-from mini_articraft.sdk._collision import MeshCollisionKernel
-from mini_articraft.sdk._mesh_boolean import _boolean_union_many
-from mini_articraft.sdk.section_loft import LoftSection, SectionLoftSpec, section_loft
-from mini_articraft.sdk.shell_partition import (
-    ShellPartitionRegion,
-    ShellPartitionSpec,
-    partition_shell,
 )
 
 Result = object

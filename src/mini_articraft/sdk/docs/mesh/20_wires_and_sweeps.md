@@ -15,10 +15,12 @@ This page documents `SweepSection`, `SweepGeometry`, `PipeGeometry`,
 from mini_articraft.sdk import (
     ArcPipeGeometry,
     PipeGeometry,
-    SweepSection,
     SweepGeometry,
-    WirePath,
     WirePolylineGeometry,
+)
+from mini_articraft.sdk.mesh import (
+    SweepSection,
+    WirePath,
     sweep_profile_along_spline,
     tube_from_spline_points,
     tube_network_from_paths,
@@ -489,7 +491,7 @@ the hint along the complete path. Sweep sections use normalized distance along
 the sampled spline.
 
 ```python
-from mini_articraft.sdk import rounded_rect_profile
+from mini_articraft.sdk.mesh import rounded_rect_profile
 
 trim = sweep_profile_along_spline(
     [(-0.05, 0.0, 0.0), (0.0, 0.02, 0.03), (0.05, 0.0, 0.0)],

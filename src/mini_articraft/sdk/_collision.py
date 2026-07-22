@@ -11,8 +11,8 @@ import trimesh
 from build123d.topology import Shape
 
 from mini_articraft.errors import ValidationError
+from mini_articraft.sdk._mesh_core import MeshGeometry
 from mini_articraft.sdk.joints import Articulation, ArticulationType, Origin
-from mini_articraft.sdk.mesh import MeshGeometry
 from mini_articraft.sdk.object import ArticulatedObject, Geometry
 
 Vec3: TypeAlias = tuple[float, float, float]
