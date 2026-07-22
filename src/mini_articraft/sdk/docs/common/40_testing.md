@@ -56,10 +56,15 @@ given part. A missing part or shape raises `ValidationError`.
 ### `TestFailure`
 
 ```python
-TestFailure(name: str, details: str)
+TestFailure(name: str, details: str, kind: FailureKind = FailureKind.AUTHORED)
 ```
 
-Each blocking failure has the recorded check name and a detail string.
+Each blocking failure has the recorded check name and a detail string. `kind` is a
+machine-readable `FailureKind` assigned by the check method (for example `OVERLAP`,
+`CONTACT`, or `ISOLATED_PART`); checks authored with `check()`/`fail()` always record
+`FailureKind.AUTHORED`. When the compile worker merges authored checks with its baseline,
+it adds `source="tests"` or `source="compiler"` to the serialized failure. Provenance is
+owned by that boundary rather than by model-authored test code.
 
 ### `AllowedOverlap`
 

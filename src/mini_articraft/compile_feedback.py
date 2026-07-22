@@ -6,7 +6,7 @@ import re
 from dataclasses import asdict, dataclass
 from typing import Any, Literal
 
-from mini_articraft.sdk import TestReport
+from mini_articraft.sdk import FailureKind, TestReport
 
 Severity = Literal["failure", "warning", "note"]
 Status = Literal["success", "failure"]
@@ -196,10 +196,7 @@ def _signals_from_report(report: dict[str, Any]) -> list[CompileSignal]:
         _warning_signal(str(item)) for item in report.get("warnings", []) if str(item).strip()
     ]
     signals += [_allowance_signal(str(a)) for a in report.get("allowances", []) if str(a).strip()]
-    signals += [
-        _failure_signal(str(f["name"]), str(f.get("details") or ""))
-        for f in report.get("failures", [])
-    ]
+    signals += [_failure_signal(f) for f in report.get("failures", [])]
     return signals
 
 
@@ -274,98 +271,93 @@ def _warning_signal(text: str) -> CompileSignal:
     )
 
 
-def _failure_signal(name: str, details: str) -> CompileSignal:
-    lower = f"{name}\n{details}".lower()
-    if name == "check_model_valid":
-        return _failure(
-            "model_validity",
-            "QC_MODEL_VALIDITY",
-            "Compiler model validation failed.",
-            name,
-            details,
-            source="compiler",
-            group="build",
-        )
-    if name == "check_single_root_part":
-        return _failure(
-            "single_root_policy",
-            "QC_SINGLE_ROOT_POLICY",
-            "The model must have exactly one root part.",
-            name,
-            details,
-            source="compiler",
-            group="build",
-        )
-    if "missing exact geometry" in lower or "missing named geometry" in lower:
-        return _failure(
-            "missing_exact_geometry",
-            "TEST_MISSING_EXACT_GEOMETRY",
-            "A check references named geometry that is not present.",
-            name,
-            details,
-        )
-    if (
-        "disconnected geometry islands" not in lower
-        and "contact_tol=" in lower
-        and ("distance=" in lower or "min_distance=" in lower)
-    ):
-        return _failure(
-            "exact_contact_gap",
-            "TEST_EXACT_CONTACT_GAP",
-            "A contact check found a gap where contact was expected.",
-            name,
-            details,
-        )
-    if (
-        name in {"fail_if_isolated_parts", "fail_if_isolated_parts()"}
-        or name.startswith("fail_if_isolated_parts(")
-        or "isolated parts detected" in lower
-    ):
-        source = (
-            "compiler"
-            if name in {"fail_if_isolated_parts", "fail_if_isolated_parts()"}
-            else "tests"
-        )
-        code = "QC_ISOLATED_PART" if source == "compiler" else "TEST_ISOLATED_PART"
-        return _failure(
-            "isolated_part",
-            code,
-            "Floating or disconnected parts were found.",
-            name,
-            details,
-            source=source,
-        )
-    if any(
-        marker in lower
-        for marker in (
-            "part overlaps detected",
-            "collided=true",
-            "fail_if_parts_overlap",
-        )
-    ):
-        source = (
-            "compiler"
-            if name
-            in {
-                "fail_if_parts_overlap_in_current_pose()",
-            }
-            else "tests"
-        )
-        code = "QC_REAL_OVERLAP" if source == "compiler" else "TEST_REAL_OVERLAP"
-        return _failure(
-            "real_overlap",
-            code,
-            "A mesh check found overlapping parts.",
-            name,
-            details,
-            source=source,
-        )
-    return _failure(
+@dataclass(frozen=True)
+class _FailureSpec:
+    signal_kind: str
+    code_suffix: str
+    summary: str
+    compiler_summary: str | None = None
+    compiler_group: SignalGroup = "qc"
+
+
+# Failure semantics have one owner. Provenance only selects the QC/TEST code
+# prefix and the few compiler-specific presentation fields.
+_FAILURE_SPECS: dict[FailureKind, _FailureSpec] = {
+    FailureKind.MODEL_VALIDITY: _FailureSpec(
+        "model_validity",
+        "MODEL_VALIDITY",
+        "Model validation failed.",
+        compiler_summary="Compiler model validation failed.",
+        compiler_group="build",
+    ),
+    FailureKind.SINGLE_ROOT: _FailureSpec(
+        "single_root_policy",
+        "SINGLE_ROOT_POLICY",
+        "The model must have exactly one root part.",
+        compiler_group="build",
+    ),
+    FailureKind.ISOLATED_PART: _FailureSpec(
+        "isolated_part",
+        "ISOLATED_PART",
+        "Floating or disconnected parts were found.",
+    ),
+    FailureKind.DISCONNECTED_GEOMETRY: _FailureSpec(
+        "disconnected_geometry",
+        "DISCONNECTED_GEOMETRY",
+        "A part contains disconnected geometry islands.",
+    ),
+    FailureKind.OVERLAP: _FailureSpec(
+        "real_overlap",
+        "REAL_OVERLAP",
+        "A mesh check found overlapping parts.",
+    ),
+    FailureKind.CONTACT: _FailureSpec(
+        "exact_contact_gap",
+        "EXACT_CONTACT_GAP",
+        "A contact check found a gap where contact was expected.",
+    ),
+    FailureKind.ARTICULATION_SEPARATION: _FailureSpec(
+        "articulation_separation",
+        "ARTICULATION_SEPARATION",
+        "A hinge or pivot pulls its child away from its parent during motion.",
+    ),
+    FailureKind.AUTHORED: _FailureSpec(
         "test_failure",
-        "TEST_FAILURE",
-        f"Authored test failed: {name}",
+        "FAILURE",
+        "",
+    ),
+}
+
+
+def _failure_signal(failure: dict[str, Any]) -> CompileSignal:
+    name = str(failure["name"])
+    details = str(failure.get("details") or "")
+    try:
+        kind = FailureKind(str(failure.get("kind") or FailureKind.AUTHORED))
+    except ValueError:
+        kind = FailureKind.AUTHORED
+    source = str(failure.get("source") or "tests")
+    if source not in {"compiler", "tests"}:
+        source = "tests"
+    spec = _FAILURE_SPECS[kind]
+    compiler_owned = source == "compiler"
+    prefix = "QC" if compiler_owned else "TEST"
+    if kind is FailureKind.AUTHORED:
+        owner = "Compiler check" if compiler_owned else "Authored test"
+        summary = f"{owner} failed: {name}"
+    else:
+        summary = (
+            spec.compiler_summary if compiler_owned and spec.compiler_summary else spec.summary
+        )
+    group = spec.compiler_group if compiler_owned else "qc"
+    return _failure(
+        spec.signal_kind,
+        f"{prefix}_{spec.code_suffix}",
+        summary,
         name,
         details,
+        source=source,
+        group=group,
     )
 
 
@@ -528,6 +520,8 @@ def _primary_issue(signal: CompileSignal) -> str:
         "real_overlap": "mesh checks found overlapping parts that need classification.",
         "missing_exact_geometry": "a check references missing named geometry.",
         "exact_contact_gap": "a contact check found separation where contact was expected.",
+        "disconnected_geometry": "a part contains disconnected geometry islands.",
+        "articulation_separation": "an articulation separates its child part during motion.",
         "test_failure": "a required authored test failed.",
     }
     return issues.get(signal.kind, signal.summary)
@@ -576,6 +570,14 @@ def _rules(
     elif kind == "exact_contact_gap":
         rules = [
             "- This is a gap, not an overlap. Verify the tested pair, then repair its geometry or placement."
+        ]
+    elif kind == "disconnected_geometry":
+        rules = [
+            "- Move or extend the disconnected piece so its own body overlaps the nearest piece by a few mm -- overlap within a part is free and counts as connected. Do not add a separate bridging piece."
+        ]
+    elif kind == "articulation_separation":
+        rules = [
+            "- Place the articulation origin and axis so the child stays connected to the parent throughout the motion range."
         ]
     else:
         rules = ["- Fix the named failing check before adding more geometry or tests."]
@@ -638,6 +640,8 @@ def _signal_sort_key(signal: CompileSignal) -> tuple[int, int, str, str, str, st
         "model_validity": 1,
         "single_root_policy": 1,
         "isolated_part": 2 if signal.source == "compiler" else 6,
+        "disconnected_geometry": 2 if signal.source == "compiler" else 6,
+        "articulation_separation": 2 if signal.source == "compiler" else 6,
         "real_overlap": 2 if signal.source == "compiler" else 5,
         "missing_exact_geometry": 3,
         "exact_contact_gap": 4,

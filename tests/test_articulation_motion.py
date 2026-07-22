@@ -4,6 +4,7 @@ from mini_articraft.sdk import (
     ArticulatedObject,
     ArticulationType,
     BoxGeometry,
+    FailureKind,
     MotionLimits,
     Origin,
     TestContext,
@@ -53,6 +54,7 @@ def test_separation_check_fails_a_lid_that_lifts_off() -> None:
     report = ctx.report()
     assert not report.passed
     assert "lid_hinge" in report.failures[0].details
+    assert report.failures[0].kind is FailureKind.ARTICULATION_SEPARATION
 
 
 def test_separation_check_ignores_prismatic_liftoff() -> None:

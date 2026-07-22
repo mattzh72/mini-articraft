@@ -5,6 +5,7 @@ import statistics
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+from enum import StrEnum
 from typing import ClassVar, cast
 
 from mini_articraft.errors import ValidationError
@@ -26,12 +27,32 @@ DEFAULT_OVERLAP_TOLERANCE = 0.005
 DEFAULT_OVERLAP_VOLUME_TOLERANCE = 5e-7
 
 
+class FailureKind(StrEnum):
+    """Machine-readable category of a recorded test failure.
+
+    The producer (the check method) assigns the kind when recording; consumers
+    such as the compile-signal pipeline map it directly to guidance instead of
+    re-classifying failure prose. Authored checks via ``check()``/``fail()``
+    always record ``AUTHORED``.
+    """
+
+    MODEL_VALIDITY = "model_validity"
+    SINGLE_ROOT = "single_root"
+    ISOLATED_PART = "isolated_part"
+    DISCONNECTED_GEOMETRY = "disconnected_geometry"
+    OVERLAP = "overlap"
+    CONTACT = "contact"
+    ARTICULATION_SEPARATION = "articulation_separation"
+    AUTHORED = "authored"
+
+
 @dataclass(frozen=True)
 class TestFailure:
     __test__: ClassVar[bool] = False
 
     name: str
     details: str
+    kind: FailureKind = FailureKind.AUTHORED
 
 
 @dataclass(frozen=True)
@@ -224,7 +245,9 @@ class TestContext:
     ) -> bool:
         query = self._collision_query(part_a, part_b, shape_a=shape_a, shape_b=shape_b)
         check_name = name or _check_name("expect_no_collision", query)
-        return self._record(check_name, not query.collided, _collision_details(query))
+        return self._record(
+            check_name, not query.collided, _collision_details(query), kind=FailureKind.OVERLAP
+        )
 
     def expect_collision(
         self,
@@ -237,7 +260,9 @@ class TestContext:
     ) -> bool:
         query = self._collision_query(part_a, part_b, shape_a=shape_a, shape_b=shape_b)
         check_name = name or _check_name("expect_collision", query)
-        return self._record(check_name, query.collided, _collision_details(query))
+        return self._record(
+            check_name, query.collided, _collision_details(query), kind=FailureKind.CONTACT
+        )
 
     def expect_contact(
         self,
@@ -256,6 +281,7 @@ class TestContext:
             check_name,
             result.collided or result.distance <= contact_tol,
             f"{_distance_details(result)} contact_tol={contact_tol:.6g}",
+            kind=FailureKind.CONTACT,
         )
 
     def expect_distance(
@@ -404,7 +430,12 @@ class TestContext:
         try:
             self.model.validate()
         except Exception as exc:
-            return self._record("check_model_valid", False, f"{type(exc).__name__}: {exc}")
+            return self._record(
+                "check_model_valid",
+                False,
+                f"{type(exc).__name__}: {exc}",
+                kind=FailureKind.MODEL_VALIDITY,
+            )
         return self._record("check_model_valid", True)
 
     def check_single_root_part(self) -> bool:
@@ -414,6 +445,7 @@ class TestContext:
                 "check_single_root_part",
                 False,
                 f"Expected exactly one root part, found {len(roots)}: {roots!r}",
+                kind=FailureKind.SINGLE_ROOT,
             )
         return self._record("check_single_root_part", True)
 
@@ -480,6 +512,7 @@ class TestContext:
             check_name,
             False,
             "Isolated parts detected (physically disconnected from the root):\n" + "\n".join(lines),
+            kind=FailureKind.ISOLATED_PART,
         )
 
     def fail_if_part_contains_disconnected_geometry_islands(
@@ -556,7 +589,7 @@ class TestContext:
             "child stays connected to the parent throughout its motion range:\n"
             + "\n".join(findings)
         )
-        return self._record(check_name, False, details)
+        return self._record(check_name, False, details, kind=FailureKind.ARTICULATION_SEPARATION)
 
     def warn_if_absurd_dimensions(
         self,
@@ -639,6 +672,7 @@ class TestContext:
             "Part overlaps detected "
             f"(overlap_tol={overlap_tol:.4g}, overlap_volume_tol={volume_tol:.4g}):\n"
             + "\n".join(details[:10]),
+            kind=FailureKind.OVERLAP,
         )
 
     def _check_disconnected_geometry(
@@ -663,7 +697,7 @@ class TestContext:
         if warn:
             self.warn(details)
             return self._record(check_name, True)
-        return self._record(check_name, False, details)
+        return self._record(check_name, False, details, kind=FailureKind.DISCONNECTED_GEOMETRY)
 
     def _collision_query(
         self,
@@ -715,11 +749,18 @@ class TestContext:
                 return True
         return False
 
-    def _record(self, name: str, ok: bool, details: str = "") -> bool:
+    def _record(
+        self,
+        name: str,
+        ok: bool,
+        details: str = "",
+        *,
+        kind: FailureKind = FailureKind.AUTHORED,
+    ) -> bool:
         self.checks_run += 1
         self._checks.append(name)
         if not ok:
-            self._failures.append(TestFailure(name=name, details=details))
+            self._failures.append(TestFailure(name=name, details=details, kind=kind))
         return ok
 
     def _kernel(self) -> MeshCollisionKernel:
@@ -890,6 +931,7 @@ def _overlap_rank(query: CollisionQuery) -> tuple[float, float]:
 __all__ = [
     "AllowedOverlap",
     "DistanceFinding",
+    "FailureKind",
     "TestContext",
     "TestFailure",
     "TestReport",
