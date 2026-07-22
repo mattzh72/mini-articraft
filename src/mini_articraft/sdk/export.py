@@ -1,3 +1,5 @@
+"""Publish articulated objects as validated USDZ packages."""
+
 from __future__ import annotations
 
 import json
@@ -14,6 +16,8 @@ from mini_articraft.sdk._collision import MeshCollisionKernel, _geometry_to_mesh
 from mini_articraft.sdk.joints import Articulation, ArticulationType, MotionLimits
 from mini_articraft.sdk.object import ArticulatedObject, Geometry
 from mini_articraft.sdk.testing import DEFAULT_MESH_TOLERANCE
+
+__all__ = ["ExportResult", "export_object"]
 
 
 @dataclass(frozen=True)

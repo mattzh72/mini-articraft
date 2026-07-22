@@ -29,6 +29,38 @@ uv run python benchmarks/sdk_benchmark.py --suite extended
 
 See [benchmarks/README.md](benchmarks/README.md) for saved comparisons and smaller suites.
 
+## Use the Python SDK
+
+Add mini-articraft directly from GitHub while the package is pre-release:
+
+```bash
+uv add "mini-articraft @ git+https://github.com/mattzh72/mini-articraft"
+```
+
+The root SDK owns object modeling, geometry, articulations, and physical checks. Mesh operations
+live in `mini_articraft.sdk.mesh`; USDZ publication is explicit so a normal SDK import does not
+eagerly load OpenUSD.
+
+```python
+from build123d import Box
+
+from mini_articraft.sdk import ArticulatedObject, TestContext
+from mini_articraft.sdk.export import export_object
+
+model = ArticulatedObject("box")
+model.part("body").add(Box(0.1, 0.1, 0.1), name="shell")
+model.validate()
+
+report = TestContext(model).report()
+assert report.passed
+
+result = export_object(model, "output")
+print(result.usdz)
+```
+
+See the [hinged box](examples/hinged_box/main.py) and
+[procedural mesh knob](examples/mesh_knob/main.py) for complete examples.
+
 ## Run
 
 Generate a model:

@@ -114,6 +114,20 @@ jobs:
           assert (package_dir / 'viewer.html').is_file()
           assert (package_dir / 'sdk' / 'docs' / 'common' / '00_quickstart.md').is_file()
           "
+          mkdir -p /tmp/sdk-smoke
+          cp examples/hinged_box/main.py /tmp/sdk-smoke/main.py
+          /tmp/smoke/bin/python -c "
+          import sys
+          from pathlib import Path
+          sys.path.insert(0, '/tmp/sdk-smoke')
+          from main import object_model, run_tests
+          from mini_articraft.sdk.export import export_object
+          object_model.validate()
+          assert run_tests().passed
+          result = export_object(object_model, Path('/tmp/sdk-smoke/output'))
+          assert result.manifest.is_file()
+          assert result.usdz.is_file()
+          "
           mkdir -p /tmp/smoke-run/workspace /tmp/smoke-run/result
           cp examples/mesh_knob/main.py /tmp/smoke-run/workspace/main.py
           /tmp/smoke/bin/python -m mini_articraft.environments.worker /tmp/smoke-run > /tmp/smoke-out.json

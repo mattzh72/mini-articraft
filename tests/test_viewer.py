@@ -10,8 +10,8 @@ from typing import Any, cast
 import pytest
 from build123d import Box
 
-from mini_articraft.environments.export import export_object
 from mini_articraft.sdk import ArticulatedObject, ArticulationType, MotionLimits, Origin
+from mini_articraft.sdk.export import export_object
 from mini_articraft.viewer import _handler, load_viewer_run
 
 
