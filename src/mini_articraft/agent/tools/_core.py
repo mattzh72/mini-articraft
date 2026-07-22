@@ -6,7 +6,7 @@ import os
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Generic, TypeVar
 
 from mini_articraft import package_dir
 from mini_articraft.agent.tools._exec import ExecSessions
@@ -47,20 +47,20 @@ class ToolContext:
 
 
 @dataclass(frozen=True)
-class Tool:
-    name: str
-    schema: dict[str, Any]
-    run: Callable[
-        [ToolContext, dict[str, Any]],
-        Awaitable[dict[str, Any] | ToolResult],
-    ]
-    supports_parallel: bool = False
-
-
-@dataclass(frozen=True)
 class ToolResult:
     output: dict[str, Any]
     content_items: list[dict[str, Any]]
+
+
+ToolOutput = TypeVar("ToolOutput", covariant=True)
+
+
+@dataclass(frozen=True)
+class Tool(Generic[ToolOutput]):
+    name: str
+    schema: dict[str, Any]
+    run: Callable[[ToolContext, dict[str, Any]], Awaitable[ToolOutput]]
+    supports_parallel: bool = False
 
 
 def schema(

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal, overload
 
 from mini_articraft.agent.tools._core import Tool, ToolContext, ToolResult, result_item
 from mini_articraft.agent.tools.compile import TOOL as compile_tool
@@ -11,7 +11,7 @@ from mini_articraft.agent.tools.view_image import TOOL as view_image_tool
 from mini_articraft.agent.tools.write import TOOL as write_tool
 from mini_articraft.agent.tools.write_stdin import TOOL as write_stdin_tool
 
-TOOLS = {
+TOOLS: dict[str, Tool[Any]] = {
     tool.name: tool
     for tool in (
         read_tool,
@@ -29,7 +29,21 @@ def schemas() -> list[dict[str, Any]]:
     return [tool.schema for tool in TOOLS.values()]
 
 
-def get(name: str) -> Tool:
+@overload
+def get(name: Literal["view_image"]) -> Tool[ToolResult]: ...
+
+
+@overload
+def get(
+    name: Literal["read", "edit", "write", "exec_command", "write_stdin", "compile"],
+) -> Tool[dict[str, Any]]: ...
+
+
+@overload
+def get(name: str) -> Tool[Any]: ...
+
+
+def get(name: str) -> Tool[Any]:
     try:
         return TOOLS[name]
     except KeyError as exc:
