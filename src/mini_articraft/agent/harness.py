@@ -59,10 +59,16 @@ class Agent:
         record.result = ""
         record.save(record_path)
 
+        self._inspect_view_enabled = bool(
+            getattr(getattr(self.model, "config", None), "inspect_view_enabled", False)
+        )
+        system_content = _read_prompt("system.md")
+        if self._inspect_view_enabled:
+            system_content += "\n\n" + _read_prompt("inspect_view.md").rstrip()
         self.messages = [
             {
                 "role": "system",
-                "content": _read_prompt("system.md"),
+                "content": system_content,
             },
             {
                 "role": "user",
@@ -99,7 +105,9 @@ class Agent:
             for turn in range(1, self.config.max_turns + 1):
                 self._emit(events.TurnStarted(turn))
                 try:
-                    response = await self.model.query(self.messages, tools=tools.schemas())
+                    response = await self.model.query(
+                        self.messages, tools=tools.schemas(inspect_view=self._inspect_view_enabled)
+                    )
                 except Exception as exc:
                     termination_error = f"model query failed: {type(exc).__name__}: {exc}"
                     break
@@ -266,21 +274,24 @@ class Agent:
             )
             started.append(time.perf_counter())
 
-        items = await asyncio.gather(*(self._run_tool(context, call) for call in tool_calls))
-        for call, item, tool_started in zip(tool_calls, items, started, strict=True):
+        results = await asyncio.gather(*(self._run_tool(context, call) for call in tool_calls))
+        for call, (item, payload), tool_started in zip(tool_calls, results, started, strict=True):
             self.messages.append(item)
             append_conversation(conversation_path, item)
-            payload = json.loads(item["output"])
             self._emit(
                 events.ToolFinished(
                     str(call["id"]),
                     str(call["name"]),
-                    _display_payload(context, str(call["name"]), payload),
+                    _display(context, str(call["name"]), payload),
                     round(time.perf_counter() - tool_started, 4),
                 )
             )
 
-    async def _run_tool(self, context: ToolContext, call: dict[str, Any]) -> dict[str, Any]:
+    async def _run_tool(
+        self, context: ToolContext, call: dict[str, Any]
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Return the model-facing result item and the raw payload (the TUI view is
+        derived from it by `_display`)."""
         name = str(call["name"])
         call_id = str(call["id"])
         try:
@@ -290,31 +301,30 @@ class Agent:
                     "finish the running exec_command with write_stdin before calling "
                     f"{name} (session_id={live_sessions[0]})"
                 )
-            tool = tools.get(name)
+            tool = tools.get(name, inspect_view=self._inspect_view_enabled)
             result = await tool.run(context, _arguments(call))
             payload = {"result": result}
         except Exception as exc:
             payload = {"error": str(exc)}
-        return tools.result_item(call_id, payload)
+        return tools.result_item(call_id, payload), payload
 
 
-def _display_payload(
-    context: ToolContext,
-    name: str,
-    payload: dict[str, Any],
-) -> dict[str, Any]:
-    """Give the TUI full compile details without adding them to model context."""
-    if name != "compile" or "result" not in payload:
+def _display(context: ToolContext, name: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """The TUI's view of a tool payload: it diverges from the model's in two ways --
+    a rendered image is shown as a note (not its base64), and a compile shows the full
+    report the model only gets a compact summary of."""
+    result = payload.get("result")
+    if not isinstance(result, dict):
         return payload
-    compact_result = payload["result"]
-    if not isinstance(compact_result, dict):
-        return payload
-    full_result = context.compile_result
-    if compact_result.get("status") == "success":
-        full_result = context.successful_compile_result or full_result
-    if not isinstance(full_result, dict):
-        return payload
-    return {**payload, "result": full_result}
+    if "image_png_base64" in result:
+        return {**payload, "result": {**result, "image_png_base64": "<rendered image>"}}
+    if name == "compile":
+        full_result = context.compile_result
+        if result.get("status") == "success":
+            full_result = context.successful_compile_result or full_result
+        if isinstance(full_result, dict):
+            return {**payload, "result": full_result}
+    return payload
 
 
 def _arguments(call: dict[str, Any]) -> dict[str, Any]:

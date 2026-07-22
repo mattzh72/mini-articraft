@@ -39,6 +39,10 @@ class Settings(BaseSettings):
         gt=0.0,
         validation_alias="MINI_ARTICRAFT_COMPILE_TIMEOUT_SECONDS",
     )
+    inspect_view_enabled: bool = Field(
+        default=False,
+        validation_alias="MINI_ARTICRAFT_INSPECT_VIEW",
+    )
 
 
 @cache
