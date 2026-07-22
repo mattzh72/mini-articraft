@@ -8,7 +8,7 @@ result exports as a posable USDZ you can open in the built-in viewer.
 
 <p align="center">
   <img src="assets/readme/stand_mixer.gif" width="32%" alt="Stand mixer: head tilting back while the view orbits">
-  <img src="assets/readme/desk_lamp.gif" width="32%" alt="Desk lamp: articulated arm flexing at the elbow and head while the view orbits">
+  <img src="assets/readme/excavator.gif" width="32%" alt="Excavator: cab swiveling and boom, stick, and bucket articulating through a dig cycle while the view orbits">
   <img src="assets/readme/desk_fan.gif" width="32%" alt="Desk fan: rotor spinning inside its cage while the view orbits">
 </p>
 
