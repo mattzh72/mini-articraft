@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+import mini_articraft.environments.local as local_module
 from mini_articraft.environments.local import (
     DEFAULT_MAIN_PY,
     LocalEnvironment,
@@ -164,6 +165,67 @@ def run_tests() -> TestReport:
     )
 
     assert env.compile_path(run_dir)["status"] == "success"
+
+
+def test_compile_worker_runs_from_run_dir_without_api_credentials(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "openai-secret")
+    monkeypatch.setenv("EXAMPLE_API_KEY", "example-secret")
+    monkeypatch.setenv("VISIBLE_SETTING", "visible")
+    env = LocalEnvironment(output_dir=tmp_path)
+    run_dir = env.create_run("worker-boundary")
+    write_main(
+        run_dir,
+        """import json
+import os
+from pathlib import Path
+from build123d import Box
+from mini_articraft.sdk import ArticulatedObject, TestContext, TestReport
+
+Path("worker-boundary.json").write_text(json.dumps({
+    "cwd": str(Path.cwd()),
+    "openai": os.environ.get("OPENAI_API_KEY"),
+    "example": os.environ.get("EXAMPLE_API_KEY"),
+    "visible": os.environ.get("VISIBLE_SETTING"),
+}), encoding="utf-8")
+object_model = ArticulatedObject("boundary")
+object_model.part("body").add(Box(0.1, 0.1, 0.1), name="shell")
+
+def run_tests() -> TestReport:
+    return TestContext(object_model).report()
+""",
+    )
+
+    result = env.compile_path(run_dir)
+    assert result["status"] == "success", result
+    child = json.loads(
+        run_dir.joinpath("workspace", "worker-boundary.json").read_text(encoding="utf-8")
+    )
+
+    assert child == {
+        "cwd": str(run_dir.joinpath("workspace").resolve()),
+        "openai": None,
+        "example": None,
+        "visible": "visible",
+    }
+
+
+def test_local_environment_starts_worker_from_run_dir(monkeypatch, tmp_path) -> None:
+    env = LocalEnvironment(output_dir=tmp_path)
+    run_dir = env.create_run("worker-cwd")
+    captured: dict[str, Path] = {}
+
+    def run_worker(args, *, cwd, timeout_seconds):
+        captured["cwd"] = cwd
+        return local_module._ProcessResult(
+            stdout=json.dumps({"status": "success"}),
+            stderr="",
+            returncode=0,
+        )
+
+    monkeypatch.setattr(local_module, "_run_isolated_process", run_worker)
+
+    assert env._run_worker(run_dir)["status"] == "success"
+    assert captured["cwd"] == run_dir.resolve()
 
 
 def test_create_run_requires_a_new_simple_run_id(tmp_path) -> None:
