@@ -6,6 +6,8 @@ type: software
 authors:
   - given-names: Matthew
     family-names: Zhou
+  - given-names: Ramin
+    family-names: Keene
   - given-names: Johnathan
     family-names: Chiu
 repository-code: "https://github.com/mattzh72/mini-articraft"

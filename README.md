@@ -8,7 +8,7 @@ result exports as a posable USDZ you can open in the built-in viewer.
 
 <p align="center">
   <img src="assets/readme/stand_mixer.gif" width="32%" alt="Stand mixer: head tilting back while the view orbits">
-  <img src="assets/readme/electric_kettle.gif" width="32%" alt="Electric kettle: flip-top lid opening on a molded hinge while the view orbits">
+  <img src="assets/readme/desk_lamp.gif" width="32%" alt="Desk lamp: articulated arm flexing at the elbow and head while the view orbits">
   <img src="assets/readme/desk_fan.gif" width="32%" alt="Desk fan: rotor spinning inside its cage while the view orbits">
 </p>
 
@@ -89,7 +89,7 @@ button from [`CITATION.cff`](CITATION.cff)):
 ```bibtex
 @software{mini_articraft,
   title  = {mini-articraft},
-  author = {Zhou, Matthew and Chiu, Johnathan},
+  author = {Zhou, Matthew and Keene, Ramin and Chiu, Johnathan},
   year   = {2026},
   url    = {https://github.com/mattzh72/mini-articraft}
 }
