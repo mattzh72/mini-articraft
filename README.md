@@ -7,9 +7,8 @@ SDK, the compiler checks the geometry (including the articulation in motion), an
 result exports as a posable USDZ you can open in the built-in viewer.
 
 <p align="center">
-  <img src="assets/readme/stand_mixer.gif" width="32%" alt="Stand mixer: head tilting back while the view orbits">
-  <img src="assets/readme/laptop.gif" width="32%" alt="Laptop: lid opening and closing on its hinge while the view orbits">
-  <img src="assets/readme/desk_fan.gif" width="32%" alt="Desk fan: rotor spinning inside its cage while the view orbits">
+  <img src="assets/readme/stand_mixer.gif" width="44%" alt="Stand mixer: head tilting back while the view orbits">
+  <img src="assets/readme/desk_fan.gif" width="44%" alt="Desk fan: rotor spinning inside its cage while the view orbits">
 </p>
 
 ## Setup
