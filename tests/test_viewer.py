@@ -10,6 +10,7 @@ from typing import Any, cast
 import pytest
 from build123d import Box
 
+from mini_articraft import package_dir
 from mini_articraft.sdk import ArticulatedObject, ArticulationType, MotionLimits, Origin
 from mini_articraft.sdk.export import export_object
 from mini_articraft.viewer import _handler, load_viewer_run
@@ -93,6 +94,14 @@ def test_viewer_handler_serves_only_known_routes(tmp_path) -> None:
         server.shutdown()
         server.server_close()
         thread.join()
+
+
+def test_viewer_page_exposes_only_the_minimal_view_options() -> None:
+    page = (package_dir / "viewer.html").read_text(encoding="utf-8")
+
+    assert 'id="part-colors"' in page
+    assert 'id="preview-motion"' in page
+    assert page.count('role="switch"') == 2
 
 
 def _revolute_model() -> ArticulatedObject:
