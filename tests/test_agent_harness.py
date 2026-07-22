@@ -27,7 +27,7 @@ from mini_articraft.agent.harness import (
     _read_sdk_quickstart,
     _run_id_for_prompt,
 )
-from mini_articraft.agent.tools import Tool, ToolContext
+from mini_articraft.agent.tools import Tool, ToolContext, ToolResult
 from mini_articraft.agent.tools._core import workspace_digest
 from mini_articraft.environments.local import DEFAULT_MAIN_PY, LocalEnvironment
 from mini_articraft.record import Record, read_conversation
@@ -107,12 +107,89 @@ def test_agent_writes_compiles_and_returns_final_response(tmp_path) -> None:
     assert "a box" in first_query.messages[2]["content"]
     assert {tool["name"] for tool in first_query.tools} == {
         "read",
+        "view_image",
         "edit",
         "write",
         "exec_command",
         "write_stdin",
         "compile",
     }
+
+
+def test_agent_sends_typed_image_content_but_records_only_metadata(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    async def run_view_image(context, args):
+        return ToolResult(
+            {"path": args["path"], "mime_type": "image/png", "bytes": 5},
+            [
+                {
+                    "type": "input_image",
+                    "image_url": "data:image/png;base64,aW1hZ2U=",
+                    "detail": "high",
+                }
+            ],
+        )
+
+    async def run_write(context, args):
+        context.workspace.joinpath(args["path"]).write_text(args["content"], encoding="utf-8")
+        return {"path": args["path"], "bytes": len(args["content"])}
+
+    def inspect_image(query: ModelQuery) -> Response:
+        item = next(
+            message for message in query.messages if message.get("type") == "function_call_output"
+        )
+        assert item["call_id"] == "call_image"
+        assert item["output"][0]["type"] == "input_text"
+        assert item["output"][1] == {
+            "type": "input_image",
+            "image_url": "data:image/png;base64,aW1hZ2U=",
+            "detail": "high",
+        }
+        return calls(
+            tool_call(
+                "write",
+                {"path": "main.py", "content": GOOD_MAIN_PY},
+                call_id="call_write",
+            )
+        )
+
+    monkeypatch.setattr(
+        agent_tools,
+        "TOOLS",
+        {
+            "view_image": Tool("view_image", stub_schema("view_image"), run_view_image),
+            "write": Tool("write", stub_schema("write"), run_write),
+            "compile": compile_success_tool(),
+        },
+    )
+    model = ScriptedModel(
+        [
+            calls(
+                tool_call(
+                    "view_image",
+                    {"path": "docs/sdk/build123d/assets/AngleIron.png"},
+                    call_id="call_image",
+                )
+            ),
+            inspect_image,
+            calls(tool_call("compile", {}, call_id="call_compile")),
+            text("done"),
+        ]
+    )
+    agent = Agent(model, LocalEnvironment(output_dir=tmp_path), max_turns=4)
+
+    result = run(agent.run("a box", run_id="box"))
+
+    assert result["status"] == "success"
+    image_event = next(
+        event
+        for event in read_conversation(tmp_path / "box" / "conversation.jsonl")
+        if event.get("call_id") == "call_image"
+    )
+    assert isinstance(image_event["output"], str)
+    assert "base64" not in image_event["output"]
 
 
 def test_agent_requires_compile_before_final_response(tmp_path) -> None:

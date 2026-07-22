@@ -4,12 +4,14 @@ import asyncio
 import base64
 import json
 import logging
+import math
 import os
 import shlex
 import sys
 import time
 
 import pytest
+from PIL import Image
 
 from mini_articraft.agent.tools import ToolContext, get, schemas
 from mini_articraft.agent.tools._core import workspace_digest
@@ -46,6 +48,7 @@ def test_tool_schemas_include_prompting_guidance() -> None:
     )
     assert "appears exactly once" in edit_props["old_text"]["description"]
     assert get("read").supports_parallel is True
+    assert get("view_image").supports_parallel is False
     assert get("exec_command").supports_parallel is False
 
 
@@ -96,7 +99,7 @@ def test_read_can_open_symlinked_sdk_docs(tmp_path) -> None:
     assert result["text"] == "L1: # Shared units and types"
 
 
-def test_read_can_open_build123d_docs_support_code(tmp_path) -> None:
+def test_build123d_docs_support_code_and_images(tmp_path) -> None:
     ctx = context(tmp_path)
 
     page = run(
@@ -120,17 +123,67 @@ def test_read_can_open_build123d_docs_support_code(tmp_path) -> None:
     assert snippet["path"] == "docs/sdk/build123d/assets/ttt/ttt-23-t-24-curved_support.py"
     assert snippet["text"].startswith("L1: ")
 
+    image = run(
+        get("view_image").run(
+            ctx,
+            {"path": "docs/sdk/build123d/assets/AngleIron.png"},
+        )
+    )
+    assert image.output["path"] == "docs/sdk/build123d/assets/AngleIron.png"
+    assert image.output["mime_type"] == "image/png"
+    assert image.content_items[0]["type"] == "input_image"
 
-def test_read_image_returns_metadata_and_base64(tmp_path) -> None:
+
+def test_read_rejects_images_and_view_image_returns_typed_content(tmp_path) -> None:
     ctx = context(tmp_path)
-    ctx.workspace.joinpath("image.png").write_bytes(b"\x89PNG\r\n")
+    image_bytes = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+    )
+    ctx.workspace.joinpath("image.png").write_bytes(image_bytes)
 
-    result = run(get("read").run(ctx, {"path": "image.png"}))
+    with pytest.raises(ValueError, match="use view_image"):
+        run(get("read").run(ctx, {"path": "image.png"}))
 
-    assert result["path"] == "image.png"
-    assert result["mime_type"] == "image/png"
-    assert result["bytes"] == 6
-    assert result["base64"] == base64.b64encode(b"\x89PNG\r\n").decode("ascii")
+    result = run(get("view_image").run(ctx, {"path": "image.png"}))
+
+    assert result.output["path"] == "image.png"
+    assert result.output["mime_type"] == "image/png"
+    assert result.output["width"] == 1
+    assert result.output["height"] == 1
+    assert result.output["detail"] == "high"
+    image_url = result.content_items[0]["image_url"]
+    assert image_url.startswith("data:image/png;base64,")
+    assert base64.b64decode(image_url.split(",", 1)[1]) == image_bytes
+
+
+def test_view_image_uses_packaged_webp_companion_for_svg(tmp_path) -> None:
+    ctx = context(tmp_path)
+
+    result = run(
+        get("view_image").run(
+            ctx,
+            {"path": "docs/sdk/build123d/assets/align.svg"},
+        )
+    )
+
+    assert result.output["path"] == "docs/sdk/build123d/assets/align.svg"
+    assert result.output["raster_path"] == "docs/sdk/build123d/assets/align.svg.webp"
+    assert result.output["mime_type"] == "image/webp"
+    assert result.content_items[0]["image_url"].startswith("data:image/webp;base64,")
+
+
+def test_view_image_never_enlarges_or_exceeds_the_patch_limit(tmp_path) -> None:
+    ctx = context(tmp_path)
+    source_size = (1_249, 1_985)
+    image = Image.new("RGB", source_size, color="white")
+    image.save(ctx.workspace / "near-limit.png")
+
+    result = run(get("view_image").run(ctx, {"path": "near-limit.png"}))
+
+    output_size = (result.output["width"], result.output["height"])
+    assert output_size[0] <= source_size[0]
+    assert output_size[1] <= source_size[1]
+    assert math.ceil(output_size[0] / 32) * math.ceil(output_size[1] / 32) <= 2_500
 
 
 def test_edit_replaces_unique_text(tmp_path) -> None:

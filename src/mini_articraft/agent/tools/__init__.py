@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from mini_articraft.agent.tools._core import Tool, ToolContext, result_item
+from mini_articraft.agent.tools._core import Tool, ToolContext, ToolResult, result_item
 from mini_articraft.agent.tools.compile import TOOL as compile_tool
 from mini_articraft.agent.tools.edit import TOOL as edit_tool
 from mini_articraft.agent.tools.exec_command import TOOL as exec_command_tool
 from mini_articraft.agent.tools.read import TOOL as read_tool
+from mini_articraft.agent.tools.view_image import TOOL as view_image_tool
 from mini_articraft.agent.tools.write import TOOL as write_tool
 from mini_articraft.agent.tools.write_stdin import TOOL as write_stdin_tool
 
@@ -14,6 +15,7 @@ TOOLS = {
     tool.name: tool
     for tool in (
         read_tool,
+        view_image_tool,
         edit_tool,
         write_tool,
         exec_command_tool,
@@ -34,4 +36,4 @@ def get(name: str) -> Tool:
         raise ValueError(f"unknown tool: {name}") from exc
 
 
-__all__ = ["Tool", "ToolContext", "get", "result_item", "schemas"]
+__all__ = ["Tool", "ToolContext", "ToolResult", "get", "result_item", "schemas"]

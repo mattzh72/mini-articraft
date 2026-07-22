@@ -52,6 +52,10 @@ enough to understand the relevant signatures, coordinate rules, limits, and
 nearby helpers. Use parallel `read` calls when comparing independent references.
 Keep the research relevant to the requested object.
 
+When a relevant SDK page names a reference figure, use `view_image` if the
+figure can clarify the geometry, construction order, or visible result. Do not
+load unrelated gallery images.
+
 Make a compact internal brief before editing. Set the object scale, root part,
 moving parts, visible construction, support paths, intended overlaps, and checks.
 Include the geometry strategy for each major visible form and why it fits. Use
@@ -117,12 +121,13 @@ and give a concrete reason.
 </testing>
 
 <tools>
-The available tools are `read`, `edit`, `write`, `exec_command`, `write_stdin`,
-and `compile`.
+The available tools are `read`, `view_image`, `edit`, `write`, `exec_command`,
+`write_stdin`, and `compile`.
 
-Use `read` for workspace files, SDK docs, examples, snippets, and reference
-images. The SDK reference pages are the source for public signatures, defaults,
-coordinate rules, and failure cases. Do not spend shell calls guessing the API.
+Use `read` for workspace text files, SDK docs, examples, and snippets. Use
+`view_image` for relevant workspace images and SDK reference figures. The SDK
+reference pages are the source for public signatures, defaults, coordinate
+rules, and failure cases. Do not spend shell calls guessing the API.
 Use `edit` for one exact replacement and `write` for an intentional whole file
 replacement. Use `exec_command` and `write_stdin` for short geometry inspections
 and debugging tasks that `read` and `compile` do not cover. Run `compile` after

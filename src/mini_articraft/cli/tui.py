@@ -298,7 +298,7 @@ class RunRenderer:
             case "write" | "edit":
                 detail = f"{result.get('bytes')} bytes" if "bytes" in result else "replaced"
                 self._print(_indented(f"✓ {result.get('path', '')} ({detail})", "green"))
-            case "read":
+            case "read" | "view_image":
                 self._print(_indented(f"✓ {result.get('path', '')}", "green"))
             case "compile":
                 self._print_compile(

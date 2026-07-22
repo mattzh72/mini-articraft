@@ -266,11 +266,18 @@ class Agent:
             )
             started.append(time.perf_counter())
 
-        items = await asyncio.gather(*(self._run_tool(context, call) for call in tool_calls))
-        for call, item, tool_started in zip(tool_calls, items, started, strict=True):
+        completed = await asyncio.gather(*(self._run_tool(context, call) for call in tool_calls))
+        for call, (item, payload), tool_started in zip(
+            tool_calls,
+            completed,
+            started,
+            strict=True,
+        ):
             self.messages.append(item)
-            append_conversation(conversation_path, item)
-            payload = json.loads(item["output"])
+            append_conversation(
+                conversation_path,
+                tools.result_item(str(call["id"]), payload),
+            )
             self._emit(
                 events.ToolFinished(
                     str(call["id"]),
@@ -280,7 +287,11 @@ class Agent:
                 )
             )
 
-    async def _run_tool(self, context: ToolContext, call: dict[str, Any]) -> dict[str, Any]:
+    async def _run_tool(
+        self,
+        context: ToolContext,
+        call: dict[str, Any],
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
         name = str(call["name"])
         call_id = str(call["id"])
         try:
@@ -292,10 +303,18 @@ class Agent:
                 )
             tool = tools.get(name)
             result = await tool.run(context, _arguments(call))
+            if isinstance(result, tools.ToolResult):
+                payload = {"result": result.output}
+                item = tools.result_item(
+                    call_id,
+                    payload,
+                    content_items=result.content_items,
+                )
+                return item, payload
             payload = {"result": result}
         except Exception as exc:
             payload = {"error": str(exc)}
-        return tools.result_item(call_id, payload)
+        return tools.result_item(call_id, payload), payload
 
 
 def _display_payload(

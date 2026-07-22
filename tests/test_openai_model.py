@@ -261,6 +261,55 @@ def test_openai_model_sends_function_call_outputs_with_previous_response(
     ]
 
 
+def test_openai_model_sends_typed_image_tool_output(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    socket = FakeWebSocket(
+        [
+            response_event(
+                "",
+                response_id="resp_1",
+                output=[
+                    {
+                        "type": "function_call",
+                        "call_id": "call_image",
+                        "name": "view_image",
+                        "arguments": '{"path": "image.png"}',
+                    }
+                ],
+            ),
+            response_event("done", response_id="resp_2"),
+        ]
+    )
+    patch_websocket(monkeypatch, socket)
+    model = openai_model()
+    messages: list[dict[str, Any]] = [{"role": "user", "content": "inspect"}]
+
+    run(model.query(messages, tools=[]))
+    image_output = {
+        "type": "function_call_output",
+        "call_id": "call_image",
+        "output": [
+            {"type": "input_text", "text": '{"result": {"path": "image.png"}}'},
+            {
+                "type": "input_image",
+                "image_url": "data:image/png;base64,aW1hZ2U=",
+                "detail": "high",
+            },
+        ],
+    }
+    messages.extend(
+        [
+            {"role": "assistant", "content": "", "tool_calls": []},
+            image_output,
+        ]
+    )
+    run(model.query(messages, tools=[]))
+
+    assert socket.sent[1]["previous_response_id"] == "resp_1"
+    assert socket.sent[1]["input"] == [image_output]
+
+
 def test_openai_model_uses_incremental_websocket_inputs(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

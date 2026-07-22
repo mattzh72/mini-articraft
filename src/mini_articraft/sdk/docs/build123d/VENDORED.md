@@ -11,6 +11,6 @@ figures for the mini-articraft authoring agent.
 The original import did not record an exact upstream tag or commit, so this file does not invent
 one. A future refresh must record the exact upstream revision here.
 
-The source figures and model files are retained so the examples remain complete. Each SVG source
-has a 1024 pixel WebP companion with the `.svg.webp` suffix because model image input does not
-accept SVG directly.
+The source figures and model files are retained so the examples remain complete. The agent can
+view PNG, JPEG, GIF, and WebP files as image input. Each SVG source has a 1024 pixel WebP companion
+with the `.svg.webp` suffix because the model image input does not accept SVG directly.

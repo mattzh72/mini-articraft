@@ -1,12 +1,9 @@
 from __future__ import annotations
 
-import base64
 import mimetypes
 from typing import Any
 
 from mini_articraft.agent.tools._core import Tool, ToolContext, display_path, readable_path, schema
-
-MAX_IMAGE_BYTES = 256_000
 
 
 async def run(context: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
@@ -15,14 +12,7 @@ async def run(context: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
     path_label = display_path(context.workspace, path)
     mime_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
     if mime_type.startswith("image/"):
-        chunk = data[:MAX_IMAGE_BYTES]
-        return {
-            "path": path_label,
-            "mime_type": mime_type,
-            "bytes": len(data),
-            "truncated": len(data) > len(chunk),
-            "base64": base64.b64encode(chunk).decode("ascii"),
-        }
+        raise ValueError(f"{path_label} is an image; use view_image")
 
     offset = int(args.get("offset") or 1)
     limit = args.get("limit")
@@ -43,7 +33,7 @@ TOOL = Tool(
     "read",
     schema(
         "read",
-        "Read a file from the run workspace or read-only SDK docs under docs/sdk. Text files return line-numbered text with optional offset and limit; images return MIME type, byte size, and capped base64.",
+        "Read a text file from the run workspace or read-only SDK docs under docs/sdk. Text files return line-numbered text with optional offset and limit. Use view_image for images.",
         {
             "path": {
                 "type": "string",

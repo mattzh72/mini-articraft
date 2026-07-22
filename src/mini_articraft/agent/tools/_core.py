@@ -50,8 +50,17 @@ class ToolContext:
 class Tool:
     name: str
     schema: dict[str, Any]
-    run: Callable[[ToolContext, dict[str, Any]], Awaitable[dict[str, Any]]]
+    run: Callable[
+        [ToolContext, dict[str, Any]],
+        Awaitable[dict[str, Any] | ToolResult],
+    ]
     supports_parallel: bool = False
+
+
+@dataclass(frozen=True)
+class ToolResult:
+    output: dict[str, Any]
+    content_items: list[dict[str, Any]]
 
 
 def schema(
@@ -109,8 +118,17 @@ def display_path(workspace: Path, path: Path) -> str:
         return (WORKSPACE_SDK_DOCS_ROOT / path.resolve().relative_to(docs_root)).as_posix()
 
 
-def result_item(call_id: str, payload: dict[str, Any]) -> dict[str, Any]:
-    return {"type": "function_call_output", "call_id": call_id, "output": json.dumps(payload)}
+def result_item(
+    call_id: str,
+    payload: dict[str, Any],
+    *,
+    content_items: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    text = json.dumps(payload)
+    output: str | list[dict[str, Any]] = text
+    if content_items is not None:
+        output = [{"type": "input_text", "text": text}, *content_items]
+    return {"type": "function_call_output", "call_id": call_id, "output": output}
 
 
 def workspace_digest(workspace: Path) -> str:
