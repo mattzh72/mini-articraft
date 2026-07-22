@@ -111,17 +111,3 @@ way to understand the SDK yourself:
   molded mug handle, a hollow shell, a mixed assembly) that the agent clones for its task.
 
 See [AGENTS.md](AGENTS.md) for how the repo is organized and what to keep small.
-
-## Citation
-
-If you use mini-articraft, please cite it (GitHub also renders a "Cite this repository"
-button from [`CITATION.cff`](CITATION.cff)):
-
-```bibtex
-@software{mini_articraft,
-  title  = {mini-articraft},
-  author = {Zhou, Matthew and Keene, Ramin and Chiu, Johnathan},
-  year   = {2026},
-  url    = {https://github.com/mattzh72/mini-articraft}
-}
-```
