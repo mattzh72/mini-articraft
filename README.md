@@ -1,113 +1,63 @@
 # mini-articraft
 
-A simpler, sharper take on [articraft](https://github.com/mattzh72/articraft) — the same
-core idea, distilled to a single agent loop and a mesh SDK. Give it a prompt, get back an
-articulated 3D object: an agent writes and iterates on a build script against the mesh
-SDK, the compiler checks the geometry (including the articulation in motion), and the
-result exports as a posable USDZ you can open in the built-in viewer.
+mini-articraft is a small agent that turns a prompt into an articulated 3D object.
 
 <p align="center">
-  <img src="assets/readme/stand_mixer.gif" width="44%" alt="Stand mixer: head tilting back while the view orbits">
-  <img src="assets/readme/desk_fan.gif" width="44%" alt="Desk fan: rotor spinning inside its cage while the view orbits">
+  <img src="assets/readme/stand_mixer.gif" width="44%" alt="Stand mixer with a tilting head">
+  <img src="assets/readme/desk_fan.gif" width="44%" alt="Desk fan with a rotating fan">
 </p>
 
-## Setup
+The agent writes a Python model. It compiles and checks the geometry. It exports a posable USDZ
+file. To make objects directly, read about the [mesh authoring SDK](docs/sdk.md). To understand
+the generation loop, read the [agent design](docs/agent.md).
 
-Install the package and development tools:
+---
 
-```bash
+## Quickstart
+
+### Install and run mini-articraft
+
+Install the package and the development tools:
+
+```shell
 uv sync --group dev
 ```
 
 Add your OpenAI API key to `.env`:
 
-```bash
+```shell
 OPENAI_API_KEY=your_key_here
 ```
 
-Run the checks:
+Generate an object:
 
-```bash
+```shell
+uv run mini-articraft "make a folding chair"
+```
+
+Each run is in the `runs/` directory. Open a completed run in the browser viewer:
+
+```shell
+uv run mini-articraft view runs/<run-id>
+```
+
+Use the viewer to examine each generated version and move its joints.
+
+### Run the checks
+
+```shell
 uv run pytest -q
 uv run ruff check .
 ```
 
-Run the SDK speed and mesh quality benchmark:
-
-```bash
-uv run python benchmarks/sdk_benchmark.py --suite extended
-```
-
-See [benchmarks/README.md](benchmarks/README.md) for saved comparisons and smaller suites.
-
-## Use the Python SDK
-
-Add mini-articraft directly from GitHub while the package is pre-release:
-
-```bash
-uv add "mini-articraft @ git+https://github.com/mattzh72/mini-articraft"
-```
-
-The root SDK owns object modeling, geometry, articulations, and physical checks. Mesh operations
-live in `mini_articraft.sdk.mesh`; USDZ publication is explicit so a normal SDK import does not
-eagerly load OpenUSD.
-
-```python
-from build123d import Box
-
-from mini_articraft.sdk import ArticulatedObject, TestContext
-from mini_articraft.sdk.export import export_object
-
-model = ArticulatedObject("box")
-model.part("body").add(Box(0.1, 0.1, 0.1), name="shell")
-model.validate()
-
-report = TestContext(model).report()
-assert report.passed
-
-result = export_object(model, "output")
-print(result.usdz)
-```
-
-See the [hinged box](examples/hinged_box/main.py) and
-[procedural mesh knob](examples/mesh_knob/main.py) for complete examples.
-
-## Run
-
-Generate a model:
-
-```bash
-uv run mini-articraft generate "make a folding chair"
-```
-
-Inspect every numbered USDZ version from a run:
-
-```bash
-uv run mini-articraft view 20260713-175925-make-a-realistic-articulated-desk-lamp
-```
-
-Pass a run ID from the default output directory or a path to a run. The viewer opens in
-your browser and needs an internet connection to load Three.js. In it:
-
-- **Versions** (left) — switch between every numbered USDZ the run produced, to step
-  through the agent's iterations.
-- **Parts** (top right) — click a part to isolate it and fade the rest, so you can inspect
-  one piece at a time.
-- **Joints** (right) — drag a slider to pose each articulation through its limits; **Reset**
-  returns to the rest pose.
-- Drag to orbit, scroll to zoom, and use the **↻** button to recenter the camera.
-
 ## Docs
 
-The agent builds objects against the SDK reference in
-[`src/mini_articraft/sdk/docs`](src/mini_articraft/sdk/docs) — the same docs are the best
-way to understand the SDK yourself:
+- [**Mesh authoring SDK**](docs/sdk.md)
+- [**Agent design**](docs/agent.md)
+- [**SDK reference**](src/mini_articraft/sdk/docs/common/00_quickstart.md)
+- [**Examples**](examples)
+- [**Test environment**](tests/README.md)
+- [**SDK benchmarks**](benchmarks/README.md)
+- [**Repository guide**](AGENTS.md)
 
-- [`common/`](src/mini_articraft/sdk/docs/common) — the quickstart, core types, parts and
-  joints, authoring tests, and USDZ export.
-- [`mesh/`](src/mini_articraft/sdk/docs/mesh) — geometry, profiles, sweeps, lofts, and the
-  boolean/weld operations that fuse parts into one molded piece.
-- [`examples/`](src/mini_articraft/sdk/docs/examples) — executable worked examples (a
-  molded mug handle, a hollow shell, a mixed assembly) that the agent clones for its task.
-
-See [AGENTS.md](AGENTS.md) for how the repo is organized and what to keep small.
+This repository has an [Apache 2.0 License](LICENSE).
