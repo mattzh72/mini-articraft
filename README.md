@@ -11,6 +11,9 @@ The agent writes a Python model. It compiles and checks the geometry. It exports
 file. To make objects directly, read about the [mesh authoring SDK](docs/sdk.md). To understand
 the generation loop, read the [agent design](docs/agent.md).
 
+> [!NOTE]
+> mini-articraft is under active development. Expect changes before version 1.0.
+
 ---
 
 ## Quickstart
