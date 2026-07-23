@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import warnings
+
 import pytest
 from build123d import Box, Pos
 
@@ -12,6 +14,7 @@ from mini_articraft.sdk import (
     FailureKind,
     MotionLimits,
     Origin,
+    SphereGeometry,
     TestContext,
 )
 
@@ -76,6 +79,21 @@ def test_named_shape_queries_and_world_bounds() -> None:
 
     with pytest.raises(ValidationError, match="unknown shape"):
         ctx.shape_world_bounds("root", "missing")
+
+
+def test_world_bounds_transform_large_mesh_without_runtime_warnings() -> None:
+    model = ArticulatedObject("large-mesh-transform")
+    root = model.part("root")
+    sphere = SphereGeometry(1.0, width_segments=32, height_segments=16)
+    assert len(sphere.vertices) >= 512
+    root.add(sphere, name="sphere")
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", RuntimeWarning)
+        bounds = TestContext(model).part_world_bounds("root")
+
+    assert bounds[0][2] == pytest.approx(-1.0)
+    assert bounds[1][2] == pytest.approx(1.0)
 
 
 def test_build123d_shape_bounds_refresh_after_location_mutation() -> None:
