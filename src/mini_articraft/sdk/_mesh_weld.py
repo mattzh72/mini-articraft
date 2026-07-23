@@ -6,7 +6,6 @@ import igl
 import manifold3d
 import numpy as np
 from trimesh import Trimesh
-from trimesh.proximity import closest_point
 
 from mini_articraft.sdk._mesh_boolean import (
     _from_manifold,
@@ -26,6 +25,16 @@ class SnapRefused(ValueError):
     """Raised when snapping a piece to touch would move it further than allowed."""
 
 
+def _closest_points(mesh: Trimesh, points: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    squared, _faces, closest = igl.point_mesh_squared_distance(
+        np.ascontiguousarray(points, dtype=np.float64),
+        np.ascontiguousarray(mesh.vertices, dtype=np.float64),
+        np.ascontiguousarray(mesh.faces, dtype=np.int64),
+    )
+    distances = np.sqrt(np.maximum(np.asarray(squared, dtype=np.float64), 0.0))
+    return np.asarray(closest, dtype=np.float64), distances
+
+
 def _require_mesh(geometry: object, label: str) -> MeshGeometry:
     if not isinstance(geometry, MeshGeometry):
         raise TypeError(f"{label} must be MeshGeometry")
@@ -36,10 +45,10 @@ def _nearest_gap(anchor: MeshGeometry, piece: MeshGeometry) -> tuple[float, np.n
     """Smallest surface gap between two solids and the unit direction piece -> anchor."""
     a_mesh = anchor.to_trimesh()
     b_mesh = piece.to_trimesh()
-    points_on_a, dist_b, _ = closest_point(a_mesh, b_mesh.vertices)
+    points_on_a, dist_b = _closest_points(a_mesh, b_mesh.vertices)
     i = int(np.argmin(dist_b))
     point_a, point_b, dist = points_on_a[i], b_mesh.vertices[i], float(dist_b[i])
-    points_on_b, dist_a, _ = closest_point(b_mesh, a_mesh.vertices)
+    points_on_b, dist_a = _closest_points(b_mesh, a_mesh.vertices)
     j = int(np.argmin(dist_a))
     if dist_a[j] < dist:
         point_a, point_b, dist = a_mesh.vertices[j], points_on_b[j], float(dist_a[j])
