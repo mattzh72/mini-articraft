@@ -19,6 +19,8 @@ Vec3: TypeAlias = tuple[float, float, float]
 Bounds: TypeAlias = tuple[Vec3, Vec3]
 Mat4: TypeAlias = np.ndarray
 
+_NUMERICAL_CONTACT_DEPTH_TOLERANCE = 1e-6
+
 
 @dataclass(frozen=True)
 class ContactInfo:
@@ -238,19 +240,29 @@ class MeshCollisionKernel:
                 if overlap_volume <= overlap_volume_tol:
                     continue
                 query = _collide_entries(entry_a, entry_b, max_contacts=max_contacts)
-                if query.collided:
-                    found.append(
-                        CollisionQuery(
-                            part_a=query.part_a,
-                            part_b=query.part_b,
-                            shape_a=query.shape_a,
-                            shape_b=query.shape_b,
-                            collided=True,
-                            contacts=query.contacts,
-                            overlap_depth=overlap_depth,
-                            overlap_volume=overlap_volume,
-                        )
+                if not query.collided:
+                    continue
+                solid_intersection = _solid_intersection_volume(entry_a, entry_b)
+                if solid_intersection is not None:
+                    if solid_intersection <= overlap_volume_tol:
+                        continue
+                elif (
+                    query.max_depth is not None
+                    and query.max_depth <= _NUMERICAL_CONTACT_DEPTH_TOLERANCE
+                ):
+                    continue
+                found.append(
+                    CollisionQuery(
+                        part_a=query.part_a,
+                        part_b=query.part_b,
+                        shape_a=query.shape_a,
+                        shape_b=query.shape_b,
+                        collided=True,
+                        contacts=query.contacts,
+                        overlap_depth=overlap_depth,
+                        overlap_volume=overlap_volume,
                     )
+                )
         return found
 
     def disconnected_geometry_islands(

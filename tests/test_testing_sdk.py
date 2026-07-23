@@ -12,6 +12,7 @@ from mini_articraft.sdk import (
     ArticulationType,
     BoxGeometry,
     FailureKind,
+    MeshGeometry,
     MotionLimits,
     Origin,
     SphereGeometry,
@@ -239,6 +240,42 @@ def test_adjacent_contact_and_tiny_penetration_pass_physical_thresholds() -> Non
         fixed(model, "mount", parent, child, xyz=(0.0, 0.0, offset))
 
         assert TestContext(model).fail_if_parts_overlap_in_current_pose()
+
+
+def test_coplanar_contact_with_large_watertight_bounds_passes() -> None:
+    model = ArticulatedObject("watertight_contact")
+    parent = model.part("parent")
+    parent.add(Box(1, 1, 1) + Pos(X=2, Z=2) * Box(1, 1, 1), name="body")
+    child = model.part("child")
+    child.add(Pos(Z=1) * Box(1, 1, 1), name="body")
+    fixed(model, "mount", parent, child)
+
+    assert TestContext(model).fail_if_parts_overlap_in_current_pose()
+
+
+def test_coplanar_contact_with_large_open_mesh_bounds_passes() -> None:
+    model = ArticulatedObject("open_mesh_contact")
+    parent = model.part("parent")
+    parent.add(
+        MeshGeometry(
+            vertices=[
+                (-0.5, -0.5, 0.5),
+                (0.5, -0.5, 0.5),
+                (0.5, 0.5, 0.5),
+                (-0.5, 0.5, 0.5),
+                (1.5, -0.5, 2.5),
+                (2.5, -0.5, 2.5),
+                (2.0, 0.5, 2.5),
+            ],
+            faces=[(0, 1, 2), (0, 2, 3), (4, 5, 6)],
+        ),
+        name="body",
+    )
+    child = model.part("child")
+    child.add(Pos(Z=1) * Box(1, 1, 1), name="body")
+    fixed(model, "mount", parent, child)
+
+    assert TestContext(model).fail_if_parts_overlap_in_current_pose()
 
 
 def test_adjacent_large_penetration_blocks() -> None:
