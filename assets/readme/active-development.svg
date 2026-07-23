@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="96" viewBox="0 0 1200 96" role="img" aria-labelledby="title description">
+  <title id="title">Active development</title>
+  <desc id="description">Expect changes before version 1.0.</desc>
+  <rect x="1" y="1" width="1198" height="94" rx="12" fill="#fff7df" stroke="#d99a00" stroke-width="2"/>
+  <circle cx="48" cy="48" r="17" fill="#d99a00"/>
+  <rect x="46" y="35" width="4" height="18" rx="2" fill="#2d2100"/>
+  <circle cx="48" cy="59" r="2.5" fill="#2d2100"/>
+  <text x="80" y="42" fill="#2d2100" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="20" font-weight="700">ACTIVE DEVELOPMENT</text>
+  <text x="80" y="68" fill="#5d4709" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="17">Expect changes before version 1.0.</text>
+</svg>
