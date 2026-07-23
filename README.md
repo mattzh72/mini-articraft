@@ -1,7 +1,6 @@
 <h1 align="center">mini-articraft</h1>
 
 mini-articraft is a small agent that turns a prompt into an articulated 3D object.
-It is based on the [Articraft paper](https://arxiv.org/abs/2605.15187).
 
 <p align="center">
   <img src="assets/readme/stand_mixer.gif" width="44%" alt="Stand mixer with a tilting head">
@@ -59,3 +58,5 @@ uv run ruff check .
 - [**Repository guide**](AGENTS.md)
 
 This repository has an [Apache 2.0 License](LICENSE).
+
+<sub>This project is based on the [Articraft paper](https://arxiv.org/abs/2605.15187).</sub>
