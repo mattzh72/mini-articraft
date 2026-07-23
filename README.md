@@ -32,7 +32,7 @@ OPENAI_API_KEY=your_key_here
 Generate an object:
 
 ```shell
-uv run mini-articraft "make a folding chair"
+uv run mini-articraft "a jet engine"
 ```
 
 Each run is in the `runs/` directory. Open a completed run in the browser viewer:
