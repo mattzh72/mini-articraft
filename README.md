@@ -54,10 +54,7 @@ uv run ruff check .
 
 - [**Mesh authoring SDK**](docs/sdk.md)
 - [**Agent design**](docs/agent.md)
-- [**SDK reference**](src/mini_articraft/sdk/docs/common/00_quickstart.md)
 - [**Examples**](examples)
-- [**Test environment**](tests/README.md)
-- [**SDK benchmarks**](benchmarks/README.md)
 - [**Repository guide**](AGENTS.md)
 
 This repository has an [Apache 2.0 License](LICENSE).
