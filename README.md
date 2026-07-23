@@ -1,4 +1,4 @@
-# mini-articraft
+<h1 align="center">mini-articraft</h1>
 
 mini-articraft is a small agent that turns a prompt into an articulated 3D object.
 
