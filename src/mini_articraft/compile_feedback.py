@@ -6,6 +6,7 @@ import re
 from dataclasses import asdict, dataclass
 from typing import Any, Literal
 
+from mini_articraft.compile_result import CompileResult
 from mini_articraft.sdk import FailureKind, TestReport
 
 Severity = Literal["failure", "warning", "note"]
@@ -53,16 +54,7 @@ class CompileSignalBundle:
 
 
 def empty_compile_payload(*, error: str = "", stdout: str = "", stderr: str = "") -> dict[str, Any]:
-    return {
-        "status": "error",
-        "manifest": "",
-        "usdz": "",
-        "test_report": None,
-        "stdout": stdout,
-        "stderr": stderr,
-        "error": error,
-        "traceback": "",
-    }
+    return CompileResult(error=error, stdout=stdout, stderr=stderr).to_payload()
 
 
 def build_compile_report_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
@@ -527,6 +519,57 @@ def _primary_issue(signal: CompileSignal) -> str:
     return issues.get(signal.kind, signal.summary)
 
 
+_RUNTIME_RULES = (
+    "- Fix the compile or runtime error first. Geometry checks are blocked until the script runs.",
+)
+_STRUCTURE_RULES = ("- Fix the model structure first. Local geometry tuning comes after that.",)
+_RULES_BY_KIND = {
+    "compile_timeout": (
+        "- Inspect the phase named in the timeout before editing.",
+        "- If model construction timed out, simplify the slow operation or use a coarser "
+        "tolerance. If a compiler check timed out, reduce unnecessary shape count while "
+        "preserving visible geometry.",
+    ),
+    **dict.fromkeys(
+        (
+            "compile_runtime",
+            "missing_run_tests",
+            "invalid_run_tests_report",
+        ),
+        _RUNTIME_RULES,
+    ),
+    **dict.fromkeys(("single_root_policy", "model_validity"), _STRUCTURE_RULES),
+    "isolated_part": (
+        "- Repair the reported support path, or add a precise allowance when the separation "
+        "is intentional.",
+    ),
+    "real_overlap": (
+        "- Decide whether the reported overlap is intentional embedding or an unintended "
+        "collision.",
+        "- Preserve prompt-critical visible geometry while repairing or allowing the exact "
+        "reported pair.",
+    ),
+    "missing_exact_geometry": (
+        "- Restore the named geometry or update the dependent check in the same edit. This "
+        "does not call for a broad geometry rewrite.",
+    ),
+    "exact_contact_gap": (
+        "- This is a gap, not an overlap. Verify the tested pair, then repair its geometry "
+        "or placement.",
+    ),
+    "disconnected_geometry": (
+        "- Move or extend the disconnected piece so its own body overlaps the nearest piece "
+        "by a few mm -- overlap within a part is free and counts as connected. Do not add a "
+        "separate bridging piece.",
+    ),
+    "articulation_separation": (
+        "- Place the articulation origin and axis so the child stays connected to the parent "
+        "throughout the motion range.",
+    ),
+}
+_DEFAULT_FAILURE_RULES = ("- Fix the named failing check before adding more geometry or tests.",)
+
+
 def _rules(
     failures: list[CompileSignal],
     *,
@@ -543,44 +586,7 @@ def _rules(
             else []
         )
     kind = failures[0].kind
-    if kind == "compile_timeout":
-        rules = [
-            "- Inspect the phase named in the timeout before editing.",
-            "- If model construction timed out, simplify the slow operation or use a coarser tolerance. If a compiler check timed out, reduce unnecessary shape count while preserving visible geometry.",
-        ]
-    elif kind in {"compile_runtime", "missing_run_tests", "invalid_run_tests_report"}:
-        rules = [
-            "- Fix the compile or runtime error first. Geometry checks are blocked until the script runs."
-        ]
-    elif kind in {"single_root_policy", "model_validity"}:
-        rules = ["- Fix the model structure first. Local geometry tuning comes after that."]
-    elif kind == "isolated_part":
-        rules = [
-            "- Repair the reported support path, or add a precise allowance when the separation is intentional."
-        ]
-    elif kind == "real_overlap":
-        rules = [
-            "- Decide whether the reported overlap is intentional embedding or an unintended collision.",
-            "- Preserve prompt-critical visible geometry while repairing or allowing the exact reported pair.",
-        ]
-    elif kind == "missing_exact_geometry":
-        rules = [
-            "- Restore the named geometry or update the dependent check in the same edit. This does not call for a broad geometry rewrite."
-        ]
-    elif kind == "exact_contact_gap":
-        rules = [
-            "- This is a gap, not an overlap. Verify the tested pair, then repair its geometry or placement."
-        ]
-    elif kind == "disconnected_geometry":
-        rules = [
-            "- Move or extend the disconnected piece so its own body overlaps the nearest piece by a few mm -- overlap within a part is free and counts as connected. Do not add a separate bridging piece."
-        ]
-    elif kind == "articulation_separation":
-        rules = [
-            "- Place the articulation origin and axis so the child stays connected to the parent throughout the motion range."
-        ]
-    else:
-        rules = ["- Fix the named failing check before adding more geometry or tests."]
+    rules = list(_RULES_BY_KIND.get(kind, _DEFAULT_FAILURE_RULES))
     if failure_streak >= 3:
         rules.append(f"- The repair loop has continued. {_inspection_advice(kind)}")
     elif repeated:

@@ -8,9 +8,8 @@ import fcl
 import manifold3d
 import numpy as np
 import trimesh
-from build123d.topology import Shape
 
-from mini_articraft.sdk._mesh_core import MeshGeometry
+from mini_articraft.sdk._mesh_core import MeshGeometry, geometry_to_trimesh
 from mini_articraft.sdk.errors import ValidationError
 from mini_articraft.sdk.joints import Articulation, ArticulationType, Origin
 from mini_articraft.sdk.object import ArticulatedObject, Geometry
@@ -47,7 +46,7 @@ class CollisionQuery:
 
 
 @dataclass(frozen=True)
-class DistanceQuery:
+class DistanceFinding:
     part_a: str
     part_b: str
     distance: float
@@ -57,6 +56,9 @@ class DistanceQuery:
     nearest_a: Vec3 | None = None
     nearest_b: Vec3 | None = None
     contacts: tuple[ContactInfo, ...] = ()
+
+
+DistanceQuery: TypeAlias = DistanceFinding
 
 
 @dataclass(frozen=True)
@@ -357,14 +359,9 @@ class MeshCollisionKernel:
         transform: Mat4,
     ) -> _CollisionEntry:
         local_mesh = self._local_mesh(geometry)
-        world_vertices = _transform_points(
-            np.asarray(local_mesh.mesh.vertices, dtype=np.float64), transform
-        )
-        world_mesh = trimesh.Trimesh(
-            vertices=world_vertices,
-            faces=np.asarray(local_mesh.mesh.faces, dtype=np.int64),
-            process=False,
-        )
+        world_mesh = local_mesh.mesh.copy()
+        world_mesh.apply_transform(transform)
+        world_vertices = np.asarray(world_mesh.vertices, dtype=np.float64)
         return _CollisionEntry(
             part_name=part_name,
             shape_name=shape_name,
@@ -379,7 +376,7 @@ class MeshCollisionKernel:
         cached = self._mesh_cache.get(cache_key)
         if cached is not None:
             return cached
-        mesh = _geometry_to_mesh(geometry, self.mesh_tolerance)
+        mesh = geometry_to_trimesh(geometry, self.mesh_tolerance)
         cached = _LocalMesh(mesh=mesh, fcl_model=_mesh_to_bvh(mesh))
         self._mesh_cache[cache_key] = cached
         return cached
@@ -574,27 +571,6 @@ def _mesh_intersection_volume(
         return None
 
 
-def _geometry_to_mesh(geometry: Geometry, tolerance: float) -> trimesh.Trimesh:
-    if isinstance(geometry, Shape):
-        vertices, faces = geometry.tessellate(tolerance)
-        if not vertices or not faces:
-            raise ValidationError("build123d shape produced an empty mesh")
-        raw_vertices = np.asarray([[v.X, v.Y, v.Z] for v in vertices], dtype=np.float64)
-        raw_faces = np.asarray(faces, dtype=np.int32)
-    elif isinstance(geometry, MeshGeometry):
-        vertices, faces = geometry._mesh_arrays()
-        raw_vertices = np.asarray(vertices, dtype=np.float64)
-        raw_faces = np.asarray(faces, dtype=np.int32)
-    else:
-        raise ValidationError("geometry must be a build123d Shape or MeshGeometry")
-    mesh = trimesh.Trimesh(vertices=raw_vertices, faces=raw_faces, process=False)
-    mesh.merge_vertices()
-    mesh.remove_unreferenced_vertices()
-    if mesh.vertices.size == 0 or mesh.faces.size == 0:
-        raise ValidationError("geometry produced an empty mesh")
-    return mesh
-
-
 def _geometry_cache_key(geometry: Geometry, tolerance: float) -> tuple[object, ...]:
     if isinstance(geometry, MeshGeometry):
         return ("mesh", *geometry._cache_token, tolerance)
@@ -641,33 +617,14 @@ def _motion_matrix(articulation: Articulation, value: float) -> Mat4:
 
 
 def _rpy_matrix(rpy: Vec3) -> Mat4:
-    roll, pitch, yaw = rpy
-    cx, sx = math.cos(roll), math.sin(roll)
-    cy, sy = math.cos(pitch), math.sin(pitch)
-    cz, sz = math.cos(yaw), math.sin(yaw)
-    rx = np.array([[1.0, 0.0, 0.0], [0.0, cx, -sx], [0.0, sx, cx]])
-    ry = np.array([[cy, 0.0, sy], [0.0, 1.0, 0.0], [-sy, 0.0, cy]])
-    rz = np.array([[cz, -sz, 0.0], [sz, cz, 0.0], [0.0, 0.0, 1.0]])
-    matrix = _identity()
-    matrix[:3, :3] = rz @ ry @ rx
-    return matrix
+    return np.asarray(trimesh.transformations.euler_matrix(*rpy, axes="sxyz"), dtype=np.float64)
 
 
 def _axis_angle_matrix(axis: np.ndarray, angle: float) -> Mat4:
-    x, y, z = axis
-    c = math.cos(angle)
-    s = math.sin(angle)
-    one_c = 1.0 - c
-    matrix = _identity()
-    matrix[:3, :3] = np.array(
-        [
-            [c + x * x * one_c, x * y * one_c - z * s, x * z * one_c + y * s],
-            [y * x * one_c + z * s, c + y * y * one_c, y * z * one_c - x * s],
-            [z * x * one_c - y * s, z * y * one_c + x * s, c + z * z * one_c],
-        ],
+    return np.asarray(
+        trimesh.transformations.rotation_matrix(angle, axis),
         dtype=np.float64,
     )
-    return matrix
 
 
 def _normalize(axis: Vec3) -> np.ndarray:
@@ -683,11 +640,6 @@ def _fcl_transform(matrix: Mat4) -> object:
         np.ascontiguousarray(matrix[:3, :3], dtype=np.float64),
         np.ascontiguousarray(matrix[:3, 3], dtype=np.float64),
     )
-
-
-def _transform_points(points: np.ndarray, matrix: Mat4) -> np.ndarray:
-    homogeneous = np.column_stack([points, np.ones(len(points), dtype=np.float64)])
-    return np.asarray((homogeneous @ matrix.T)[:, :3], dtype=np.float64)
 
 
 def _points_bounds(points: np.ndarray) -> Bounds:
