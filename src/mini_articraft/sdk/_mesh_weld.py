@@ -1,14 +1,11 @@
 from __future__ import annotations
 
 import math
-import warnings
-from typing import cast
 
 import igl
 import manifold3d
 import numpy as np
 from trimesh import Trimesh
-from trimesh.proximity import closest_point
 
 from mini_articraft.sdk._mesh_boolean import (
     _from_manifold,
@@ -28,6 +25,16 @@ class SnapRefused(ValueError):
     """Raised when snapping a piece to touch would move it further than allowed."""
 
 
+def _closest_points(mesh: Trimesh, points: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    squared, _faces, closest = igl.point_mesh_squared_distance(
+        np.ascontiguousarray(points, dtype=np.float64),
+        np.ascontiguousarray(mesh.vertices, dtype=np.float64),
+        np.ascontiguousarray(mesh.faces, dtype=np.int64),
+    )
+    distances = np.sqrt(np.maximum(np.asarray(squared, dtype=np.float64), 0.0))
+    return np.asarray(closest, dtype=np.float64), distances
+
+
 def _require_mesh(geometry: object, label: str) -> MeshGeometry:
     if not isinstance(geometry, MeshGeometry):
         raise TypeError(f"{label} must be MeshGeometry")
@@ -38,10 +45,10 @@ def _nearest_gap(anchor: MeshGeometry, piece: MeshGeometry) -> tuple[float, np.n
     """Smallest surface gap between two solids and the unit direction piece -> anchor."""
     a_mesh = anchor.to_trimesh()
     b_mesh = piece.to_trimesh()
-    points_on_a, dist_b, _ = closest_point(a_mesh, b_mesh.vertices)
+    points_on_a, dist_b = _closest_points(a_mesh, b_mesh.vertices)
     i = int(np.argmin(dist_b))
     point_a, point_b, dist = points_on_a[i], b_mesh.vertices[i], float(dist_b[i])
-    points_on_b, dist_a, _ = closest_point(b_mesh, a_mesh.vertices)
+    points_on_b, dist_a = _closest_points(b_mesh, a_mesh.vertices)
     j = int(np.argmin(dist_a))
     if dist_a[j] < dist:
         point_a, point_b, dist = a_mesh.vertices[j], points_on_b[j], float(dist_a[j])
@@ -107,12 +114,7 @@ def _extract_level_set(
     dimensions: np.ndarray,
     lower: np.ndarray,
     spacing: np.ndarray,
-    target_edge_length: float,
 ) -> MeshGeometry:
-    with warnings.catch_warnings():
-        warnings.filterwarnings("ignore", category=DeprecationWarning, module="gpytoolbox")
-        from gpytoolbox import remesh_botsch
-
     nx, ny, nz = (int(value) for value in dimensions)
     point_count = len(field)
     flat = np.arange(point_count, dtype=np.int64)
@@ -129,20 +131,10 @@ def _extract_level_set(
         nz,
         0.0,
     )
-    vertices, faces = cast(
-        "tuple[np.ndarray, np.ndarray]",
-        remesh_botsch(
-            np.asarray(vertices, dtype=np.float64),
-            np.asarray(faces, dtype=np.int64)[:, (0, 2, 1)],
-            i=1,
-            h=target_edge_length,
-            project=True,
-        ),
-    )
     solid = manifold3d.Manifold(
         manifold3d.Mesh(
             np.ascontiguousarray(vertices, dtype=np.float32),
-            np.ascontiguousarray(faces, dtype=np.uint32),
+            np.ascontiguousarray(faces, dtype=np.uint32)[:, (0, 2, 1)],
         )
     )
     if solid.status() != manifold3d.Error.NoError or solid.is_empty():
@@ -266,7 +258,7 @@ def _smooth_operation(
                 field[start:stop] = -_smooth_max(-field[start:stop], values, radius, profile)
             else:
                 field[start:stop] = _smooth_max(field[start:stop], values, radius, profile)
-    return _extract_level_set(field, dimensions, lower, spacing, tolerance)
+    return _extract_level_set(field, dimensions, lower, spacing)
 
 
 def snap_to(

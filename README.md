@@ -1,6 +1,9 @@
-# mini-articraft
+<h1 align="center">mini-articraft</h1>
 
 mini-articraft is a small agent that turns a prompt into an articulated 3D object.
+
+> [!IMPORTANT]
+> mini-articraft is under active development. Expect changes before version 1.0.
 
 <p align="center">
   <img src="assets/readme/stand_mixer.gif" width="44%" alt="Stand mixer with a tilting head">
@@ -32,7 +35,7 @@ OPENAI_API_KEY=your_key_here
 Generate an object:
 
 ```shell
-uv run mini-articraft "make a folding chair"
+uv run mini-articraft "a jet engine"
 ```
 
 OpenAI is the default provider. To use Gemini, add a Gemini API key:
@@ -66,10 +69,9 @@ uv run ruff check .
 
 - [**Mesh authoring SDK**](docs/sdk.md)
 - [**Agent design**](docs/agent.md)
-- [**SDK reference**](src/mini_articraft/sdk/docs/common/00_quickstart.md)
 - [**Examples**](examples)
-- [**Test environment**](tests/README.md)
-- [**SDK benchmarks**](benchmarks/README.md)
 - [**Repository guide**](AGENTS.md)
 
 This repository has an [Apache 2.0 License](LICENSE).
+
+<sub>This project is based on the [Articraft paper](https://arxiv.org/abs/2605.15187).</sub>

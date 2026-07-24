@@ -13,7 +13,7 @@ from dataclasses import asdict, replace
 from pathlib import Path
 from typing import Any, TypeVar
 
-from mini_articraft.compile_feedback import build_compile_report_from_payload, empty_compile_payload
+from mini_articraft.compile_result import CompileResult
 from mini_articraft.sdk import ArticulatedObject, TestContext, TestReport
 from mini_articraft.sdk.export import export_object
 
@@ -74,14 +74,14 @@ class _CompileTracker:
         self.path.write_text(json.dumps(self.snapshot()), encoding="utf-8")
 
 
-def compile_run(run_dir: Path) -> dict[str, Any]:
+def compile_run(run_dir: Path, *, include_report: bool = True) -> dict[str, Any]:
     workspace = run_dir / "workspace"
     result_dir = run_dir / "result"
     tracker = _CompileTracker(result_dir / _COMPILE_PROGRESS_FILE)
-    payload = _compile_workspace(workspace, result_dir, tracker=tracker)
-    payload["compile_stats"] = tracker.finish()
+    result = _compile_workspace(workspace, result_dir, tracker=tracker)
+    result.compile_stats = tracker.finish()
     tracker.remove()
-    return payload
+    return result.to_payload(include_report=include_report)
 
 
 def _compile_workspace(
@@ -89,12 +89,12 @@ def _compile_workspace(
     export_dir: Path,
     *,
     tracker: _CompileTracker,
-) -> dict[str, Any]:
+) -> CompileResult:
     export_dir.mkdir(parents=True, exist_ok=True)
 
     captured_stdout = io.StringIO()
     captured_stderr = io.StringIO()
-    payload = empty_compile_payload()
+    result = CompileResult()
 
     previous_cwd = Path.cwd()
     sys.path.insert(0, str(workspace))
@@ -114,47 +114,34 @@ def _compile_workspace(
                 authored_report = _run_required_tests(globals_dict)
             baseline_report = _run_baseline_tests(object_model, authored_report, tracker=tracker)
             test_report = _merge_test_reports(authored_report, baseline_report)
-            payload["test_report"] = _serialize_test_report(
+            result.test_report = _serialize_test_report(
                 test_report,
                 compiler_failure_names={failure.name for failure in baseline_report.failures},
             )
             with tracker.phase("exporting and validating the USDZ file"):
-                result = export_object(object_model, export_dir)
-            payload.update(
-                {
-                    "manifest": str(result.manifest),
-                    "usdz": str(result.usdz),
-                }
-            )
+                export_result = export_object(object_model, export_dir)
+            result.manifest = str(export_result.manifest)
+            result.usdz = str(export_result.usdz)
             _raise_for_failed_test_report(test_report)
 
-        payload.update(
-            {
-                "status": "success",
-            }
-        )
+        result.status = "success"
     except BaseException as exc:
         test_report = exc.test_report if isinstance(exc, TestReportError) else None
-        serialized_test_report = payload.get("test_report")
+        serialized_test_report = result.test_report
         if serialized_test_report is None and isinstance(test_report, TestReport):
             serialized_test_report = _serialize_test_report(test_report)
-        payload.update(
-            {
-                "status": "error",
-                "error": f"{type(exc).__name__}: {exc}",
-                "traceback": traceback.format_exc(),
-                "test_report": serialized_test_report,
-            }
-        )
+        result.status = "error"
+        result.error = f"{type(exc).__name__}: {exc}"
+        result.traceback = traceback.format_exc()
+        result.test_report = serialized_test_report
     finally:
         os.chdir(previous_cwd)
         if sys.path and sys.path[0] == str(workspace):
             sys.path.pop(0)
 
-    payload["stdout"] = captured_stdout.getvalue()
-    payload["stderr"] = captured_stderr.getvalue()
-    payload["compile_report"] = build_compile_report_from_payload(payload)
-    return payload
+    result.stdout = captured_stdout.getvalue()
+    result.stderr = captured_stderr.getvalue()
+    return result
 
 
 def _run_required_tests(globals_dict: dict[str, Any]) -> TestReport:
@@ -251,13 +238,7 @@ def _merge_test_reports(authored_report: TestReport, baseline_report: TestReport
 
 
 def _ordered_unique(items: Iterable[T]) -> tuple[T, ...]:
-    seen: set[T] = set()
-    unique: list[T] = []
-    for item in items:
-        if item not in seen:
-            seen.add(item)
-            unique.append(item)
-    return tuple(unique)
+    return tuple(dict.fromkeys(items))
 
 
 class TestReportError(ValueError):
@@ -284,7 +265,7 @@ def _serialize_test_report(
 ) -> dict[str, Any] | None:
     if report is None:
         return None
-    serialized = _jsonable(asdict(report))
+    serialized = asdict(report)
     for failure, serialized_failure in zip(
         report.failures,
         serialized["failures"],
@@ -296,23 +277,19 @@ def _serialize_test_report(
     return serialized
 
 
-def _jsonable(value: Any) -> Any:
-    if isinstance(value, dict):
-        return {str(key): _jsonable(item) for key, item in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [_jsonable(item) for item in value]
-    return value
-
-
 def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
+    raw = bool(args and args[0] == "--raw")
+    if raw:
+        args.pop(0)
     if len(args) != 1:
-        payload = empty_compile_payload(error="Usage: mini-articraft-compile-run <run_dir>")
-        payload["compile_report"] = build_compile_report_from_payload(payload)
+        payload = CompileResult(error="Usage: mini-articraft-compile-run <run_dir>").to_payload(
+            include_report=not raw
+        )
         print(json.dumps(payload))
         return 2
 
-    payload = compile_run(Path(args[0]).resolve())
+    payload = compile_run(Path(args[0]).resolve(), include_report=not raw)
     print(json.dumps(payload))
     return 0 if payload["status"] == "success" else 1
 

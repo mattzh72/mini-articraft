@@ -280,68 +280,27 @@ def _ensure_ccw(points: list[Vec2]) -> list[Vec2]:
     return points if area > 0.0 else list(reversed(points))
 
 
-def _point_on_segment(point: Vec2, start: Vec2, end: Vec2, tolerance: float = 1e-9) -> bool:
-    cross = (end[0] - start[0]) * (point[1] - start[1]) - (end[1] - start[1]) * (
-        point[0] - start[0]
-    )
-    if abs(cross) > tolerance:
-        return False
-    dot = (point[0] - start[0]) * (end[0] - start[0]) + (point[1] - start[1]) * (end[1] - start[1])
-    squared_length = (end[0] - start[0]) ** 2 + (end[1] - start[1]) ** 2
-    return -tolerance <= dot <= squared_length + tolerance
-
-
 def _point_in_polygon(point: Vec2, polygon: Sequence[Vec2]) -> bool:
     inside = False
-    for index, start in enumerate(polygon):
-        end = polygon[(index + 1) % len(polygon)]
-        if _point_on_segment(point, start, end):
+    for start, end in pairwise([*polygon, polygon[0]]):
+        cross = (end[0] - start[0]) * (point[1] - start[1]) - (end[1] - start[1]) * (
+            point[0] - start[0]
+        )
+        if (
+            abs(cross) <= 1e-9
+            and min(start[0], end[0]) - 1e-9 <= point[0] <= max(start[0], end[0]) + 1e-9
+            and min(start[1], end[1]) - 1e-9 <= point[1] <= max(start[1], end[1]) + 1e-9
+        ):
             return True
-        if (start[1] > point[1]) == (end[1] > point[1]):
-            continue
-        crossing_x = start[0] + (point[1] - start[1]) * (end[0] - start[0]) / (end[1] - start[1])
-        if crossing_x >= point[0]:
-            inside = not inside
+        if (start[1] > point[1]) != (end[1] > point[1]):
+            crossing = start[0] + (point[1] - start[1]) * (end[0] - start[0]) / (end[1] - start[1])
+            if crossing >= point[0]:
+                inside = not inside
     return inside
 
 
-def _cross_z(a: Vec2, b: Vec2, c: Vec2) -> float:
-    return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
-
-
-def _point_in_triangle(point: Vec2, a: Vec2, b: Vec2, c: Vec2) -> bool:
-    values = (_cross_z(a, b, point), _cross_z(b, c, point), _cross_z(c, a, point))
-    return all(value >= -1e-10 for value in values) or all(value <= 1e-10 for value in values)
-
-
 def _triangulate_simple(points: list[Vec2]) -> list[Face]:
-    points = _ensure_ccw(points)
-    indices = list(range(len(points)))
-    triangles: list[Face] = []
-    guard = len(indices) ** 2
-    while len(indices) > 3 and guard > 0:
-        guard -= 1
-        for cursor, current in enumerate(indices):
-            previous = indices[cursor - 1]
-            following = indices[(cursor + 1) % len(indices)]
-            if _cross_z(points[previous], points[current], points[following]) <= _EPS:
-                continue
-            if any(
-                _point_in_triangle(
-                    points[index], points[previous], points[current], points[following]
-                )
-                for index in indices
-                if index not in {previous, current, following}
-            ):
-                continue
-            triangles.append((previous, current, following))
-            del indices[cursor]
-            break
-        else:
-            raise ValueError("failed to triangulate profile; ensure it is a simple polygon")
-    if len(indices) == 3:
-        triangles.append((indices[0], indices[1], indices[2]))
-    return triangles
+    return _triangulate_with_holes(points, [])[1]
 
 
 def _triangulate_with_holes(
@@ -349,8 +308,6 @@ def _triangulate_with_holes(
 ) -> tuple[list[Vec2], list[Face]]:
     outer = _ensure_ccw(outer)
     holes = [_ensure_ccw(hole) for hole in holes]
-    if not holes:
-        return outer, _triangulate_simple(outer)
     for hole in holes:
         center = (
             sum(point[0] for point in hole) / len(hole),
@@ -358,7 +315,6 @@ def _triangulate_with_holes(
         )
         if not _point_in_polygon(center, outer):
             raise ValueError("hole profile must lie inside the outer profile")
-
     rings = [outer, *(list(reversed(hole)) for hole in holes)]
     flat = [point for ring in rings for point in ring]
     try:
@@ -373,14 +329,8 @@ def _triangulate_with_holes(
             (int(face[0]), int(face[1]), int(face[2])) for face in np.asarray(raw)
         ]
         return flat, triangles
-    except ImportError:
-        pass
     except Exception as exc:
-        raise ValueError("failed to triangulate profiles with holes") from exc
-
-    raise RuntimeError(
-        "profiles with holes require the `manifold3d` package; install project dependencies"
-    )
+        raise ValueError("failed to triangulate profile") from exc
 
 
 @dataclass
@@ -578,18 +528,11 @@ class MeshGeometry:
         angle = float(angle)
         if not math.isfinite(angle):
             raise ValueError("angle must be finite")
-        cosine = math.cos(angle)
-        sine = math.sin(angle)
-
-        def rotate_vertex(vertex: Vec3) -> Vec3:
-            relative = _v_sub(vertex, pivot)
-            rotated = _v_add(
-                _v_add(_v_scale(relative, cosine), _v_scale(_v_cross(direction, relative), sine)),
-                _v_scale(direction, _v_dot(direction, relative) * (1.0 - cosine)),
-            )
-            return _v_add(pivot, rotated)
-
-        self.vertices = [rotate_vertex(vertex) for vertex in self.vertices]
+        matrix = trimesh.transformations.rotation_matrix(angle, direction, point=pivot)
+        self.vertices = [
+            (float(x), float(y), float(z))
+            for x, y, z in trimesh.transform_points(self._mesh_arrays()[0], matrix)
+        ]
         return self
 
     def rotate_x(self, angle: float) -> MeshGeometry:
@@ -661,33 +604,12 @@ class CylinderGeometry(MeshGeometry):
         if radius <= 0.0 or height <= 0.0:
             raise ValueError("cylinder radius and height must be positive")
         sections = max(3, int(radial_segments))
-        if closed:
-            created = _from_created(
-                trimesh.creation.cylinder(radius=radius, height=height, sections=sections)
-            )
-            super().__init__(created.vertices, created.faces)
-            return
-        vertices: list[Vec3] = []
-        faces: list[Face] = []
-        half = height * 0.5
-        for z in (-half, half):
-            vertices.extend(
-                (
-                    radius * math.cos(2.0 * math.pi * index / sections),
-                    radius * math.sin(2.0 * math.pi * index / sections),
-                    z,
-                )
-                for index in range(sections)
-            )
-        for index in range(sections):
-            following = (index + 1) % sections
-            faces.extend(
-                (
-                    (index, following, sections + following),
-                    (index, sections + following, sections + index),
-                )
-            )
-        super().__init__(vertices, faces)
+        created = trimesh.creation.cylinder(radius=radius, height=height, sections=sections)
+        if not closed:
+            created.update_faces(np.abs(created.face_normals[:, 2]) < 0.999)
+            created.remove_unreferenced_vertices()
+        converted = _from_created(created)
+        super().__init__(converted.vertices, converted.faces)
 
 
 class ConeGeometry(MeshGeometry):
@@ -814,41 +736,14 @@ class DomeGeometry(MeshGeometry):
             raise ValueError("dome radii must be positive")
         radial_segments = max(3, int(radial_segments))
         height_segments = max(1, int(height_segments))
-        vertices: list[Vec3] = [(0.0, 0.0, radii[2])]
-        for row in range(1, height_segments + 1):
-            phi = 0.5 * math.pi * row / height_segments
-            for column in range(radial_segments):
-                theta = 2.0 * math.pi * column / radial_segments
-                vertices.append(
-                    (
-                        radii[0] * math.sin(phi) * math.cos(theta),
-                        radii[1] * math.sin(phi) * math.sin(theta),
-                        radii[2] * math.cos(phi),
-                    )
-                )
-        faces: list[Face] = [
-            (0, 1 + column, 1 + (column + 1) % radial_segments) for column in range(radial_segments)
-        ]
-        for row in range(height_segments - 1):
-            start = 1 + row * radial_segments
-            following_start = start + radial_segments
-            for column in range(radial_segments):
-                following = (column + 1) % radial_segments
-                faces.extend(
-                    (
-                        (start + column, following_start + column, following_start + following),
-                        (start + column, following_start + following, start + following),
-                    )
-                )
+        phi = np.linspace(0.0, 0.5 * math.pi, height_segments + 1)
+        profile = np.column_stack((radii[0] * np.sin(phi), radii[2] * np.cos(phi)))
         if closed:
-            center = len(vertices)
-            vertices.append((0.0, 0.0, 0.0))
-            start = 1 + (height_segments - 1) * radial_segments
-            faces.extend(
-                (center, start + (column + 1) % radial_segments, start + column)
-                for column in range(radial_segments)
-            )
-        super().__init__(vertices, faces)
+            profile = np.vstack((profile, (0.0, 0.0)))
+        created = trimesh.creation.revolve(profile, sections=radial_segments, cap=False)
+        created.apply_scale((1.0, radii[1] / radii[0], 1.0))
+        converted = _from_created(created)
+        super().__init__(converted.vertices, converted.faces)
 
 
 class CapsuleGeometry(MeshGeometry):
@@ -1461,6 +1356,29 @@ def build123d_to_mesh(
     mesh.remove_unreferenced_vertices()
     mesh.fix_normals(multibody=True)
     return MeshGeometry.from_trimesh(mesh)
+
+
+def geometry_to_trimesh(geometry: object, tolerance: float) -> trimesh.Trimesh:
+    """Convert either supported SDK geometry type to the shared mesh representation."""
+
+    from build123d.topology import Shape
+
+    if isinstance(geometry, Shape):
+        vertices, faces = geometry.tessellate(tolerance)
+        if not vertices or not faces:
+            raise ValidationError("build123d shape produced an empty mesh")
+        raw_vertices = np.asarray([[v.X, v.Y, v.Z] for v in vertices], dtype=np.float64)
+        raw_faces = np.asarray(faces, dtype=np.int32)
+        mesh = trimesh.Trimesh(vertices=raw_vertices, faces=raw_faces, process=False)
+    elif isinstance(geometry, MeshGeometry):
+        mesh = geometry.to_trimesh()
+    else:
+        raise ValidationError("geometry must be a build123d Shape or MeshGeometry")
+    mesh.merge_vertices()
+    mesh.remove_unreferenced_vertices()
+    if mesh.vertices.size == 0 or mesh.faces.size == 0:
+        raise ValidationError("geometry produced an empty mesh")
+    return mesh
 
 
 __all__ = [

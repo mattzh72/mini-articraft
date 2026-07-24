@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import warnings
+
 import pytest
 from build123d import Box, Pos
 
@@ -10,8 +12,10 @@ from mini_articraft.sdk import (
     ArticulationType,
     BoxGeometry,
     FailureKind,
+    MeshGeometry,
     MotionLimits,
     Origin,
+    SphereGeometry,
     TestContext,
 )
 
@@ -76,6 +80,21 @@ def test_named_shape_queries_and_world_bounds() -> None:
 
     with pytest.raises(ValidationError, match="unknown shape"):
         ctx.shape_world_bounds("root", "missing")
+
+
+def test_world_bounds_transform_large_mesh_without_runtime_warnings() -> None:
+    model = ArticulatedObject("large-mesh-transform")
+    root = model.part("root")
+    sphere = SphereGeometry(1.0, width_segments=32, height_segments=16)
+    assert len(sphere.vertices) >= 512
+    root.add(sphere, name="sphere")
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", RuntimeWarning)
+        bounds = TestContext(model).part_world_bounds("root")
+
+    assert bounds[0][2] == pytest.approx(-1.0)
+    assert bounds[1][2] == pytest.approx(1.0)
 
 
 def test_build123d_shape_bounds_refresh_after_location_mutation() -> None:
@@ -221,6 +240,42 @@ def test_adjacent_contact_and_tiny_penetration_pass_physical_thresholds() -> Non
         fixed(model, "mount", parent, child, xyz=(0.0, 0.0, offset))
 
         assert TestContext(model).fail_if_parts_overlap_in_current_pose()
+
+
+def test_coplanar_contact_with_large_watertight_bounds_passes() -> None:
+    model = ArticulatedObject("watertight_contact")
+    parent = model.part("parent")
+    parent.add(Box(1, 1, 1) + Pos(X=2, Z=2) * Box(1, 1, 1), name="body")
+    child = model.part("child")
+    child.add(Pos(Z=1) * Box(1, 1, 1), name="body")
+    fixed(model, "mount", parent, child)
+
+    assert TestContext(model).fail_if_parts_overlap_in_current_pose()
+
+
+def test_coplanar_contact_with_large_open_mesh_bounds_passes() -> None:
+    model = ArticulatedObject("open_mesh_contact")
+    parent = model.part("parent")
+    parent.add(
+        MeshGeometry(
+            vertices=[
+                (-0.5, -0.5, 0.5),
+                (0.5, -0.5, 0.5),
+                (0.5, 0.5, 0.5),
+                (-0.5, 0.5, 0.5),
+                (1.5, -0.5, 2.5),
+                (2.5, -0.5, 2.5),
+                (2.0, 0.5, 2.5),
+            ],
+            faces=[(0, 1, 2), (0, 2, 3), (4, 5, 6)],
+        ),
+        name="body",
+    )
+    child = model.part("child")
+    child.add(Pos(Z=1) * Box(1, 1, 1), name="body")
+    fixed(model, "mount", parent, child)
+
+    assert TestContext(model).fail_if_parts_overlap_in_current_pose()
 
 
 def test_adjacent_large_penetration_blocks() -> None:

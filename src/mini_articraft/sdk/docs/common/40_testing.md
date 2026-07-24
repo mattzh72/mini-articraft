@@ -371,12 +371,16 @@ This check is always nonblocking.
 checks every named shape pair from different parts at the current pose, including adjacent parent
 and child parts.
 
-A pair is a blocking overlap only when all of these facts are true:
+A pair can be a blocking overlap only when all of these facts are true:
 
 1. Its world bounds overlap by more than `overlap_tol` on all three axes.
 2. Its bounds overlap volume is greater than `overlap_volume_tol` cubic meters.
 3. The triangle meshes collide.
 4. No matching overlap allowance exists.
+
+For watertight meshes, the pair blocks only when its solid intersection volume exceeds
+`overlap_volume_tol`. When solid volume is unavailable, the pair blocks when its reported
+penetration is greater than `1e-6` meters or the result does not include a penetration depth.
 
 Mere contact passes. Bounds penetration at or below either physical threshold also passes. A
 shape allowance suppresses only its exact pair. The report includes at most one representative

@@ -11,7 +11,7 @@ from typing import ClassVar, cast
 from mini_articraft.sdk._collision import (
     Bounds,
     CollisionQuery,
-    DistanceQuery,
+    DistanceFinding,
     GeometryConnectivityFinding,
     MeshCollisionKernel,
     Vec3,
@@ -62,18 +62,6 @@ class AllowedOverlap:
     reason: str
     shape_a: str
     shape_b: str
-
-
-@dataclass(frozen=True)
-class DistanceFinding:
-    part_a: str
-    part_b: str
-    shape_a: str | None
-    shape_b: str | None
-    distance: float
-    nearest_a: Vec3 | None = None
-    nearest_b: Vec3 | None = None
-    collided: bool = False
 
 
 @dataclass(frozen=True)
@@ -222,17 +210,7 @@ class TestContext:
         shape_a: str | None = None,
         shape_b: str | None = None,
     ) -> DistanceFinding:
-        result = self._distance_query(part_a, part_b, shape_a=shape_a, shape_b=shape_b)
-        return DistanceFinding(
-            part_a=result.part_a,
-            part_b=result.part_b,
-            shape_a=result.shape_a,
-            shape_b=result.shape_b,
-            distance=result.distance,
-            nearest_a=result.nearest_a,
-            nearest_b=result.nearest_b,
-            collided=result.collided,
-        )
+        return self._distance_query(part_a, part_b, shape_a=shape_a, shape_b=shape_b)
 
     def expect_no_collision(
         self,
@@ -722,7 +700,7 @@ class TestContext:
         *,
         shape_a: str | None,
         shape_b: str | None,
-    ) -> DistanceQuery:
+    ) -> DistanceFinding:
         return self._kernel().distance_between(
             _part_name(part_a, field_name="part_a"),
             _part_name(part_b, field_name="part_b"),
@@ -861,7 +839,7 @@ def _collision_details(query: CollisionQuery) -> str:
     )
 
 
-def _distance_details(query: DistanceQuery) -> str:
+def _distance_details(query: DistanceFinding) -> str:
     return (
         f"pair=({query.part_a!r},{query.part_b!r}) "
         f"shape_a={query.shape_a!r} shape_b={query.shape_b!r} "
@@ -878,7 +856,7 @@ def _geometry_connectivity_details(finding: GeometryConnectivityFinding) -> str:
     )
 
 
-def _check_name(prefix: str, query: CollisionQuery | DistanceQuery) -> str:
+def _check_name(prefix: str, query: CollisionQuery | DistanceFinding) -> str:
     selectors = ""
     if query.shape_a is not None or query.shape_b is not None:
         selectors = f",shape_a={query.shape_a},shape_b={query.shape_b}"

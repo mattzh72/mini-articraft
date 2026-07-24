@@ -12,7 +12,8 @@ from typing import cast
 
 from pxr import Gf, Sdf, Tf, Usd, UsdGeom, UsdPhysics, UsdUtils, UsdValidation
 
-from mini_articraft.sdk._collision import MeshCollisionKernel, _geometry_to_mesh, _rpy_matrix
+from mini_articraft.sdk._collision import MeshCollisionKernel, _rpy_matrix
+from mini_articraft.sdk._mesh_core import geometry_to_trimesh
 from mini_articraft.sdk.joints import Articulation, ArticulationType, MotionLimits
 from mini_articraft.sdk.object import ArticulatedObject, Geometry
 from mini_articraft.sdk.testing import DEFAULT_MESH_TOLERANCE
@@ -224,7 +225,7 @@ def _mesh(
     geometry: Geometry,
     tolerance: float,
 ) -> tuple[list[Gf.Vec3f], list[tuple[int, int, int]]]:
-    mesh = _geometry_to_mesh(geometry, tolerance)
+    mesh = geometry_to_trimesh(geometry, tolerance)
     if mesh.vertices.size == 0 or mesh.faces.size == 0:
         raise TypeError("shape produced no USD mesh triangles")
     return (

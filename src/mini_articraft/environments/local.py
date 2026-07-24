@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 
 from mini_articraft import package_dir
 from mini_articraft._child_process import child_environment
-from mini_articraft.compile_feedback import build_compile_report_from_payload, empty_compile_payload
+from mini_articraft.compile_result import CompileResult
 from mini_articraft.record import Record
 from mini_articraft.settings import DEFAULT_COMPILE_TIMEOUT_SECONDS, DEFAULT_OUTPUT_DIR
 
@@ -83,6 +83,7 @@ class LocalEnvironment:
             sys.executable,
             "-m",
             "mini_articraft.environments.worker",
+            "--raw",
             str(run_dir.resolve()),
         ]
         completed = _run_isolated_process(
@@ -229,12 +230,21 @@ def _finalize_payload(
     stderr is followed by process-level stderr, missing keys are defaulted,
     and the compile report and run paths are attached here.
     """
-    payload.setdefault("stdout", "")
-    payload["stderr"] = str(payload.get("stderr", "")) + stderr
-    payload.setdefault("error", "")
-    payload.setdefault("traceback", "")
-    payload["returncode"] = returncode
-    payload["compile_report"] = build_compile_report_from_payload(payload)
+    result = CompileResult.from_payload(payload)
+    result.stderr += stderr
+    return _finalize_result(run_dir, result, returncode)
+
+
+def _finalize_result(
+    run_dir: Path,
+    result: CompileResult,
+    returncode: int | None,
+) -> dict[str, Any]:
+    payload = result.to_payload(
+        include_report=True,
+        include_returncode=True,
+        returncode=returncode,
+    )
     return _with_paths(run_dir, payload)
 
 
@@ -274,7 +284,13 @@ def _error_result(
     returncode: int | None = None,
     compile_stats: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    payload = empty_compile_payload(error=error, stdout=stdout)
-    if compile_stats:
-        payload["compile_stats"] = compile_stats
-    return _finalize_payload(run_dir, payload, stderr=stderr, returncode=returncode)
+    return _finalize_result(
+        run_dir,
+        CompileResult(
+            error=error,
+            stdout=stdout,
+            stderr=stderr,
+            compile_stats=compile_stats,
+        ),
+        returncode,
+    )

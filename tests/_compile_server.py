@@ -18,7 +18,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from mini_articraft.compile_feedback import empty_compile_payload
+from mini_articraft.compile_result import CompileResult
 from mini_articraft.environments.worker import compile_run
 
 
@@ -27,12 +27,12 @@ def main() -> int:
     for line in sys.stdin:
         run_dir = _parse_request(line)
         if run_dir is None:
-            _emit(empty_compile_payload(error=f"bad compile request: {line.strip()!r}"))
+            _emit(CompileResult(error=f"bad compile request: {line.strip()!r}").to_payload())
             continue
         try:
-            _emit(compile_run(run_dir))
+            _emit(compile_run(run_dir, include_report=False))
         except BaseException as exc:  # keep serving after a broken compile
-            _emit(empty_compile_payload(error=f"{type(exc).__name__}: {exc}"))
+            _emit(CompileResult(error=f"{type(exc).__name__}: {exc}").to_payload())
         _evict_workspace_modules(run_dir / "workspace")
     return 0
 
